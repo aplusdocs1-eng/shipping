@@ -567,7 +567,8 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
         ),
         const SizedBox(height: 4),
         const Text(
-          'The domain your customers will visit. Point it to our service via CNAME after approval.',
+          'The domain your customers will visit. We\'ll register it automatically — '
+          'point it to us via CNAME to finish setup.',
           style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
         ),
         const SizedBox(height: 16),
