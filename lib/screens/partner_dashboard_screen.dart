@@ -2198,7 +2198,19 @@ class _PackageRow extends StatelessWidget {
                     break;
                   case 'paid':
                     if (invoiceId != null) {
-                      await db.markInvoicePaid(invoiceId);
+                      final submissions = await db
+                          .getPaymentSubmissionsForInvoice(invoiceId);
+                      final pending = submissions
+                          .where((s) => s['status'] == 'pending_review')
+                          .toList();
+                      if (pending.isNotEmpty) {
+                        await db.confirmPaymentSubmission(
+                          pending.first['id'] as String,
+                          invoiceId,
+                        );
+                      } else {
+                        await db.markInvoicePaid(invoiceId);
+                      }
                       await db.updatePackage(pkg['id'] as String, {
                         'status': 'ready_for_pickup',
                       });

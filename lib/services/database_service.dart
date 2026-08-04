@@ -391,6 +391,98 @@ class DatabaseService {
     return Map<String, dynamic>.from(data);
   }
 
+  // ─── Payment Submissions ─────────────────────────────────────────────
+  // Customers can't mark their own invoice paid — they submit a payment
+  // method + reference for staff to confirm, which then calls
+  // markInvoicePaid.
+
+  Future<Map<String, dynamic>> submitPaymentReference({
+    required String invoiceId,
+    required String customerId,
+    String? partnerId,
+    required String method,
+    String? reference,
+    String? notes,
+    double? amount,
+  }) async {
+    final row = <String, dynamic>{
+      'invoice_id': invoiceId,
+      'customer_id': customerId,
+      'partner_id': partnerId,
+      'method': method,
+      'reference': reference,
+      'notes': notes,
+      'amount': amount,
+      'status': 'pending_review',
+    };
+    final data = await _db
+        .from('payment_submissions')
+        .insert(row)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<List<Map<String, dynamic>>> getPaymentSubmissionsByCustomer(
+    String customerId,
+  ) async {
+    final data = await _db
+        .from('payment_submissions')
+        .select()
+        .eq('customer_id', customerId)
+        .order('submitted_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<List<Map<String, dynamic>>> getPaymentSubmissionsForInvoice(
+    String invoiceId,
+  ) async {
+    final data = await _db
+        .from('payment_submissions')
+        .select()
+        .eq('invoice_id', invoiceId)
+        .order('submitted_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingPaymentSubmissionsByPartner(
+    String partnerId,
+  ) async {
+    final data = await _db
+        .from('payment_submissions')
+        .select()
+        .eq('partner_id', partnerId)
+        .eq('status', 'pending_review')
+        .order('submitted_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  /// Confirms a customer's payment submission and marks the linked
+  /// invoice paid.
+  Future<void> confirmPaymentSubmission(
+    String submissionId,
+    String invoiceId,
+  ) async {
+    await _db
+        .from('payment_submissions')
+        .update({
+          'status': 'confirmed',
+          'reviewed_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', submissionId);
+    await markInvoicePaid(invoiceId);
+  }
+
+  Future<void> rejectPaymentSubmission(String submissionId) async {
+    await _db
+        .from('payment_submissions')
+        .update({
+          'status': 'rejected',
+          'reviewed_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', submissionId);
+  }
+
   Future<List<Map<String, dynamic>>> getInvoicesForCustomer(
     String customerId,
   ) async {

@@ -25,11 +25,13 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
   List<Map<String, dynamic>> _packages = const [];
   List<Map<String, dynamic>> _invoices = const [];
   List<Map<String, dynamic>> _preAlerts = const [];
+  List<Map<String, dynamic>> _paymentSubmissions = const [];
   String? _loadError;
   RealtimeChannel? _channel;
 
   static const List<_NavItem> _nav = [
     _NavItem('Overview', Icons.dashboard_outlined, '/customer'),
+    _NavItem('Invoices', Icons.receipt_long_outlined, '/customer/invoices'),
     _NavItem(
       'Shipping Addresses',
       Icons.location_on_outlined,
@@ -105,6 +107,19 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
             if (mounted) _silentLoad();
           },
         )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'payment_submissions',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'customer_id',
+            value: custId,
+          ),
+          callback: (_) {
+            if (mounted) _silentLoad();
+          },
+        )
         .subscribe();
   }
 
@@ -118,12 +133,14 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
         _db.getPackagesByCustomer(custId),
         _db.getInvoicesForCustomer(custId),
         _db.getPreAlertsByCustomer(custId),
+        _db.getPaymentSubmissionsByCustomer(custId),
       ]);
       if (mounted) {
         setState(() {
           _packages = results[0];
           _invoices = results[1];
           _preAlerts = results[2];
+          _paymentSubmissions = results[3];
           _silentRefresh = false;
         });
       }
@@ -157,6 +174,7 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
         _packages = const [];
         _invoices = const [];
         _preAlerts = const [];
+        _paymentSubmissions = const [];
       } else {
         _customer = cust;
         final custId = cust['id'].toString();
@@ -164,10 +182,12 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
           _db.getPackagesByCustomer(custId),
           _db.getInvoicesForCustomer(custId),
           _db.getPreAlertsByCustomer(custId),
+          _db.getPaymentSubmissionsByCustomer(custId),
         ]);
         _packages = results[0];
         _invoices = results[1];
         _preAlerts = results[2];
+        _paymentSubmissions = results[3];
       }
     } catch (e) {
       _loadError = e.toString();
@@ -227,6 +247,13 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
             final i = _nav.indexWhere((n) => n.label == label);
             if (i >= 0) setState(() => _current = i);
           },
+        );
+      case 'Invoices':
+        return _InvoicesPage(
+          customer: _customer!,
+          invoices: _invoices,
+          paymentSubmissions: _paymentSubmissions,
+          onSubmitted: _silentLoad,
         );
       case 'Shipping Addresses':
         return _ShippingAddressesPage(customer: _customer!);
@@ -929,6 +956,478 @@ String _fmtDate(dynamic v) {
     return '${months[d.month - 1]} ${d.day}, ${d.year}';
   } catch (_) {
     return v.toString();
+  }
+}
+
+// ═════ Invoices ═════════════════════════════════════════════════════════
+
+class _InvoicesPage extends StatelessWidget {
+  final Map<String, dynamic> customer;
+  final List<Map<String, dynamic>> invoices;
+  final List<Map<String, dynamic>> paymentSubmissions;
+  final VoidCallback onSubmitted;
+
+  const _InvoicesPage({
+    required this.customer,
+    required this.invoices,
+    required this.paymentSubmissions,
+    required this.onSubmitted,
+  });
+
+  Map<String, dynamic>? _pendingSubmissionFor(String invoiceId) {
+    for (final s in paymentSubmissions) {
+      if (s['invoice_id']?.toString() == invoiceId &&
+          s['status'] == 'pending_review') {
+        return s;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sorted = [...invoices]..sort((a, b) {
+      final aPaid = (a['status']?.toString() ?? '') == 'paid';
+      final bPaid = (b['status']?.toString() ?? '') == 'paid';
+      if (aPaid != bPaid) return aPaid ? 1 : -1;
+      final aDate = a['created_at']?.toString() ?? '';
+      final bDate = b['created_at']?.toString() ?? '';
+      return bDate.compareTo(aDate);
+    });
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.receipt_long_outlined,
+                  color: Color(0xFFB45309),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Invoices',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      'View and pay your invoices',
+                      style: TextStyle(color: Color(0xFF6B7280)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          if (sorted.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(32),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'No invoices yet.',
+                style: TextStyle(color: Color(0xFF6B7280)),
+              ),
+            )
+          else
+            ...sorted.map(
+              (inv) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _InvoiceCard(
+                  invoice: inv,
+                  pendingSubmission: _pendingSubmissionFor(
+                    inv['id'].toString(),
+                  ),
+                  customer: customer,
+                  onSubmitted: onSubmitted,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InvoiceCard extends StatelessWidget {
+  final Map<String, dynamic> invoice;
+  final Map<String, dynamic>? pendingSubmission;
+  final Map<String, dynamic> customer;
+  final VoidCallback onSubmitted;
+
+  const _InvoiceCard({
+    required this.invoice,
+    required this.pendingSubmission,
+    required this.customer,
+    required this.onSubmitted,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final status = invoice['status']?.toString() ?? 'pending';
+    final isPaid = status == 'paid';
+    final total = (invoice['total'] as num?)?.toStringAsFixed(2) ?? '0.00';
+    final invNumber = invoice['invoice_number']?.toString() ?? '—';
+    final dueDate = invoice['due_date'];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      invNumber,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (isPaid)
+                      const _Badge(
+                        'PAID',
+                        Color(0xFFDCFCE7),
+                        Color(0xFF15803D),
+                      )
+                    else if (pendingSubmission != null)
+                      const _Badge(
+                        'PENDING REVIEW',
+                        Color(0xFFFEF3C7),
+                        Color(0xFFB45309),
+                      )
+                    else
+                      const _Badge(
+                        'UNPAID',
+                        Color(0xFFFEE2E2),
+                        Color(0xFFDC2626),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  dueDate == null ? 'No due date' : 'Due ${_fmtDate(dueDate)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '\$$total',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 16),
+          if (!isPaid)
+            ElevatedButton(
+              onPressed: pendingSubmission != null
+                  ? null
+                  : () => _showPayDialog(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: Text(
+                pendingSubmission != null ? 'Submitted' : 'Pay Invoice',
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showPayDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => _PayInvoiceDialog(
+        invoice: invoice,
+        customer: customer,
+        onSubmitted: onSubmitted,
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  final String label;
+  final Color bg;
+  final Color fg;
+  const _Badge(this.label, this.bg, this.fg);
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: fg,
+        ),
+      ),
+    );
+  }
+}
+
+class _PayInvoiceDialog extends StatefulWidget {
+  final Map<String, dynamic> invoice;
+  final Map<String, dynamic> customer;
+  final VoidCallback onSubmitted;
+  const _PayInvoiceDialog({
+    required this.invoice,
+    required this.customer,
+    required this.onSubmitted,
+  });
+
+  @override
+  State<_PayInvoiceDialog> createState() => _PayInvoiceDialogState();
+}
+
+class _PayInvoiceDialogState extends State<_PayInvoiceDialog> {
+  final _db = DatabaseService();
+  String _method = 'Bank Transfer';
+  final _referenceCtl = TextEditingController();
+  final _notesCtl = TextEditingController();
+  bool _submitting = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _referenceCtl.dispose();
+    _notesCtl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await _db.submitPaymentReference(
+        invoiceId: widget.invoice['id'].toString(),
+        customerId: widget.customer['id'].toString(),
+        partnerId: widget.customer['partner_id']?.toString(),
+        method: _method,
+        reference: _referenceCtl.text.trim().isEmpty
+            ? null
+            : _referenceCtl.text.trim(),
+        notes: _notesCtl.text.trim().isEmpty ? null : _notesCtl.text.trim(),
+        amount: (widget.invoice['total'] as num?)?.toDouble(),
+      );
+      widget.onSubmitted();
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Payment reference submitted. We will confirm it shortly.',
+          ),
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _submitting = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total =
+        (widget.invoice['total'] as num?)?.toStringAsFixed(2) ?? '0.00';
+    return AlertDialog(
+      title: Text('Pay Invoice ${widget.invoice['invoice_number'] ?? ''}'),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Amount due: \$$total',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'How to pay',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E3A8A),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Pay by bank transfer, cash, or POS at any branch, then '
+                      'submit the reference below so we can confirm it. '
+                      'Contact us if you need our banking details.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF1E3A8A)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Payment Method',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                initialValue: _method,
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 10,
+                  ),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'Bank Transfer',
+                    child: Text('Bank Transfer'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Cash at Branch',
+                    child: Text('Cash at Branch'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'POS at Branch',
+                    child: Text('POS at Branch'),
+                  ),
+                  DropdownMenuItem(value: 'Other', child: Text('Other')),
+                ],
+                onChanged: (v) =>
+                    setState(() => _method = v ?? 'Bank Transfer'),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Reference / Confirmation Number',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _referenceCtl,
+                decoration: InputDecoration(
+                  hintText: 'e.g. transfer confirmation #',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 10,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Notes (optional)',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _notesCtl,
+                maxLines: 2,
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 10,
+                  ),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _submitting ? null : _submit,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.primary,
+            foregroundColor: Colors.white,
+          ),
+          child: _submitting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('Submit Payment Reference'),
+        ),
+      ],
+    );
   }
 }
 
