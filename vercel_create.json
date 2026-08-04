@@ -1,0 +1,1 @@
+{"name":"shipping","framework":"other","builds":[{"src":"build/web/**","use":"@vercel/static"}],"routes":[{"src":"/(.*)","dest":"/index.html"}],"gitRepository":{"type":"github","org":"aplusdocs1-eng","repo":"shipping"}}

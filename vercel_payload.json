@@ -1,0 +1,1 @@
+﻿{"name":"shipping","gitRepository":{"type":"github","org":"aplusdocs1-eng","repo":"shipping","deployProtection":false},"buildCommand":"flutter build web --release","outputDirectory":"build/web"}
