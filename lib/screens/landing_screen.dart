@@ -570,6 +570,7 @@ class _HeroMockup extends StatelessWidget {
               const _MockPackageRow('AZ798767898', 'In transit', LandingScreen.amber),
               const SizedBox(height: 8),
               const _MockPackageRow('AZ356765435', 'Delivered', LandingScreen.green),
+              const SizedBox(height: 28),
             ],
           ),
         ),
@@ -850,20 +851,27 @@ class _AnalyticsCard extends StatelessWidget {
                 child: const Icon(Icons.bar_chart_rounded, size: 16, color: LandingScreen.teal),
               ),
               const SizedBox(width: 10),
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Realtime Analytics', style: TextStyle(color: LandingScreen.textPrimary, fontWeight: FontWeight.w700, fontSize: 14)),
-                  Text('Live tracking dashboard', style: TextStyle(color: LandingScreen.textSecondary, fontSize: 11)),
-                ],
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Realtime Analytics', style: TextStyle(color: LandingScreen.textPrimary, fontWeight: FontWeight.w700, fontSize: 14)),
+                    Text('Live tracking dashboard', style: TextStyle(color: LandingScreen.textSecondary, fontSize: 11)),
+                  ],
+                ),
               ),
-              const Spacer(),
-              const _LegendDot(color: LandingScreen.teal, label: 'Packages'),
-              const SizedBox(width: 10),
-              const _LegendDot(color: LandingScreen.purple, label: 'Deliveries'),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
+          const Wrap(
+            spacing: 14,
+            runSpacing: 6,
+            children: [
+              _LegendDot(color: LandingScreen.teal, label: 'Packages'),
+              _LegendDot(color: LandingScreen.purple, label: 'Deliveries'),
+            ],
+          ),
+          const SizedBox(height: 16),
           SizedBox(
             height: 180,
             child: LineChart(
