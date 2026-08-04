@@ -23,12 +23,19 @@ jobs:
       - name: Build Flutter web
         run: flutter build web --release
 
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Package Vercel Build Output
+        run: |
+          mkdir -p .vercel/output/static
+          cp -r build/web/. .vercel/output/static/
+          cat > .vercel/output/config.json <<'EOF'
+          {"version":3,"rewrites":[{"source":"/(.*)","destination":"/index.html"}]}
+          EOF
+
       - name: Deploy to Vercel
-        uses: vercel/vercel-action@v3
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          scope: ${{ secrets.VERCEL_SCOPE }}
-          working-directory: .
-          prod: true
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel deploy --prebuilt --prod --yes --token="${{ secrets.VERCEL_TOKEN }}"
