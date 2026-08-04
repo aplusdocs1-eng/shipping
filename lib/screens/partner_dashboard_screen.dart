@@ -4026,6 +4026,7 @@ class _SettingsField extends StatelessWidget {
   final String label;
   final String? hint;
   final String? initial;
+  final TextEditingController? controller;
   final IconData? icon;
   final bool obscure;
   final int maxLines;
@@ -4033,6 +4034,7 @@ class _SettingsField extends StatelessWidget {
     required this.label,
     this.hint,
     this.initial,
+    this.controller,
     this.icon,
     this.obscure = false,
     this.maxLines = 1,
@@ -4052,7 +4054,8 @@ class _SettingsField extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         TextFormField(
-          initialValue: initial,
+          controller: controller,
+          initialValue: controller == null ? initial : null,
           obscureText: obscure,
           maxLines: obscure ? 1 : maxLines,
           style: const TextStyle(fontSize: 13),
@@ -4082,7 +4085,8 @@ class _SettingsField extends StatelessWidget {
 
 class _SettingsSaveBar extends StatelessWidget {
   final VoidCallback? onSave;
-  const _SettingsSaveBar({this.onSave});
+  final bool saving;
+  const _SettingsSaveBar({this.onSave, this.saving = false});
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -4100,19 +4104,29 @@ class _SettingsSaveBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           ElevatedButton(
-            onPressed:
-                onSave ??
-                () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Settings saved')),
-                  );
-                },
+            onPressed: saving
+                ? null
+                : (onSave ??
+                      () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Settings saved')),
+                        );
+                      }),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.primary,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
-            child: const Text('Save Changes'),
+            child: saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('Save Changes'),
           ),
         ],
       ),
@@ -4120,9 +4134,145 @@ class _SettingsSaveBar extends StatelessWidget {
   }
 }
 
-class _CompanyProfileTab extends StatelessWidget {
+class _CompanyProfileTab extends StatefulWidget {
   final Map<String, dynamic> account;
   const _CompanyProfileTab({required this.account});
+  @override
+  State<_CompanyProfileTab> createState() => _CompanyProfileTabState();
+}
+
+class _CompanyProfileTabState extends State<_CompanyProfileTab> {
+  final _db = DatabaseService();
+  late final _companyNameCtl = TextEditingController(
+    text: (widget.account['company_name'] as String?) ?? '',
+  );
+  late final _emailCtl = TextEditingController(
+    text: (widget.account['email'] as String?) ?? '',
+  );
+  late final _phoneCtl = TextEditingController(
+    text: (widget.account['phone'] as String?) ?? '',
+  );
+  late final _addressCtl = TextEditingController(
+    text: (widget.account['address'] as String?) ?? '',
+  );
+  late final _prefixCtl = TextEditingController(
+    text: (widget.account['tracking_prefix'] as String?) ?? '',
+  );
+  late final _domainCtl = TextEditingController(
+    text: (widget.account['domain'] as String?) ?? '',
+  );
+  late String _domainStatus =
+      (widget.account['domain_status'] as String?) ?? 'unset';
+  bool _saving = false;
+  bool _provisioning = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _companyNameCtl.dispose();
+    _emailCtl.dispose();
+    _phoneCtl.dispose();
+    _addressCtl.dispose();
+    _prefixCtl.dispose();
+    _domainCtl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await _db.updatePartnerAccount(widget.account['id'] as String, {
+        'company_name': _companyNameCtl.text.trim(),
+        'email': _emailCtl.text.trim(),
+        'phone': _phoneCtl.text.trim(),
+        'address': _addressCtl.text.trim(),
+        'tracking_prefix': _prefixCtl.text.trim(),
+      });
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Settings saved')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = 'Could not save changes: $e';
+      });
+    }
+  }
+
+  Future<void> _provisionDomain() async {
+    final domain = _domainCtl.text.trim();
+    if (domain.isEmpty) {
+      setState(() => _error = 'Enter a domain first.');
+      return;
+    }
+    setState(() {
+      _provisioning = true;
+      _error = null;
+    });
+    try {
+      final result = await _db.provisionPartnerDomain(
+        domain: domain,
+        partnerAccountId: widget.account['id'] as String,
+      );
+      if (!mounted) return;
+      setState(() {
+        _provisioning = false;
+        _domainStatus = (result['status'] as String?) ?? 'pending_dns';
+      });
+      await showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Add this DNS record'),
+          content: Text(
+            (result['instructions'] as String?) ??
+                'Point $domain to us via CNAME to finish setup.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Got it'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _provisioning = false;
+        _error = 'Domain provisioning failed: $e';
+      });
+    }
+  }
+
+  Widget _domainStatusBadge() {
+    final (label, color) = switch (_domainStatus) {
+      'verified' => ('Verified', AppTheme.success),
+      'pending_dns' => ('Waiting on DNS', AppTheme.warning),
+      _ => ('Not connected', _muted),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -4139,9 +4289,9 @@ class _CompanyProfileTab extends StatelessWidget {
                       radius: 32,
                       backgroundColor: AppTheme.primary,
                       child: Text(
-                        ((account['business_name'] as String?) ?? 'P')
-                            .substring(0, 1)
-                            .toUpperCase(),
+                        _companyNameCtl.text.isNotEmpty
+                            ? _companyNameCtl.text.substring(0, 1).toUpperCase()
+                            : 'P',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 24,
@@ -4181,9 +4331,30 @@ class _CompanyProfileTab extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 24),
+                if (_error != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.danger.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppTheme.danger.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Text(
+                      _error!,
+                      style: const TextStyle(
+                        color: AppTheme.danger,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 _SettingsField(
                   label: 'Business Name',
-                  initial: (account['business_name'] as String?) ?? '',
+                  controller: _companyNameCtl,
                   icon: Icons.business,
                 ),
                 const SizedBox(height: 16),
@@ -4192,7 +4363,7 @@ class _CompanyProfileTab extends StatelessWidget {
                     Expanded(
                       child: _SettingsField(
                         label: 'Contact Email',
-                        initial: (account['email'] as String?) ?? '',
+                        controller: _emailCtl,
                         icon: Icons.email,
                       ),
                     ),
@@ -4200,7 +4371,7 @@ class _CompanyProfileTab extends StatelessWidget {
                     Expanded(
                       child: _SettingsField(
                         label: 'Contact Phone',
-                        initial: (account['phone'] as String?) ?? '',
+                        controller: _phoneCtl,
                         icon: Icons.phone,
                       ),
                     ),
@@ -4209,35 +4380,94 @@ class _CompanyProfileTab extends StatelessWidget {
                 const SizedBox(height: 16),
                 _SettingsField(
                   label: 'Business Address',
-                  initial: (account['address'] as String?) ?? '',
+                  controller: _addressCtl,
                   icon: Icons.location_on,
                   maxLines: 2,
                 ),
                 const SizedBox(height: 16),
+                _SettingsField(
+                  label: 'Tracking Prefix',
+                  controller: _prefixCtl,
+                  icon: Icons.qr_code,
+                ),
+                const SizedBox(height: 20),
                 Row(
                   children: [
-                    Expanded(
-                      child: _SettingsField(
-                        label: 'Tracking Prefix',
-                        initial: (account['tracking_prefix'] as String?) ?? '',
-                        icon: Icons.qr_code,
+                    const Text(
+                      'Custom Domain',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _textSoft,
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
+                    _domainStatusBadge(),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Expanded(
-                      child: _SettingsField(
-                        label: 'Operating Hours',
-                        initial: 'Mon–Fri 8:00 AM – 5:00 PM',
-                        icon: Icons.schedule,
+                      child: TextFormField(
+                        controller: _domainCtl,
+                        style: const TextStyle(fontSize: 13),
+                        decoration: InputDecoration(
+                          hintText: 'track.yourcompany.com',
+                          hintStyle: TextStyle(color: _muted, fontSize: 13),
+                          prefixIcon: const Icon(Icons.language, size: 18),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: _border),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: _border),
+                          ),
+                        ),
                       ),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: _provisioning ? null : _provisionDomain,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                      ),
+                      child: _provisioning
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Connect'),
                     ),
                   ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Add a CNAME record for this domain pointing to '
+                  'cname.vercel-dns.com at your DNS provider.',
+                  style: TextStyle(fontSize: 11, color: _muted),
                 ),
               ],
             ),
           ),
         ),
-        const _SettingsSaveBar(),
+        _SettingsSaveBar(onSave: _save, saving: _saving),
       ],
     );
   }

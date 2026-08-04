@@ -28,8 +28,53 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
   bool _obscure = true;
   bool _loading = false;
   bool _isSignUp = false;
+  bool _argsApplied = false;
+  String _selectedPlan = 'courier';
   String? _error;
   String? _success;
+
+  static const _plans = [
+    (
+      'courier',
+      'Courier Platform',
+      'Manage all your customers and packages in one place',
+      [
+        'Customer Portal',
+        'iOS & Android Apps',
+        'Advanced Package Tracking',
+        'Backoffice Portal',
+        'Pre-Alert System',
+        'Invoice Management',
+        'Unlimited Staff Users',
+        'Multiple Branch Locations',
+        'Point of Sale',
+        'Label Generation',
+        'Manifest Generation',
+        'Advanced Reporting',
+        'No Setup Fee',
+        'Partner Branding',
+      ],
+    ),
+    (
+      'warehouse',
+      'Warehouse Platform',
+      'End-to-end warehouse management for large operations',
+      [
+        'Courier Portal',
+        'Advanced Package Tracking',
+        'Invoice Management',
+        'Shipment Management',
+        'API for 3rd-Party Vendors',
+        'Manifest Generation',
+        'Label Generation',
+        'Cloud Printing',
+        'Advanced Reporting',
+        'No Setup Fee',
+        'Staff Mobile Access',
+        'White Label',
+      ],
+    ),
+  ];
 
   static const _logoUrl =
       'https://s3.wasabisys.com/sethwan-logistics/public/d34a8505-1dd5-4eb1-8ea3-977bd875f4d8/logo/1000037101-37w2O21Tzolm1KUonlS5qshBChZ.png';
@@ -38,6 +83,19 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
   void initState() {
     super.initState();
     _checkSession();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_argsApplied) {
+      _argsApplied = true;
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map) {
+        if (args['signup'] == true) _isSignUp = true;
+        if (args['plan'] is String) _selectedPlan = args['plan'] as String;
+      }
+    }
   }
 
   Future<void> _checkSession() async {
@@ -177,6 +235,8 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
       if (!mounted) return;
       if (response.user != null) {
         final apiKey = _generatePartnerApiKey();
+        // create_partner_account also creates the linked shipping_partners
+        // row and auto-approves the account server-side.
         final account = await _db.insertPartnerAccount(
           authUserId: response.user!.id,
           companyName: companyName,
@@ -185,35 +245,64 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
           phone: phone.isNotEmpty ? phone : null,
           trackingPrefix: '$prefix-',
           domain: _domainController.text.trim(),
+          plan: _selectedPlan,
         );
         try {
           await _db.setPartnerApiKey(account['id'] as String, apiKey);
         } catch (_) {}
-        final code = prefix.length > 3 ? prefix.substring(0, 3) : prefix;
-        try {
-          await _db.insertShippingPartner(
-            code: code,
-            name: companyName,
-            region: '',
-            trackingPrefix: '$prefix-',
-            contactEmail: email,
-            isActive: false,
-          );
-        } catch (_) {}
-        await _db.signOut();
-        setState(() {
-          _loading = false;
-          _isSignUp = false;
-          _success =
-              'Account created! Your application is pending approval. You will be able to log in once approved.';
-          _companyNameController.clear();
-          _contactNameController.clear();
-          _phoneController.clear();
-          _prefixController.clear();
-          _domainController.clear();
-          _passwordController.clear();
-          _confirmPasswordController.clear();
-        });
+
+        String? domainInstructions;
+        final domain = _domainController.text.trim();
+        if (domain.isNotEmpty && response.session != null) {
+          try {
+            final result = await _db.provisionPartnerDomain(
+              domain: domain,
+              partnerAccountId: account['id'] as String,
+            );
+            domainInstructions = result['instructions'] as String?;
+          } catch (e) {
+            domainInstructions =
+                'We could not register $domain automatically ($e). '
+                'You can retry this from Settings in your dashboard.';
+          }
+        }
+
+        if (!mounted) return;
+        if (response.session != null) {
+          if (domainInstructions != null) {
+            await showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Almost there — one more step'),
+                content: Text(domainInstructions!),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Got it'),
+                  ),
+                ],
+              ),
+            );
+          }
+          if (!mounted) return;
+          setState(() => _loading = false);
+          Navigator.of(context).pushReplacementNamed('/partner-home');
+        } else {
+          await _db.signOut();
+          setState(() {
+            _loading = false;
+            _isSignUp = false;
+            _success =
+                'Account created! Check your email to confirm your address, then sign in.';
+            _companyNameController.clear();
+            _contactNameController.clear();
+            _phoneController.clear();
+            _prefixController.clear();
+            _domainController.clear();
+            _passwordController.clear();
+            _confirmPasswordController.clear();
+          });
+        }
       } else {
         setState(() {
           _loading = false;
@@ -263,7 +352,19 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
                 child: _isSignUp ? _buildSignUpForm() : _buildLoginForm(),
               ),
               const SizedBox(height: 24),
-              const _WhatsIncludedCard(),
+              Builder(
+                builder: (context) {
+                  final plan = _plans.firstWhere(
+                    (p) => p.$1 == _selectedPlan,
+                    orElse: () => _plans.first,
+                  );
+                  return _WhatsIncludedCard(
+                    planTitle: plan.$2,
+                    planSubtitle: plan.$3,
+                    features: plan.$4,
+                  );
+                },
+              ),
               const SizedBox(height: 24),
               Text(
                 'Copyright ${DateTime.now().year} Applizone Central Jamaica. All rights reserved.',
@@ -417,7 +518,11 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
           'Register your shipping company to connect with our warehouse',
           style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 24),
+        _label('Choose a plan *'),
+        const SizedBox(height: 8),
+        ..._plans.map((p) => _planCard(p.$1, p.$2, p.$3)),
+        const SizedBox(height: 20),
         _label('Company Name *'),
         const SizedBox(height: 6),
         _field(
@@ -539,6 +644,59 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
     );
   }
 
+  Widget _planCard(String id, String title, String subtitle) {
+    final selected = _selectedPlan == id;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedPlan = id),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppTheme.primary.withValues(alpha: 0.06)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? AppTheme.primary : const Color(0xFFD1D5DB),
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              size: 20,
+              color: selected ? AppTheme.primary : const Color(0xFF9CA3AF),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _label(String t) => Text(
     t,
     style: const TextStyle(
@@ -654,23 +812,14 @@ class _AzLogo extends StatelessWidget {
 }
 
 class _WhatsIncludedCard extends StatelessWidget {
-  const _WhatsIncludedCard();
-
-  static const _features = <String>[
-    'Courier Portal',
-    'Advanced Package Tracking',
-    'Invoice Management',
-    'Online Payment via Stripe',
-    'API for 3rd Party Vendors',
-    'Shipment Management',
-    'Asycuda Manifest Generation',
-    'Label Generation',
-    'Cloud Printing',
-    'Advanced Reporting',
-    'No Setup Fee',
-    'Staff Mobile App',
-    'White Label',
-  ];
+  final String planTitle;
+  final String planSubtitle;
+  final List<String> features;
+  const _WhatsIncludedCard({
+    required this.planTitle,
+    required this.planSubtitle,
+    required this.features,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -692,21 +841,21 @@ class _WhatsIncludedCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            "What's included",
-            style: TextStyle(
+          Text(
+            "What's included — $planTitle",
+            style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Every partner account includes the full platform — no tiers, no hidden fees.',
-            style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+          Text(
+            planSubtitle,
+            style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
           ),
           const SizedBox(height: 18),
-          ..._features.map(
+          ...features.map(
             (f) => Padding(
               padding: const EdgeInsets.symmetric(vertical: 5),
               child: Row(

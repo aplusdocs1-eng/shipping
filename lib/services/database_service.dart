@@ -166,6 +166,30 @@ class DatabaseService {
     return Map<String, dynamic>.from(data);
   }
 
+  /// Self-serve customer sign-up, scoped to the partner whose domain the
+  /// customer registered on. Goes through a SECURITY DEFINER RPC because
+  /// a brand-new customer has no row yet to satisfy the RLS insert check.
+  Future<Map<String, dynamic>> insertCustomerAccount({
+    required String authUserId,
+    required String partnerId,
+    required String name,
+    required String email,
+    String? phone,
+  }) async {
+    final data = await _db.rpc(
+      'create_customer_account',
+      params: {
+        'p_auth_user_id': authUserId,
+        'p_partner_id': partnerId,
+        'p_name': name,
+        'p_email': email,
+        'p_phone': phone,
+      },
+    );
+    final list = List<Map<String, dynamic>>.from(data as List);
+    return list.first;
+  }
+
   // ─── Invoices ────────────────────────────────────────────────────────
 
   /// Admin view: invoices where admin bills a partner account.
@@ -449,6 +473,7 @@ class DatabaseService {
     String? phone,
     required String trackingPrefix,
     String? domain,
+    String? plan,
   }) async {
     final data = await _db.rpc(
       'create_partner_account',
@@ -460,10 +485,29 @@ class DatabaseService {
         'p_phone': phone ?? '',
         'p_tracking_prefix': trackingPrefix,
         'p_domain': domain ?? '',
+        'p_plan': plan,
       },
     );
     final list = List<Map<String, dynamic>>.from(data as List);
     return list.first;
+  }
+
+  /// Registers the partner's domain with Vercel via the
+  /// provision-partner-domain Edge Function. Returns the DNS
+  /// instructions to show the partner.
+  Future<Map<String, dynamic>> provisionPartnerDomain({
+    required String domain,
+    required String partnerAccountId,
+  }) async {
+    final res = await _db.functions.invoke(
+      'provision-partner-domain',
+      body: {'domain': domain, 'partnerAccountId': partnerAccountId},
+    );
+    if (res.status != 200) {
+      final err = res.data is Map ? res.data['error'] : null;
+      throw err?.toString() ?? 'Domain provisioning failed (${res.status}).';
+    }
+    return Map<String, dynamic>.from(res.data as Map);
   }
 
   Future<void> updatePartnerAccount(

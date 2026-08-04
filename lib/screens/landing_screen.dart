@@ -1424,7 +1424,7 @@ class _Pricing extends StatelessWidget {
                 callout: 'iOS & Android apps included at no extra cost',
                 buttonFilled: true,
                 features: _courierFeatures,
-                onGetStarted: onGetStarted,
+                planId: 'courier',
               );
               final warehouse = _PricingCard(
                 badge: null,
@@ -1435,7 +1435,7 @@ class _Pricing extends StatelessWidget {
                 callout: null,
                 buttonFilled: false,
                 features: _warehouseFeatures,
-                onGetStarted: onGetStarted,
+                planId: 'warehouse',
               );
               if (!wide) {
                 return Column(children: [courier, const SizedBox(height: 20), warehouse]);
@@ -1467,7 +1467,7 @@ class _PricingCard extends StatelessWidget {
   final String? callout;
   final bool buttonFilled;
   final List<String> features;
-  final VoidCallback onGetStarted;
+  final String planId;
 
   const _PricingCard({
     required this.badge,
@@ -1478,8 +1478,14 @@ class _PricingCard extends StatelessWidget {
     required this.callout,
     required this.buttonFilled,
     required this.features,
-    required this.onGetStarted,
+    required this.planId,
   });
+
+  void _goToSignUp(BuildContext context) {
+    Navigator.of(
+      context,
+    ).pushNamed('/partner-login', arguments: {'signup': true, 'plan': planId});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1530,7 +1536,7 @@ class _PricingCard extends StatelessWidget {
             width: double.infinity,
             child: buttonFilled
                 ? ElevatedButton(
-                    onPressed: onGetStarted,
+                    onPressed: () => _goToSignUp(context),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: LandingScreen.teal,
                       foregroundColor: Colors.black,
@@ -1541,7 +1547,7 @@ class _PricingCard extends StatelessWidget {
                     child: const Text('Get Started'),
                   )
                 : OutlinedButton(
-                    onPressed: onGetStarted,
+                    onPressed: () => _goToSignUp(context),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: LandingScreen.textPrimary,
                       side: const BorderSide(color: LandingScreen.border),
