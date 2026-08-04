@@ -24,8 +24,21 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
   bool _loading = false;
   bool _showPw = false;
   bool _isSignUp = false;
+  bool _argsApplied = false;
   String? _error;
   String? _success;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_argsApplied) {
+      _argsApplied = true;
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map && args['signup'] == true) {
+        _isSignUp = true;
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -143,7 +156,7 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final canSignUp = TenantService().partner != null;
+    final canSignUp = TenantService().partnerId != null;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),

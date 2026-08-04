@@ -1347,6 +1347,15 @@ class _Pricing extends StatelessWidget {
   final VoidCallback onGetStarted;
   const _Pricing({super.key, required this.onGetStarted});
 
+  static const _customerFeatures = [
+    'Free forever',
+    'Real-time package tracking',
+    'Submit pre-alerts',
+    'View & pay invoices online',
+    'Personal shipping address',
+    'Refer & earn rewards',
+  ];
+
   static const _courierFeatures = [
     'Customer Portal',
     'iOS & Android Apps',
@@ -1414,8 +1423,19 @@ class _Pricing extends StatelessWidget {
           const SizedBox(height: 40),
           LayoutBuilder(
             builder: (context, c) {
-              final wide = c.maxWidth > 820;
-              final courier = _PricingCard(
+              final wide = c.maxWidth > 980;
+              final customer = const _PricingCard(
+                badge: null,
+                title: 'Customer',
+                subtitle: 'Track and manage your own packages',
+                price: 'Free',
+                perPackage: null,
+                callout: null,
+                buttonFilled: false,
+                features: _customerFeatures,
+                planId: 'customer',
+              );
+              final courier = const _PricingCard(
                 badge: 'MOST POPULAR',
                 title: 'Courier Platform',
                 subtitle: 'Manage all your customers and packages in one place',
@@ -1426,7 +1446,7 @@ class _Pricing extends StatelessWidget {
                 features: _courierFeatures,
                 planId: 'courier',
               );
-              final warehouse = _PricingCard(
+              final warehouse = const _PricingCard(
                 badge: null,
                 title: 'Warehouse Platform',
                 subtitle: 'End-to-end warehouse management for large operations',
@@ -1438,12 +1458,14 @@ class _Pricing extends StatelessWidget {
                 planId: 'warehouse',
               );
               if (!wide) {
-                return Column(children: [courier, const SizedBox(height: 20), warehouse]);
+                return Column(children: [customer, const SizedBox(height: 20), courier, const SizedBox(height: 20), warehouse]);
               }
               return IntrinsicHeight(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Expanded(child: customer),
+                    const SizedBox(width: 20),
                     Expanded(child: courier),
                     const SizedBox(width: 20),
                     Expanded(child: warehouse),
@@ -1463,7 +1485,7 @@ class _PricingCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final String price;
-  final String perPackage;
+  final String? perPackage;
   final String? callout;
   final bool buttonFilled;
   final List<String> features;
@@ -1481,7 +1503,13 @@ class _PricingCard extends StatelessWidget {
     required this.planId,
   });
 
+  bool get _isCustomerPlan => planId == 'customer';
+
   void _goToSignUp(BuildContext context) {
+    if (_isCustomerPlan) {
+      Navigator.of(context).pushNamed('/customer-login', arguments: {'signup': true});
+      return;
+    }
     Navigator.of(
       context,
     ).pushNamed('/partner-login', arguments: {'signup': true, 'plan': planId});
@@ -1515,13 +1543,17 @@ class _PricingCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(price, style: const TextStyle(color: LandingScreen.textPrimary, fontSize: 34, fontWeight: FontWeight.w800)),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 6, left: 4),
-                child: Text('/mo', style: TextStyle(color: LandingScreen.textSecondary, fontSize: 13)),
-              ),
+              if (perPackage != null)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 6, left: 4),
+                  child: Text('/mo', style: TextStyle(color: LandingScreen.textSecondary, fontSize: 13)),
+                ),
             ],
           ),
-          Text(perPackage, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 11)),
+          if (perPackage != null)
+            Text(perPackage!, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 11))
+          else
+            const Text('No credit card required', style: TextStyle(color: LandingScreen.textSecondary, fontSize: 11)),
           if (callout != null) ...[
             const SizedBox(height: 12),
             Container(
@@ -1544,7 +1576,7 @@ class _PricingCard extends StatelessWidget {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                     ),
-                    child: const Text('Get Started'),
+                    child: Text(_isCustomerPlan ? 'Sign Up Free' : 'Get Started'),
                   )
                 : OutlinedButton(
                     onPressed: () => _goToSignUp(context),
@@ -1555,7 +1587,7 @@ class _PricingCard extends StatelessWidget {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                     ),
-                    child: const Text('Get Started'),
+                    child: Text(_isCustomerPlan ? 'Sign Up Free' : 'Get Started'),
                   ),
           ),
           const SizedBox(height: 20),

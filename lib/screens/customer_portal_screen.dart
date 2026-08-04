@@ -359,10 +359,10 @@ class _Sidebar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Applizone Shipping',
-                    style: TextStyle(
+                    TenantService().companyName ?? 'Applizone Shipping',
+                    style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF111827),
@@ -372,11 +372,11 @@ class _Sidebar extends StatelessWidget {
               ],
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 4, 16, 6),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
             child: Text(
-              'APPLIZONE SHIPPING',
-              style: TextStyle(
+              (TenantService().companyName ?? 'Applizone Shipping').toUpperCase(),
+              style: const TextStyle(
                 fontSize: 10,
                 color: Color(0xFF9CA3AF),
                 letterSpacing: 0.8,

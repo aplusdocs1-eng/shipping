@@ -44,9 +44,21 @@ class TenantService {
   /// the hostname does not match any approved partner.
   Map<String, dynamic>? get partner => _partner;
 
-  String? get partnerId => _partner?['id'] as String?;
-  String? get companyName => _partner?['company_name'] as String?;
-  String? get trackingPrefix => _partner?['tracking_prefix'] as String?;
+  /// Applizone's own direct-tenant partner_accounts row — the fallback
+  /// tenant for customers who sign up from the main site instead of a
+  /// partner's own domain. See migration 20260805010000_direct_tenant.sql.
+  static const directPartnerId = '00000000-0000-0000-0000-000000000001';
+  static const _directCompanyName = 'Applizone Central Jamaica';
+  static const _directTrackingPrefix = 'ACJ-';
+
+  String? get partnerId =>
+      _partner?['id'] as String? ?? (isAdminHost ? directPartnerId : null);
+  String? get companyName =>
+      _partner?['company_name'] as String? ??
+      (isAdminHost ? _directCompanyName : null);
+  String? get trackingPrefix =>
+      _partner?['tracking_prefix'] as String? ??
+      (isAdminHost ? _directTrackingPrefix : null);
 
   /// Reads `Uri.base.host` (on web this is `window.location.hostname`) and
   /// queries Supabase for a matching partner. Silently falls back to admin
