@@ -4,6 +4,7 @@ import 'services/live_data_service.dart';
 import 'services/tenant_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/sidebar.dart';
+import 'screens/landing_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/packages_screen.dart';
@@ -64,6 +65,7 @@ class _AppRoot extends StatefulWidget {
 class _AppRootState extends State<_AppRoot> {
   bool _loggedIn = false;
   bool _loadingData = false;
+  bool _showLogin = false;
 
   Future<void> _handleLogin() async {
     setState(() => _loadingData = true);
@@ -86,6 +88,9 @@ class _AppRootState extends State<_AppRoot> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (!_loggedIn) {
+      if (!_showLogin) {
+        return LandingScreen(onGetStarted: () => setState(() => _showLogin = true));
+      }
       return LoginScreen(onLogin: _handleLogin);
     }
     return MainShell(onLogout: () => setState(() => _loggedIn = false));
