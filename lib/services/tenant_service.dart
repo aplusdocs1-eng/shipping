@@ -24,6 +24,9 @@ class TenantService {
     'www.onevillageshipping.com',
     'studio-4294142763-3c3c9.web.app',
     'studio-4294142763-3c3c9.firebaseapp.com',
+    'web-six-lyart-elpksgcatu.vercel.app',
+    'web-shipping-90d17e8c.vercel.app',
+    'web-aplusdocs1-6235-shipping-90d17e8c.vercel.app',
   };
 
   String _host = '';
