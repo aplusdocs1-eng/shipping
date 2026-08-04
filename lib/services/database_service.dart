@@ -499,15 +499,17 @@ class DatabaseService {
     required String domain,
     required String partnerAccountId,
   }) async {
-    final res = await _db.functions.invoke(
-      'provision-partner-domain',
-      body: {'domain': domain, 'partnerAccountId': partnerAccountId},
-    );
-    if (res.status != 200) {
-      final err = res.data is Map ? res.data['error'] : null;
-      throw err?.toString() ?? 'Domain provisioning failed (${res.status}).';
+    try {
+      final res = await _db.functions.invoke(
+        'provision-partner-domain',
+        body: {'domain': domain, 'partnerAccountId': partnerAccountId},
+      );
+      return Map<String, dynamic>.from(res.data as Map);
+    } on FunctionException catch (e) {
+      final details = e.details;
+      final msg = details is Map ? details['error']?.toString() : null;
+      throw msg ?? 'Domain provisioning failed (${e.status}).';
     }
-    return Map<String, dynamic>.from(res.data as Map);
   }
 
   Future<void> updatePartnerAccount(
