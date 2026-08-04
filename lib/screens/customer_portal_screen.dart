@@ -1,0 +1,2050 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/database_service.dart';
+import '../services/tenant_service.dart';
+import '../theme/app_theme.dart';
+
+/// Customer Portal — mirrors applizonecentralja.com/customer
+///
+/// Sections: Overview, Shipping Addresses, Pre-Alerts, Refer & Earn,
+/// Rate Calculator, Mobile App, Settings.
+class CustomerPortalScreen extends StatefulWidget {
+  const CustomerPortalScreen({super.key});
+
+  @override
+  State<CustomerPortalScreen> createState() => _CustomerPortalScreenState();
+}
+
+class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
+  final _db = DatabaseService();
+  int _current = 0;
+  bool _loading = true;
+  bool _silentRefresh = false;
+  Map<String, dynamic>? _customer;
+  List<Map<String, dynamic>> _packages = const [];
+  List<Map<String, dynamic>> _invoices = const [];
+  List<Map<String, dynamic>> _preAlerts = const [];
+  String? _loadError;
+  RealtimeChannel? _channel;
+
+  static const List<_NavItem> _nav = [
+    _NavItem('Overview', Icons.dashboard_outlined, '/customer'),
+    _NavItem(
+      'Shipping Addresses',
+      Icons.location_on_outlined,
+      '/customer/shipping-addresses',
+    ),
+    _NavItem('Pre-Alerts', Icons.notifications_outlined, '/customer/prealerts'),
+    _NavItem('Refer & Earn', Icons.card_giftcard, '/customer/referrals'),
+    _NavItem(
+      'Rate Calculator',
+      Icons.calculate_outlined,
+      '/customer/rate-calculator',
+    ),
+    _NavItem('Mobile App', Icons.phone_iphone, '/customer/mobile-app'),
+    _NavItem('Settings', Icons.settings_outlined, '/customer/settings'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _load().then((_) => _subscribe());
+  }
+
+  @override
+  void dispose() {
+    if (_channel != null) {
+      Supabase.instance.client.removeChannel(_channel!);
+    }
+    super.dispose();
+  }
+
+  void _subscribe() {
+    final custId = _customer?['id']?.toString();
+    if (custId == null) return;
+    final client = Supabase.instance.client;
+    _channel = client
+        .channel('customer-portal-$custId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'packages',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'customer_id',
+            value: custId,
+          ),
+          callback: (_) {
+            if (mounted) _silentLoad();
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'invoices',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'customer_id',
+            value: custId,
+          ),
+          callback: (_) {
+            if (mounted) _silentLoad();
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'pre_alerts',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'customer_id',
+            value: custId,
+          ),
+          callback: (_) {
+            if (mounted) _silentLoad();
+          },
+        )
+        .subscribe();
+  }
+
+  /// Refresh data without showing full-screen spinner.
+  Future<void> _silentLoad() async {
+    if (_customer == null) return;
+    setState(() => _silentRefresh = true);
+    final custId = _customer!['id'].toString();
+    try {
+      final results = await Future.wait([
+        _db.getPackagesByCustomer(custId),
+        _db.getInvoicesForCustomer(custId),
+        _db.getPreAlertsByCustomer(custId),
+      ]);
+      if (mounted) {
+        setState(() {
+          _packages = results[0];
+          _invoices = results[1];
+          _preAlerts = results[2];
+          _silentRefresh = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _silentRefresh = false);
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
+    try {
+      final email = _db.currentUser?.email;
+      debugPrint(
+        '[CustomerPortal] _load: email=$email partnerId=${TenantService().partnerId}',
+      );
+      if (email == null) {
+        throw 'Not signed in.';
+      }
+      final partnerId = TenantService().partnerId;
+      final cust = await _db.getCustomerByEmail(email, partnerId: partnerId);
+      debugPrint('[CustomerPortal] cust=${cust?['id']} / ${cust?['name']}');
+      if (cust == null) {
+        _customer = {
+          'name': email.split('@').first,
+          'email': email,
+          'mailbox_number': '—',
+        };
+        _packages = const [];
+        _invoices = const [];
+        _preAlerts = const [];
+      } else {
+        _customer = cust;
+        final custId = cust['id'].toString();
+        final results = await Future.wait([
+          _db.getPackagesByCustomer(custId),
+          _db.getInvoicesForCustomer(custId),
+          _db.getPreAlertsByCustomer(custId),
+        ]);
+        _packages = results[0];
+        _invoices = results[1];
+        _preAlerts = results[2];
+      }
+    } catch (e) {
+      _loadError = e.toString();
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _logout() async {
+    await _db.signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacementNamed('/customer-login');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F7),
+      body: SafeArea(
+        child: Row(
+          children: [
+            _Sidebar(
+              current: _current,
+              nav: _nav,
+              customer: _customer,
+              onSelect: (i) => setState(() => _current = i),
+              onLogout: _logout,
+            ),
+            Expanded(
+              child: Column(
+                children: [
+                  _TopBar(label: _nav[_current].label),
+                  Expanded(
+                    child: _loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _loadError != null
+                        ? _ErrorView(error: _loadError!, onRetry: _load)
+                        : _buildBody(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    switch (_nav[_current].label) {
+      case 'Overview':
+        return _OverviewPage(
+          customer: _customer!,
+          packages: _packages,
+          invoices: _invoices,
+          onNavigate: (label) {
+            final i = _nav.indexWhere((n) => n.label == label);
+            if (i >= 0) setState(() => _current = i);
+          },
+        );
+      case 'Shipping Addresses':
+        return _ShippingAddressesPage(customer: _customer!);
+      case 'Pre-Alerts':
+        return _PreAlertsPage(preAlerts: _preAlerts);
+      case 'Refer & Earn':
+        return _ReferEarnPage(customer: _customer!);
+      case 'Rate Calculator':
+        return const _RateCalculatorPage();
+      case 'Mobile App':
+        return const _MobileAppPage();
+      case 'Settings':
+        return _SettingsPage(customer: _customer!, onLogout: _logout);
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+}
+
+// ═════ Sidebar ══════════════════════════════════════════════════════════
+
+class _ErrorView extends StatelessWidget {
+  final String error;
+  final VoidCallback onRetry;
+  const _ErrorView({required this.error, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: AppTheme.danger, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              error,
+              style: const TextStyle(color: AppTheme.danger),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem {
+  final String label;
+  final IconData icon;
+  final String path;
+  const _NavItem(this.label, this.icon, this.path);
+}
+
+class _Sidebar extends StatelessWidget {
+  final int current;
+  final List<_NavItem> nav;
+  final Map<String, dynamic>? customer;
+  final ValueChanged<int> onSelect;
+  final VoidCallback onLogout;
+
+  const _Sidebar({
+    required this.current,
+    required this.nav,
+    required this.customer,
+    required this.onSelect,
+    required this.onLogout,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 248,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(right: BorderSide(color: Color(0xFFE5E7EB))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.local_shipping_outlined,
+                    color: AppTheme.primary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Applizone Shipping',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 6),
+            child: Text(
+              'APPLIZONE SHIPPING',
+              style: TextStyle(
+                fontSize: 10,
+                color: Color(0xFF9CA3AF),
+                letterSpacing: 0.8,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              itemCount: nav.length,
+              itemBuilder: (_, i) {
+                final item = nav[i];
+                final selected = i == current;
+                return InkWell(
+                  onTap: () => onSelect(i),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? const Color(0xFFF3F4F6)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          item.icon,
+                          size: 18,
+                          color: selected
+                              ? AppTheme.primary
+                              : const Color(0xFF6B7280),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          item.label,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: selected
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: selected
+                                ? const Color(0xFF111827)
+                                : const Color(0xFF374151),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          InkWell(
+            onTap: () {},
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: const [
+                  Icon(Icons.help_outline, size: 18, color: Color(0xFF6B7280)),
+                  SizedBox(width: 10),
+                  Text(
+                    'Support',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF374151)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          InkWell(
+            onTap: onLogout,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEDE9FE),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      _initials(customer?['name'] as String? ?? '—'),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF6D28D9),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          (customer?['name'] as String?) ?? 'Customer',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          (customer?['email'] as String?) ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF6B7280),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    Icons.unfold_more,
+                    size: 16,
+                    color: Color(0xFF9CA3AF),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _initials(String n) {
+    final parts = n.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty || parts.first.isEmpty) return '?';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return (parts.first[0] + parts.last[0]).toUpperCase();
+  }
+}
+
+class _TopBar extends StatelessWidget {
+  final String label;
+  const _TopBar({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.menu, size: 18, color: Color(0xFF6B7280)),
+          const SizedBox(width: 12),
+          const Text(
+            'Customer Portal',
+            style: TextStyle(
+              fontSize: 13,
+              color: Color(0xFF6B7280),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const Text('  /  ', style: TextStyle(color: Color(0xFFD1D5DB))),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF111827),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════ Overview ═════════════════════════════════════════════════════════
+
+class _OverviewPage extends StatelessWidget {
+  final Map<String, dynamic> customer;
+  final List<Map<String, dynamic>> packages;
+  final List<Map<String, dynamic>> invoices;
+  final ValueChanged<String> onNavigate;
+
+  const _OverviewPage({
+    required this.customer,
+    required this.packages,
+    required this.invoices,
+    required this.onNavigate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final firstName = ((customer['name'] as String?) ?? 'Customer')
+        .split(' ')
+        .first;
+    final balanceDue = invoices
+        .where((i) => (i['status']?.toString() ?? '') != 'paid')
+        .fold<num>(0, (s, i) => s + ((i['total'] as num?) ?? 0));
+    final readyForPickup = packages
+        .where((p) => (p['status']?.toString() ?? '') == 'ready_for_pickup')
+        .length;
+    final mailbox = (customer['mailbox_number'] as String?) ?? '—';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Welcome back, $firstName',
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      "Here's what's happening with your packages today.",
+                      style: TextStyle(color: Color(0xFF6B7280)),
+                    ),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => onNavigate('Pre-Alerts'),
+                icon: const Icon(Icons.notifications_outlined, size: 16),
+                label: const Text('Pre-Alerts'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () => onNavigate('Shipping Addresses'),
+                icon: const Icon(Icons.location_on_outlined, size: 16),
+                label: const Text('Address'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _StatGrid(
+            tiles: [
+              _StatTileData(
+                title: 'Balance Due',
+                value: '\$${balanceDue.toStringAsFixed(2)}',
+                sub: 'JMD · All open invoices',
+                icon: Icons.receipt_long_outlined,
+                tint: const Color(0xFFFEE2E2),
+                iconColor: const Color(0xFFEF4444),
+              ),
+              _StatTileData(
+                title: 'Credit Balance',
+                value: '\$0.00',
+                sub: 'Available for future payments',
+                icon: Icons.account_balance_wallet_outlined,
+                tint: const Color(0xFFDCFCE7),
+                iconColor: const Color(0xFF16A34A),
+              ),
+              _StatTileData(
+                title: 'Account Number',
+                value: mailbox,
+                sub: 'Your unique identifier',
+                icon: Icons.badge_outlined,
+                tint: const Color(0xFFE0E7FF),
+                iconColor: const Color(0xFF6366F1),
+              ),
+              _StatTileData(
+                title: 'Ready for Pickup',
+                value: '$readyForPickup',
+                sub: 'Packages available',
+                icon: Icons.inventory_2_outlined,
+                tint: const Color(0xFFE0F2FE),
+                iconColor: const Color(0xFF0EA5E9),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Your Packages',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _PackagesTable(packages: packages),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatTileData {
+  final String title;
+  final String value;
+  final String sub;
+  final IconData icon;
+  final Color tint;
+  final Color iconColor;
+  _StatTileData({
+    required this.title,
+    required this.value,
+    required this.sub,
+    required this.icon,
+    required this.tint,
+    required this.iconColor,
+  });
+}
+
+class _StatGrid extends StatelessWidget {
+  final List<_StatTileData> tiles;
+  const _StatGrid({required this.tiles});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final w = c.maxWidth;
+        int cols = 4;
+        if (w < 1100) cols = 2;
+        if (w < 600) cols = 1;
+        final tileW = (w - (cols - 1) * 16) / cols;
+        return Wrap(
+          spacing: 16,
+          runSpacing: 16,
+          children: [
+            for (final t in tiles)
+              SizedBox(
+                width: tileW,
+                child: _StatTile(data: t),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  final _StatTileData data;
+  const _StatTile({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  data.title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: data.tint,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: Icon(data.icon, size: 18, color: data.iconColor),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            data.value,
+            style: const TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            data.sub,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PackagesTable extends StatelessWidget {
+  final List<Map<String, dynamic>> packages;
+  const _PackagesTable({required this.packages});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          headingTextStyle: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF6B7280),
+          ),
+          columns: const [
+            DataColumn(label: Text('Tracking')),
+            DataColumn(label: Text('Courier')),
+            DataColumn(label: Text('Description')),
+            DataColumn(label: Text('Weight')),
+            DataColumn(label: Text('Value')),
+            DataColumn(label: Text('Status')),
+            DataColumn(label: Text('Invoice')),
+            DataColumn(label: Text('Inv #')),
+            DataColumn(label: Text('Total')),
+            DataColumn(label: Text('Created')),
+          ],
+          rows: packages.isEmpty
+              ? [
+                  const DataRow(
+                    cells: [
+                      DataCell(Text('—')),
+                      DataCell(Text('No packages yet')),
+                      DataCell(Text('')),
+                      DataCell(Text('')),
+                      DataCell(Text('')),
+                      DataCell(Text('')),
+                      DataCell(Text('')),
+                      DataCell(Text('')),
+                      DataCell(Text('')),
+                      DataCell(Text('')),
+                    ],
+                  ),
+                ]
+              : [for (final p in packages) _buildRow(p)],
+        ),
+      ),
+    );
+  }
+
+  DataRow _buildRow(Map<String, dynamic> p) {
+    final inv = p['invoices'] as Map<String, dynamic>?;
+    final invStatus = inv?['status']?.toString() ?? '';
+    final invTotal = (inv?['total'] as num?)?.toStringAsFixed(2) ?? '—';
+    final invNumber = inv?['invoice_number']?.toString() ?? '—';
+    return DataRow(
+      cells: [
+        DataCell(
+          Text(
+            p['tracking_number']?.toString() ?? '—',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ),
+        DataCell(Text(p['service_type']?.toString() ?? '—')),
+        DataCell(Text(p['description']?.toString() ?? '')),
+        DataCell(Text(p['weight'] == null ? '—' : '${p['weight']} lb')),
+        DataCell(
+          Text(
+            '\$${(p['declared_value'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+          ),
+        ),
+        DataCell(_StatusPill(p['status']?.toString() ?? '')),
+        DataCell(
+          invStatus.isEmpty ? const Text('—') : _InvStatusBadge(invStatus),
+        ),
+        DataCell(Text(invNumber, style: const TextStyle(fontSize: 11))),
+        DataCell(Text(invTotal.isNotEmpty ? '\$$invTotal' : '—')),
+        DataCell(Text(_fmtDate(p['created_at']))),
+      ],
+    );
+  }
+}
+
+class _InvStatusBadge extends StatelessWidget {
+  final String status;
+  const _InvStatusBadge(this.status);
+
+  @override
+  Widget build(BuildContext context) {
+    final isPaid = status.toLowerCase() == 'paid';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: isPaid ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        isPaid ? 'PAID' : 'PENDING',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: isPaid ? const Color(0xFF15803D) : const Color(0xFFB45309),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  final String status;
+  const _StatusPill(this.status);
+
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg) = switch (status) {
+      'delivered' ||
+      'Delivered' => (const Color(0xFFDCFCE7), const Color(0xFF15803D)),
+      'received' => (const Color(0xFFDBEAFE), const Color(0xFF1D4ED8)),
+      'ready_for_pickup' => (const Color(0xFFFEF3C7), const Color(0xFFB45309)),
+      _ => (const Color(0xFFF3F4F6), const Color(0xFF374151)),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        status.isEmpty ? '—' : status,
+        style: TextStyle(fontSize: 11, color: fg, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
+String _fmtDate(dynamic v) {
+  if (v == null) return '—';
+  try {
+    final d = DateTime.parse(v.toString()).toLocal();
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[d.month - 1]} ${d.day}, ${d.year}';
+  } catch (_) {
+    return v.toString();
+  }
+}
+
+// ═════ Shipping Addresses ════════════════════════════════════════════════
+
+class _ShippingAddressesPage extends StatelessWidget {
+  final Map<String, dynamic> customer;
+  const _ShippingAddressesPage({required this.customer});
+
+  @override
+  Widget build(BuildContext context) {
+    final mailbox = (customer['mailbox_number'] as String?) ?? '—';
+    final name = (customer['name'] as String?) ?? 'Customer';
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0F2FE),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.location_on_outlined,
+                  color: Color(0xFF0EA5E9),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Shipping Addresses',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      'Use these addresses when shopping online',
+                      style: TextStyle(color: Color(0xFF6B7280)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFBEB),
+              border: Border.all(color: const Color(0xFFFDE68A)),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Icon(
+                  Icons.warning_amber_outlined,
+                  color: Color(0xFFD97706),
+                  size: 18,
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Important',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF92400E),
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Copy each line exactly as shown. Incorrect addresses may cause delays or lost packages.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF92400E),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, c) {
+              final wide = c.maxWidth > 800;
+              final air = _WarehouseAddressCard(
+                title: 'AIR Warehouse',
+                tint: const Color(0xFF10B981),
+                name: name,
+                addressLine1: '559 NE 42ND ST',
+                addressLine2: '${mailbox}_AIR',
+                city: 'OAKLAND PARK',
+                state: 'Florida',
+                zip: '33334',
+                country: 'United States',
+              );
+              final sea = _WarehouseAddressCard(
+                title: 'SEA Warehouse',
+                tint: const Color(0xFF3B82F6),
+                name: name,
+                addressLine1: '559 NE 42ND ST',
+                addressLine2: '$mailbox SEA',
+                city: 'OAKLAND PARK',
+                state: 'Florida',
+                zip: '33334',
+                country: 'United States',
+              );
+              if (wide) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: air),
+                    const SizedBox(width: 16),
+                    Expanded(child: sea),
+                  ],
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [air, const SizedBox(height: 16), sea],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WarehouseAddressCard extends StatelessWidget {
+  final String title;
+  final Color tint;
+  final String name;
+  final String addressLine1;
+  final String addressLine2;
+  final String city;
+  final String state;
+  final String zip;
+  final String country;
+
+  const _WarehouseAddressCard({
+    required this.title,
+    required this.tint,
+    required this.name,
+    required this.addressLine1,
+    required this.addressLine2,
+    required this.city,
+    required this.state,
+    required this.zip,
+    required this.country,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _AddressField(label: 'Name', value: name),
+          const SizedBox(height: 10),
+          _AddressField(label: 'Address Line 1', value: addressLine1),
+          const SizedBox(height: 10),
+          _AddressField(label: 'Address Line 2', value: addressLine2),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _AddressField(label: 'City', value: city),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _AddressField(label: 'State', value: state),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _AddressField(label: 'ZIP Code', value: zip),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _AddressField(label: 'Country', value: country),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddressField extends StatelessWidget {
+  final String label;
+  final String value;
+  const _AddressField({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            color: Color(0xFF6B7280),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF9FAFB),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(value, style: const TextStyle(fontSize: 13)),
+              ),
+              IconButton(
+                icon: const Icon(Icons.copy_outlined, size: 14),
+                visualDensity: VisualDensity.compact,
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: value));
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Copied: $value'),
+                      duration: const Duration(seconds: 1),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ═════ Pre-Alerts ═══════════════════════════════════════════════════════
+
+class _PreAlertsPage extends StatelessWidget {
+  final List<Map<String, dynamic>> preAlerts;
+  const _PreAlertsPage({required this.preAlerts});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Pre-Alerts',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Pre-Alerts help us accurately identify your packages, ensuring faster and smoother customs clearance.',
+                      style: TextStyle(color: Color(0xFF6B7280)),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () {},
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                ),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Create Pre-Alert'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+              ),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  headingTextStyle: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF6B7280),
+                  ),
+                  columns: const [
+                    DataColumn(label: Text('Tracking')),
+                    DataColumn(label: Text('Courier')),
+                    DataColumn(label: Text('Description')),
+                    DataColumn(label: Text('Item Value')),
+                    DataColumn(label: Text('Linked')),
+                    DataColumn(label: Text('Created at')),
+                  ],
+                  rows: preAlerts.isEmpty
+                      ? [
+                          const DataRow(
+                            cells: [
+                              DataCell(Text('—')),
+                              DataCell(Text('')),
+                              DataCell(Text('No pre-alerts yet')),
+                              DataCell(Text('')),
+                              DataCell(Text('')),
+                              DataCell(Text('')),
+                            ],
+                          ),
+                        ]
+                      : [
+                          for (final a in preAlerts)
+                            DataRow(
+                              cells: [
+                                DataCell(
+                                  Text(a['tracking_number']?.toString() ?? '—'),
+                                ),
+                                DataCell(Text(a['courier']?.toString() ?? '—')),
+                                DataCell(
+                                  Text(a['description']?.toString() ?? '—'),
+                                ),
+                                DataCell(
+                                  Text(
+                                    '\$${(a['item_value'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                                  ),
+                                ),
+                                DataCell(
+                                  Text(a['package_id'] == null ? 'No' : 'Yes'),
+                                ),
+                                DataCell(Text(_fmtDate(a['created_at']))),
+                              ],
+                            ),
+                        ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════ Refer & Earn ══════════════════════════════════════════════════════
+
+class _ReferEarnPage extends StatelessWidget {
+  final Map<String, dynamic> customer;
+  const _ReferEarnPage({required this.customer});
+
+  @override
+  Widget build(BuildContext context) {
+    final link =
+        'https://applizonecentralja.com/auth/customer/register?ref=${customer['id'] ?? 'CUSTOMER'}';
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFE4E6),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.card_giftcard,
+                  color: Color(0xFFE11D48),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Refer & Earn',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      'Share your link and earn rewards when friends sign up',
+                      style: TextStyle(color: Color(0xFF6B7280)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFFE4E6), Color(0xFFFFF1F2)],
+              ),
+              border: Border.all(color: const Color(0xFFFECACA)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.star, color: Color(0xFFE11D48)),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Your Points Balance',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF6B7280),
+                        ),
+                      ),
+                      Text(
+                        '0',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: const [
+                    Text(
+                      'Worth approximately',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                    ),
+                    Text(
+                      '\$0.00',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.qr_code, color: Color(0xFF6366F1)),
+                    SizedBox(width: 8),
+                    Text(
+                      'Your Referral Link',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Share this QR code or link with friends to earn rewards',
+                  style: TextStyle(color: Color(0xFF6B7280), fontSize: 12),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Direct Link',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9FAFB),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          link,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: link));
+                      },
+                      icon: const Icon(Icons.copy, size: 14),
+                      label: const Text('Copy Link'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _StatTile(
+                  data: _StatTileData(
+                    title: 'Friends Referred',
+                    value: '0',
+                    sub: '',
+                    icon: Icons.group_outlined,
+                    tint: const Color(0xFFDBEAFE),
+                    iconColor: const Color(0xFF1D4ED8),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _StatTile(
+                  data: _StatTileData(
+                    title: 'Conversions',
+                    value: '0',
+                    sub: '',
+                    icon: Icons.check_circle_outline,
+                    tint: const Color(0xFFDCFCE7),
+                    iconColor: const Color(0xFF16A34A),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════ Rate Calculator ═══════════════════════════════════════════════════
+
+class _RateCalculatorPage extends StatefulWidget {
+  const _RateCalculatorPage();
+
+  @override
+  State<_RateCalculatorPage> createState() => _RateCalculatorPageState();
+}
+
+class _RateCalculatorPageState extends State<_RateCalculatorPage> {
+  final _weightCtl = TextEditingController();
+  final _valueCtl = TextEditingController();
+  String _mode = 'Sea Freight';
+  String? _estimate;
+
+  void _calculate() {
+    final w = double.tryParse(_weightCtl.text) ?? 0;
+    final v = double.tryParse(_valueCtl.text) ?? 0;
+    if (w <= 0 || v <= 0) {
+      setState(() => _estimate = 'Enter valid weight and value to calculate.');
+      return;
+    }
+    // Simple demo: Air = $4.50/lb, Sea = $2.25/lb, + 20% of declared value.
+    final perLb = _mode == 'Air Freight' ? 4.5 : 2.25;
+    final shipping = w * perLb;
+    final duty = v * 0.20;
+    final total = shipping + duty;
+    setState(
+      () => _estimate =
+          'Estimated ${_mode.toLowerCase()} cost: \$${total.toStringAsFixed(2)} '
+          '(\$${shipping.toStringAsFixed(2)} shipping + \$${duty.toStringAsFixed(2)} duty)',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEDE9FE),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.calculate_outlined,
+                  color: Color(0xFF7C3AED),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Rate Calculator',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      'Get instant shipping cost estimates',
+                      style: TextStyle(color: Color(0xFF6B7280)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              border: Border.all(color: const Color(0xFFBFDBFE)),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Icon(Icons.info_outline, color: Color(0xFF2563EB), size: 18),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Instant Shipping Estimates',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1E3A8A),
+                        ),
+                      ),
+                      Text(
+                        'Enter your package details below to get an accurate cost estimate. This is for reference only - final charges may vary.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF1E3A8A),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Package Details',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _LabeledField(
+                        label: 'Package Weight (lbs) *',
+                        child: TextField(
+                          controller: _weightCtl,
+                          keyboardType: TextInputType.number,
+                          decoration: _inputDec('Enter weight'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _LabeledField(
+                        label: 'Package Value (\$) *',
+                        child: TextField(
+                          controller: _valueCtl,
+                          keyboardType: TextInputType.number,
+                          decoration: _inputDec('Enter value'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _LabeledField(
+                  label: 'Rate Calculator *',
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _mode,
+                    decoration: _inputDec('Select mode'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'Sea Freight',
+                        child: Text('Sea Freight'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Air Freight',
+                        child: Text('Air Freight'),
+                      ),
+                    ],
+                    onChanged: (v) =>
+                        setState(() => _mode = v ?? 'Sea Freight'),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 44,
+                  child: ElevatedButton.icon(
+                    onPressed: _calculate,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7C3AED),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    icon: const Icon(Icons.calculate, size: 18),
+                    label: const Text('Calculate Estimate'),
+                  ),
+                ),
+                if (_estimate != null) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F4F6),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _estimate!,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _inputDec(String hint) => InputDecoration(
+    hintText: hint,
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+  );
+}
+
+class _LabeledField extends StatelessWidget {
+  final String label;
+  final Widget child;
+  const _LabeledField({required this.label, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF374151),
+          ),
+        ),
+        const SizedBox(height: 6),
+        child,
+      ],
+    );
+  }
+}
+
+// ═════ Mobile App ════════════════════════════════════════════════════════
+
+class _MobileAppPage extends StatelessWidget {
+  const _MobileAppPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 500,
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.phone_iphone,
+                size: 40,
+                color: AppTheme.primary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Get the Wanhub Mobile App',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Track packages, pay invoices, and create pre-alerts from your phone.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFF6B7280)),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () {},
+                  icon: const Icon(Icons.apple),
+                  label: const Text('App Store'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                ElevatedButton.icon(
+                  onPressed: () {},
+                  icon: const Icon(Icons.shop),
+                  label: const Text('Google Play'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF16A34A),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═════ Settings ══════════════════════════════════════════════════════════
+
+class _SettingsPage extends StatelessWidget {
+  final Map<String, dynamic> customer;
+  final VoidCallback onLogout;
+  const _SettingsPage({required this.customer, required this.onLogout});
+
+  @override
+  Widget build(BuildContext context) {
+    final address = (customer['address'] as String?) ?? '';
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Settings',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Manage your account settings and delivery addresses',
+            style: TextStyle(color: Color(0xFF6B7280)),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            width: 520,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.location_on_outlined, size: 18),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'Delivery Addresses',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const Spacer(),
+                    ElevatedButton.icon(
+                      onPressed: () {},
+                      icon: const Icon(Icons.add, size: 14),
+                      label: const Text('Add Address'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        textStyle: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Manage your delivery addresses for package deliveries',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Address',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.edit_outlined,
+                              size: 16,
+                              color: Color(0xFF6366F1),
+                            ),
+                            onPressed: () {},
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: 16,
+                              color: Color(0xFFEF4444),
+                            ),
+                            onPressed: () {},
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        address.isEmpty
+                            ? 'No delivery address saved.'
+                            : address,
+                        style: const TextStyle(
+                          color: Color(0xFF374151),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: 520,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF1F2),
+              border: Border.all(color: const Color(0xFFFECACA)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_outlined,
+                      color: Color(0xFFEF4444),
+                      size: 18,
+                    ),
+                    SizedBox(width: 6),
+                    Text(
+                      'Request account deletion',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF991B1B),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Permanently request deletion of your account. Once submitted you will be signed out and your request will be processed according to our policy.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF7F1D1D)),
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ElevatedButton(
+                    onPressed: () {},
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFEF4444),
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Request account deletion'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: onLogout,
+              icon: const Icon(Icons.logout, size: 16),
+              label: const Text('Sign out'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

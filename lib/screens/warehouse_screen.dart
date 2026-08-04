@@ -1,0 +1,1172 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../models/models.dart';
+import '../services/applizone_api.dart';
+import '../services/database_service.dart';
+import '../theme/app_theme.dart';
+
+class WarehouseScreen extends StatefulWidget {
+  const WarehouseScreen({super.key});
+
+  @override
+  State<WarehouseScreen> createState() => _WarehouseScreenState();
+}
+
+class _WarehouseScreenState extends State<WarehouseScreen> {
+  final _db = DatabaseService();
+  final _api = ApplizoneApi();
+  late List<WarehouseEntry> _entries;
+  String _searchQuery = '';
+  WarehouseEntryStatus? _statusFilter;
+  String? _zoneFilter;
+  bool _loading = true;
+  List<Package> _allPackages = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _entries = [];
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final results = await Future.wait([
+        _db.getWarehouseEntries(),
+        _db.getPackages(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _entries = (results[0] as List)
+            .cast<Map<String, dynamic>>()
+            .map(WarehouseEntry.fromMap)
+            .toList();
+        _allPackages = (results[1] as List)
+            .cast<Map<String, dynamic>>()
+            .map(Package.fromMap)
+            .toList();
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  List<WarehouseEntry> get _filteredEntries {
+    var list = _entries;
+    if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      list = list
+          .where(
+            (e) =>
+                e.trackingNumber.toLowerCase().contains(q) ||
+                e.customerName.toLowerCase().contains(q) ||
+                e.description.toLowerCase().contains(q),
+          )
+          .toList();
+    }
+    if (_statusFilter != null) {
+      list = list.where((e) => e.status == _statusFilter).toList();
+    }
+    if (_zoneFilter != null) {
+      list = list
+          .where((e) => e.storageLocation?.zoneId == _zoneFilter)
+          .toList();
+    }
+    return list;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _filteredEntries;
+    final counts = {
+      for (var s in WarehouseEntryStatus.values)
+        s: _entries.where((e) => e.status == s).length,
+    };
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Warehouse Inventory',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.textPrimary,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Scan packages, assign storage locations, and manage pickups',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: () => _showScanInDialog(context),
+                icon: const Icon(Icons.qr_code_scanner, size: 18),
+                label: const Text('Scan In Package'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Status summary cards
+          _StatusSummaryRow(counts: counts),
+          const SizedBox(height: 20),
+
+          // Zone overview
+          if (!_loading) _ZoneOverview(zones: const []),
+          const SizedBox(height: 20),
+
+          // Filters & search
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        onChanged: (v) => setState(() => _searchQuery = v),
+                        decoration: InputDecoration(
+                          hintText:
+                              'Search by tracking #, customer, or description…',
+                          prefixIcon: const Icon(Icons.search, size: 20),
+                          filled: true,
+                          fillColor: AppTheme.surface,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: AppTheme.border),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: AppTheme.border),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 1,
+                      child: DropdownButtonFormField<WarehouseEntryStatus?>(
+                        value: _statusFilter,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: AppTheme.surface,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: AppTheme.border),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: AppTheme.border),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                        ),
+                        hint: const Text('All Statuses'),
+                        items: [
+                          const DropdownMenuItem(
+                            value: null,
+                            child: Text('All Statuses'),
+                          ),
+                          ...WarehouseEntryStatus.values.map(
+                            (s) => DropdownMenuItem(
+                              value: s,
+                              child: Text(s.label),
+                            ),
+                          ),
+                        ],
+                        onChanged: (v) => setState(() => _statusFilter = v),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 1,
+                      child: DropdownButtonFormField<String?>(
+                        value: _zoneFilter,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: AppTheme.surface,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: AppTheme.border),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: AppTheme.border),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                        ),
+                        hint: const Text('All Zones'),
+                        items: [
+                          const DropdownMenuItem(
+                            value: null,
+                            child: Text('All Zones'),
+                          ),
+                          ..._entries
+                              .map((e) => e.storageLocation?.zoneId)
+                              .whereType<String>()
+                              .toSet()
+                              .map(
+                                (z) =>
+                                    DropdownMenuItem(value: z, child: Text(z)),
+                              ),
+                        ],
+                        onChanged: (v) => setState(() => _zoneFilter = v),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Inventory table
+                _InventoryTable(
+                  entries: filtered,
+                  onAssignLocation: _assignLocation,
+                  onMarkReady: _markReadyForPickup,
+                  onMarkPickedUp: _markPickedUp,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Scan-In Dialog ──────────────────────────────────────────────────────
+
+  void _showScanInDialog(BuildContext context) {
+    final trackingController = TextEditingController();
+    StorageLocation? selectedLocation;
+    String? errorText;
+    ShippingPartner? detectedPartner;
+    bool syncing = false;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.qr_code_scanner, color: AppTheme.primary),
+                  const SizedBox(width: 8),
+                  const Text('Scan In Package'),
+                ],
+              ),
+              content: SizedBox(
+                width: 480,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Enter or scan the tracking number and select a storage location.',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: trackingController,
+                      onChanged: (v) {
+                        final partner = _matchPartnerByTracking(v.trim());
+                        setDialogState(() {
+                          detectedPartner = partner;
+                          errorText = null;
+                        });
+                      },
+                      decoration: InputDecoration(
+                        labelText: 'Tracking Number',
+                        hintText: 'e.g. APS-20260411-001',
+                        prefixIcon: const Icon(
+                          Icons.local_shipping_outlined,
+                          size: 20,
+                        ),
+                        filled: true,
+                        fillColor: AppTheme.surface,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        errorText: errorText,
+                      ),
+                    ),
+                    // Detected partner badge
+                    if (detectedPartner != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accent.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppTheme.accent.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.local_shipping,
+                              size: 18,
+                              color: AppTheme.accent,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Partner detected: ${detectedPartner!.name}',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.accent,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${detectedPartner!.region} · Code: ${detectedPartner!.code}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_api.isConnected)
+                              Icon(
+                                Icons.sync,
+                                size: 16,
+                                color: AppTheme.success,
+                              )
+                            else
+                              Tooltip(
+                                message: 'Connect Applizone to auto-sync',
+                                child: Icon(
+                                  Icons.sync_disabled,
+                                  size: 16,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<StorageLocation>(
+                      value: selectedLocation,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Storage Location',
+                        prefixIcon: const Icon(
+                          Icons.location_on_outlined,
+                          size: 20,
+                        ),
+                        filled: true,
+                        fillColor: AppTheme.surface,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      items: const [],
+                      onChanged: (v) =>
+                          setDialogState(() => selectedLocation = v),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'You can also assign a location later.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: syncing
+                      ? null
+                      : () async {
+                          final tracking = trackingController.text.trim();
+                          if (tracking.isEmpty) {
+                            setDialogState(
+                              () => errorText = 'Enter a tracking number',
+                            );
+                            return;
+                          }
+
+                          // Check if already scanned in
+                          final existing = _entries.any(
+                            (e) => e.trackingNumber == tracking,
+                          );
+                          if (existing) {
+                            setDialogState(
+                              () => errorText = 'Package already scanned in',
+                            );
+                            return;
+                          }
+
+                          // Look up the package from DB data
+                          final pkg = _allPackages.where(
+                            (p) => p.trackingNumber == tracking,
+                          );
+                          final packageMatch = pkg.isNotEmpty
+                              ? pkg.first
+                              : null;
+                          final partner = _matchPartnerByTracking(tracking);
+
+                          setDialogState(() => syncing = true);
+
+                          // Sync to Applizone if connected and partner detected
+                          bool synced = false;
+                          if (_api.isConnected && partner != null) {
+                            final result = await _api.syncPackage(
+                              trackingNumber: tracking,
+                              description:
+                                  packageMatch?.description ??
+                                  'Scanned package',
+                              weight: packageMatch?.weight ?? 0.0,
+                              customerName:
+                                  packageMatch?.customerName ??
+                                  'Unknown Customer',
+                              storageLocation: selectedLocation?.displayLabel,
+                              shippingCompanyCode: partner.code,
+                            );
+                            synced = result.success;
+                          }
+
+                          final entry = WarehouseEntry(
+                            id: 'we-${DateTime.now().millisecondsSinceEpoch}',
+                            packageId: packageMatch?.id ?? 'unknown',
+                            trackingNumber: tracking,
+                            customerName:
+                                packageMatch?.customerName ??
+                                'Unknown Customer',
+                            description:
+                                packageMatch?.description ?? 'Scanned package',
+                            weight: packageMatch?.weight ?? 0.0,
+                            storageLocation: selectedLocation,
+                            status: selectedLocation != null
+                                ? WarehouseEntryStatus.stored
+                                : WarehouseEntryStatus.scannedIn,
+                            scannedInAt: DateTime.now(),
+                            scannedInBy: 'Admin Staff',
+                            shippingPartnerCode: partner?.code,
+                            syncedToPartner: synced,
+                          );
+
+                          setState(() {
+                            _entries.add(entry);
+                          });
+                          Navigator.of(context).pop();
+
+                          final partnerMsg = partner != null
+                              ? ' · Partner: ${partner.name}'
+                              : '';
+                          final syncMsg = synced ? ' · Synced ✓' : '';
+
+                          ScaffoldMessenger.of(this.context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                selectedLocation != null
+                                    ? 'Package $tracking scanned in → ${selectedLocation!.displayLabel}$partnerMsg$syncMsg'
+                                    : 'Package $tracking scanned in$partnerMsg$syncMsg',
+                              ),
+                              backgroundColor: AppTheme.primary,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                  ),
+                  child: syncing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Scan In'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ─── Actions ─────────────────────────────────────────────────────────────
+
+  void _assignLocation(WarehouseEntry entry) {
+    StorageLocation? selectedLocation = entry.storageLocation;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Assign Storage Location'),
+              content: SizedBox(
+                width: 400,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Package: ${entry.trackingNumber}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      '${entry.description} · ${entry.weight} lbs',
+                      style: TextStyle(color: AppTheme.textSecondary),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<StorageLocation>(
+                      value: selectedLocation,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Storage Location',
+                        prefixIcon: const Icon(
+                          Icons.location_on_outlined,
+                          size: 20,
+                        ),
+                        filled: true,
+                        fillColor: AppTheme.surface,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      items: const [],
+                      onChanged: (v) =>
+                          setDialogState(() => selectedLocation = v),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    if (selectedLocation == null) return;
+                    final idx = _entries.indexOf(entry);
+                    if (idx != -1) {
+                      setState(() {
+                        _entries[idx] = entry.copyWith(
+                          storageLocation: selectedLocation,
+                          status: WarehouseEntryStatus.stored,
+                        );
+                      });
+                    }
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(this.context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Location assigned: ${selectedLocation!.displayLabel}',
+                        ),
+                        backgroundColor: AppTheme.primary,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                  ),
+                  child: const Text('Assign'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _markReadyForPickup(WarehouseEntry entry) {
+    final idx = _entries.indexOf(entry);
+    if (idx != -1) {
+      setState(() {
+        _entries[idx] = entry.copyWith(
+          status: WarehouseEntryStatus.readyForPickup,
+        );
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${entry.trackingNumber} marked ready for pickup'),
+          backgroundColor: AppTheme.primary,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  void _markPickedUp(WarehouseEntry entry) {
+    final idx = _entries.indexOf(entry);
+    if (idx != -1) {
+      setState(() {
+        _entries[idx] = entry.copyWith(
+          status: WarehouseEntryStatus.pickedUp,
+          pickedUpAt: DateTime.now(),
+          pickedUpBy: entry.customerName,
+        );
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${entry.trackingNumber} picked up'),
+          backgroundColor: AppTheme.primary,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  ShippingPartner? _matchPartnerByTracking(String tracking) => null;
+}
+
+// ─── Status Summary Row ──────────────────────────────────────────────────────
+
+class _StatusSummaryRow extends StatelessWidget {
+  final Map<WarehouseEntryStatus, int> counts;
+  const _StatusSummaryRow({required this.counts});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: WarehouseEntryStatus.values.map((status) {
+        return Expanded(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: status.color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(status.icon, color: status.color, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${counts[status] ?? 0}',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      status.label,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+// ─── Zone Overview ───────────────────────────────────────────────────────────
+
+class _ZoneOverview extends StatelessWidget {
+  final List<StorageZone> zones;
+  const _ZoneOverview({required this.zones});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Storage Zones',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: zones.map((zone) {
+              final pct = zone.usedSlots / zone.totalSlots;
+              final barColor = pct >= 0.9
+                  ? const Color(0xFFEF4444)
+                  : pct >= 0.6
+                  ? const Color(0xFFF59E0B)
+                  : const Color(0xFF10B981);
+
+              return Expanded(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            zone.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          Text(
+                            zone.branchName,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: pct,
+                          minHeight: 8,
+                          backgroundColor: AppTheme.border,
+                          valueColor: AlwaysStoppedAnimation<Color>(barColor),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${zone.usedSlots} / ${zone.totalSlots} slots used  ·  ${zone.availableSlots} available',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Inventory Table ─────────────────────────────────────────────────────────
+
+class _InventoryTable extends StatelessWidget {
+  final List<WarehouseEntry> entries;
+  final ValueChanged<WarehouseEntry> onAssignLocation;
+  final ValueChanged<WarehouseEntry> onMarkReady;
+  final ValueChanged<WarehouseEntry> onMarkPickedUp;
+
+  const _InventoryTable({
+    required this.entries,
+    required this.onAssignLocation,
+    required this.onMarkReady,
+    required this.onMarkPickedUp,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (entries.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 40),
+        child: Center(
+          child: Text(
+            'No warehouse entries found.',
+            style: TextStyle(color: AppTheme.textSecondary),
+          ),
+        ),
+      );
+    }
+
+    final dateFmt = DateFormat('MMM d, yyyy h:mm a');
+
+    return Table(
+      columnWidths: const {
+        0: FlexColumnWidth(2),
+        1: FlexColumnWidth(1.5),
+        2: FlexColumnWidth(1.5),
+        3: FlexColumnWidth(1.2),
+        4: FlexColumnWidth(1),
+        5: FlexColumnWidth(1.2),
+        6: FlexColumnWidth(1.5),
+      },
+      children: [
+        TableRow(
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: AppTheme.border, width: 1),
+            ),
+          ),
+          children: const [
+            _HeaderCell('Tracking #'),
+            _HeaderCell('Customer'),
+            _HeaderCell('Location'),
+            _HeaderCell('Partner'),
+            _HeaderCell('Scanned In'),
+            _HeaderCell('Status'),
+            _HeaderCell('Actions'),
+          ],
+        ),
+        ...entries.map((entry) {
+          return TableRow(
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: AppTheme.border, width: 0.5),
+              ),
+            ),
+            children: [
+              _BodyCell(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.trackingNumber,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      entry.description,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                    Text(
+                      '${entry.weight} lbs',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _BodyCell(
+                child: Text(
+                  entry.customerName,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+              _BodyCell(
+                child: entry.storageLocation != null
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF8B5CF6).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          entry.storageLocation!.displayLabel,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF8B5CF6),
+                          ),
+                        ),
+                      )
+                    : Text(
+                        'Not assigned',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+              ),
+              // ── Partner column ──
+              _BodyCell(
+                child: entry.shippingPartnerCode != null
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accent.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              entry.shippingPartnerCode!,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.accent,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            entry.syncedToPartner
+                                ? Icons.cloud_done
+                                : Icons.cloud_off,
+                            size: 14,
+                            color: entry.syncedToPartner
+                                ? AppTheme.success
+                                : AppTheme.textSecondary,
+                          ),
+                        ],
+                      )
+                    : Text(
+                        '—',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+              ),
+              _BodyCell(
+                child: Text(
+                  dateFmt.format(entry.scannedInAt),
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+              _BodyCell(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: entry.status.color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    entry.status.label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: entry.status.color,
+                    ),
+                  ),
+                ),
+              ),
+              _BodyCell(
+                child: _ActionsMenu(
+                  entry: entry,
+                  onAssignLocation: onAssignLocation,
+                  onMarkReady: onMarkReady,
+                  onMarkPickedUp: onMarkPickedUp,
+                ),
+              ),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+}
+
+class _HeaderCell extends StatelessWidget {
+  final String text;
+  const _HeaderCell(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+          color: AppTheme.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+class _BodyCell extends StatelessWidget {
+  final Widget child;
+  const _BodyCell({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      child: child,
+    );
+  }
+}
+
+class _ActionsMenu extends StatelessWidget {
+  final WarehouseEntry entry;
+  final ValueChanged<WarehouseEntry> onAssignLocation;
+  final ValueChanged<WarehouseEntry> onMarkReady;
+  final ValueChanged<WarehouseEntry> onMarkPickedUp;
+
+  const _ActionsMenu({
+    required this.entry,
+    required this.onAssignLocation,
+    required this.onMarkReady,
+    required this.onMarkPickedUp,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert, size: 18),
+      itemBuilder: (context) {
+        final items = <PopupMenuEntry<String>>[];
+
+        // Always allow reassigning location
+        items.add(
+          const PopupMenuItem(
+            value: 'assign',
+            child: ListTile(
+              leading: Icon(Icons.location_on_outlined, size: 18),
+              title: Text(
+                'Assign / Change Location',
+                style: TextStyle(fontSize: 13),
+              ),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+        );
+
+        // Mark ready if stored
+        if (entry.status == WarehouseEntryStatus.stored) {
+          items.add(
+            const PopupMenuItem(
+              value: 'ready',
+              child: ListTile(
+                leading: Icon(Icons.local_shipping_outlined, size: 18),
+                title: Text(
+                  'Mark Ready for Pickup',
+                  style: TextStyle(fontSize: 13),
+                ),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          );
+        }
+
+        // Mark picked up if ready
+        if (entry.status == WarehouseEntryStatus.readyForPickup) {
+          items.add(
+            const PopupMenuItem(
+              value: 'pickup',
+              child: ListTile(
+                leading: Icon(Icons.check_circle_outline, size: 18),
+                title: Text('Mark Picked Up', style: TextStyle(fontSize: 13)),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          );
+        }
+
+        return items;
+      },
+      onSelected: (value) {
+        switch (value) {
+          case 'assign':
+            onAssignLocation(entry);
+          case 'ready':
+            onMarkReady(entry);
+          case 'pickup':
+            onMarkPickedUp(entry);
+        }
+      },
+    );
+  }
+}
