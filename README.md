@@ -22,18 +22,17 @@ samples, guidance on mobile development, and a full API reference.
 flutter build web --release
 ```
 
-2. Deploy the generated `build/web` output:
+2. Deploy from the project root:
 ```bash
-cd build/web
-vercel --prod
+npx vercel --prod .
 ```
 
-3. Or deploy directly from the project root:
+3. If you prefer deploying the generated output directory directly:
 ```bash
 npx vercel --prod build/web
 ```
 
-Optional local config file: `vercel.json` is included to serve the static `build/web` app.
+Optional local config file: `vercel.json` is included to serve the static `build/web` app from the repository root.
 
 ## Git-based Vercel Deployment
 
