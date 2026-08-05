@@ -74,8 +74,47 @@ class _LandingScreenState extends State<LandingScreen> {
     Navigator.of(context).pushNamed('/customer-login', arguments: {'signup': true});
   }
 
+  void _goToCustomerSignIn() {
+    Navigator.of(context).pushNamed('/customer-login');
+  }
+
   void _goToPartnerSignUp() {
     Navigator.of(context).pushNamed('/partner-login', arguments: {'signup': true});
+  }
+
+  void _goToPartnerSignIn() {
+    Navigator.of(context).pushNamed('/partner-login');
+  }
+
+  static const _serviceDetails = {
+    'Sea Freight':
+        'Cost-effective ocean freight from anywhere in the USA to Kingston, Jamaica. Ideal for large or heavy shipments, with flexible container and consolidation options.',
+    'Air Freight':
+        'Fast, secure air cargo for time-sensitive shipments — from the USA to Kingston in days, not weeks, with full tracking every step of the way.',
+    'Warehousing':
+        'Secure, monitored storage with professional inventory management and distribution — your goods are safe and organized from arrival to dispatch.',
+    'Door to Door':
+        'We handle the entire journey — from pickup at our USA warehouse straight to your door in Jamaica, no extra steps required.',
+    'Customs Clearance':
+        'Expert documentation and fast customs processing so your shipment clears without delays or surprises.',
+  };
+
+  void _showServiceDialog(String title) {
+    _showInfoDialog(title, _serviceDetails[title] ?? '');
+  }
+
+  void _showKnutsfordDialog() {
+    _showInfoDialog(
+      'Knutsford Express Partnership',
+      'One Village Shipping & Freight offers express delivery to Knutsford Express locations islandwide — a fast, convenient pickup option for customers across Jamaica.',
+    );
+  }
+
+  void _showSocialComingSoon(String platform) {
+    _showInfoDialog(
+      platform,
+      'Our $platform page is launching soon. Check back shortly to follow One Village Shipping & Freight!',
+    );
   }
 
   @override
@@ -108,12 +147,16 @@ class _LandingScreenState extends State<LandingScreen> {
                 'Phone: 267-844-5155\nHollywood, Florida\nshipping@onevillageshipping.com',
               ),
               onGetStarted: () => _scrollToKey(_ctaKey),
-              onCustomerSignIn: _goToCustomerSignUp,
-              onPartnerSignIn: _goToPartnerSignUp,
+              onCustomerSignIn: _goToCustomerSignIn,
+              onPartnerSignIn: _goToPartnerSignIn,
               onAdminSignIn: widget.onGetStarted,
             ),
-            const _Hero(),
-            _Services(key: _servicesKey),
+            _Hero(
+              onGetStarted: () => _scrollToKey(_ctaKey),
+              onTrackShipment: _goToCustomerSignIn,
+              onKnutsfordTap: _showKnutsfordDialog,
+            ),
+            _Services(key: _servicesKey, onLearnMore: _showServiceDialog),
             const _WhyChooseUs(),
             const _StatsBar(),
             _CtaSignup(
@@ -128,6 +171,8 @@ class _LandingScreenState extends State<LandingScreen> {
                 'Contact Us',
                 'Phone: 267-844-5155\nHollywood, Florida\nshipping@onevillageshipping.com',
               ),
+              onServiceTap: _showServiceDialog,
+              onSocialTap: _showSocialComingSoon,
             ),
           ],
         ),
@@ -384,7 +429,10 @@ class _SignInMenuItem extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _Hero extends StatelessWidget {
-  const _Hero();
+  final VoidCallback onGetStarted;
+  final VoidCallback onTrackShipment;
+  final VoidCallback onKnutsfordTap;
+  const _Hero({required this.onGetStarted, required this.onTrackShipment, required this.onKnutsfordTap});
 
   static const _features = [
     (Icons.verified_user_outlined, 'SECURE', 'SHIPPING'),
@@ -461,7 +509,7 @@ class _Hero extends StatelessWidget {
           runSpacing: 14,
           children: [
             ElevatedButton(
-              onPressed: () {},
+              onPressed: onGetStarted,
               style: ElevatedButton.styleFrom(
                 backgroundColor: LandingScreen.yellow,
                 foregroundColor: LandingScreen.navy,
@@ -479,7 +527,7 @@ class _Hero extends StatelessWidget {
               ),
             ),
             OutlinedButton(
-              onPressed: () {},
+              onPressed: onTrackShipment,
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.white,
                 side: const BorderSide(color: Colors.white, width: 1.4),
@@ -549,9 +597,9 @@ class _Hero extends StatelessWidget {
           ),
         ),
         Positioned(
-          right: wide ? -18 : 8,
-          bottom: wide ? -28 : -18,
-          child: const _KnutsfordCard(),
+          right: 14,
+          bottom: 14,
+          child: _KnutsfordCard(onTap: onKnutsfordTap),
         ),
       ],
     );
@@ -589,11 +637,18 @@ class _Hero extends StatelessWidget {
 }
 
 class _KnutsfordCard extends StatelessWidget {
-  const _KnutsfordCard();
+  final VoidCallback onTap;
+  const _KnutsfordCard({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
       width: 220,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       decoration: BoxDecoration(
@@ -648,6 +703,8 @@ class _KnutsfordCard extends StatelessWidget {
           ),
         ],
       ),
+        ),
+      ),
     );
   }
 }
@@ -657,7 +714,8 @@ class _KnutsfordCard extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _Services extends StatelessWidget {
-  const _Services({super.key});
+  final ValueChanged<String> onLearnMore;
+  const _Services({super.key, required this.onLearnMore});
 
   static const _items = [
     (
@@ -721,7 +779,15 @@ class _Services extends StatelessWidget {
                   mainAxisSpacing: 20,
                   crossAxisSpacing: 20,
                   childAspectRatio: 0.72,
-                  children: _items.map((s) => _ServiceCard(image: s.$1, icon: s.$2, title: s.$3, desc: s.$4)).toList(),
+                  children: _items
+                      .map((s) => _ServiceCard(
+                            image: s.$1,
+                            icon: s.$2,
+                            title: s.$3,
+                            desc: s.$4,
+                            onTap: () => onLearnMore(s.$3),
+                          ))
+                      .toList(),
                 );
               },
             ),
@@ -737,13 +803,25 @@ class _ServiceCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String desc;
-  const _ServiceCard({required this.image, required this.icon, required this.title, required this.desc});
+  final VoidCallback onTap;
+  const _ServiceCard({
+    required this.image,
+    required this.icon,
+    required this.title,
+    required this.desc,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return Material(
+      color: LandingScreen.iceGray,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
       decoration: BoxDecoration(
-        color: LandingScreen.iceGray,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: LandingScreen.borderGray),
       ),
@@ -804,6 +882,8 @@ class _ServiceCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+      ),
       ),
     );
   }
@@ -1119,7 +1199,15 @@ class _Footer extends StatelessWidget {
   final VoidCallback onHome;
   final VoidCallback onServices;
   final VoidCallback onContact;
-  const _Footer({required this.onHome, required this.onServices, required this.onContact});
+  final ValueChanged<String> onServiceTap;
+  final ValueChanged<String> onSocialTap;
+  const _Footer({
+    required this.onHome,
+    required this.onServices,
+    required this.onContact,
+    required this.onServiceTap,
+    required this.onSocialTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1160,11 +1248,14 @@ class _Footer extends StatelessWidget {
                   ),
                 ),
                 if (!wide) const SizedBox(height: 32),
-                const Expanded(
+                Expanded(
                   flex: 2,
-                  child: _FooterStaticColumn(
+                  child: _FooterColumn(
                     'SERVICES',
-                    ['Sea Freight', 'Air Freight', 'Warehousing', 'Door to Door', 'Customs Clearance'],
+                    [
+                      for (final s in const ['Sea Freight', 'Air Freight', 'Warehousing', 'Door to Door', 'Customs Clearance'])
+                        (s, () => onServiceTap(s)),
+                    ],
                   ),
                 ),
                 if (!wide) const SizedBox(height: 32),
@@ -1184,11 +1275,11 @@ class _Footer extends StatelessWidget {
                       const SizedBox(height: 10),
                       const _FooterContactRow(Icons.email_outlined, 'shipping@onevillageshipping.com'),
                       const SizedBox(height: 16),
-                      const Row(
+                      Row(
                         children: [
-                          _SocialIcon(Icons.camera_alt_outlined),
-                          SizedBox(width: 10),
-                          _SocialIcon(Icons.music_note_outlined),
+                          _SocialIcon(Icons.camera_alt_outlined, onTap: () => onSocialTap('Instagram')),
+                          const SizedBox(width: 10),
+                          _SocialIcon(Icons.music_note_outlined, onTap: () => onSocialTap('TikTok')),
                         ],
                       ),
                     ],
@@ -1313,16 +1404,24 @@ class _FooterContactRow extends StatelessWidget {
 
 class _SocialIcon extends StatelessWidget {
   final IconData icon;
-  const _SocialIcon(this.icon);
+  final VoidCallback onTap;
+  const _SocialIcon(this.icon, {required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(color: LandingScreen.yellow, borderRadius: BorderRadius.circular(8)),
-      alignment: Alignment.center,
-      child: Icon(icon, size: 16, color: LandingScreen.navy),
+    return Material(
+      color: LandingScreen.yellow,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 32,
+          height: 32,
+          alignment: Alignment.center,
+          child: Icon(icon, size: 16, color: LandingScreen.navy),
+        ),
+      ),
     );
   }
 }
@@ -1346,28 +1445,6 @@ class _FooterColumn extends StatelessWidget {
               onTap: l.$2,
               child: Text(l.$1, style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 12.5)),
             ),
-          ),
-      ],
-    );
-  }
-}
-
-class _FooterStaticColumn extends StatelessWidget {
-  final String title;
-  final List<String> items;
-  const _FooterStaticColumn(this.title, this.items);
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6)),
-        const SizedBox(height: 14),
-        for (final i in items)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Text(i, style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 12.5)),
           ),
       ],
     );
