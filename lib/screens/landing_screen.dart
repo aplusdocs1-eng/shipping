@@ -216,6 +216,8 @@ class _Header extends StatelessWidget {
               _NavLink('Contact', onContact),
               const SizedBox(width: 28),
             ],
+            _SignInMenu(onAdminSignIn: onGetStarted),
+            const SizedBox(width: 16),
             ElevatedButton(
               onPressed: onGetStarted,
               style: ElevatedButton.styleFrom(
@@ -230,6 +232,116 @@ class _Header extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SignInMenu extends StatelessWidget {
+  final VoidCallback onAdminSignIn;
+  const _SignInMenu({required this.onAdminSignIn});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      color: LandingScreen.card,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: LandingScreen.border),
+      ),
+      offset: const Offset(0, 40),
+      onSelected: (v) {
+        switch (v) {
+          case 'customer':
+            Navigator.of(context).pushNamed('/customer-login');
+            break;
+          case 'partner':
+            Navigator.of(context).pushNamed('/partner-login');
+            break;
+          case 'admin':
+            onAdminSignIn();
+            break;
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: 'customer',
+          child: _SignInMenuItem(
+            icon: Icons.person_outline,
+            title: 'Customer',
+            subtitle: 'Track your packages',
+          ),
+        ),
+        PopupMenuItem(
+          value: 'partner',
+          child: _SignInMenuItem(
+            icon: Icons.business_center_outlined,
+            title: 'Shipping Partner',
+            subtitle: 'Manage your operation',
+          ),
+        ),
+        PopupMenuItem(
+          value: 'admin',
+          child: _SignInMenuItem(
+            icon: Icons.badge_outlined,
+            title: 'Warehouse Staff',
+            subtitle: 'Applizone admin login',
+          ),
+        ),
+      ],
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Sign In',
+            style: TextStyle(
+              color: LandingScreen.textSecondary,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          SizedBox(width: 4),
+          Icon(Icons.keyboard_arrow_down, size: 16, color: LandingScreen.textSecondary),
+        ],
+      ),
+    );
+  }
+}
+
+class _SignInMenuItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  const _SignInMenuItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: LandingScreen.teal),
+        const SizedBox(width: 10),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: LandingScreen.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              subtitle,
+              style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 11),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
