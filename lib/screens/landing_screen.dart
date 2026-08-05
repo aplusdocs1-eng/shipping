@@ -581,26 +581,31 @@ class _Services extends StatelessWidget {
 
   static const _items = [
     (
+      'assets/images/sea_freight.jpg',
       Icons.directions_boat_outlined,
       'Sea Freight',
       'Reliable and cost-effective ocean shipping to destinations worldwide.',
     ),
     (
+      'assets/images/air_freight.jpg',
       Icons.flight_outlined,
       'Air Freight',
       'Fast and secure air cargo solutions when time matters.',
     ),
     (
+      'assets/images/warehousing.jpg',
       Icons.warehouse_outlined,
       'Warehousing',
       'Secure storage, inventory management, and distribution.',
     ),
     (
+      'assets/images/door_to_door.jpg',
       Icons.local_shipping_outlined,
       'Door to Door',
       'Complete delivery solution from our warehouse to your door.',
     ),
     (
+      'assets/images/customs_clearance.jpg',
       Icons.fact_check_outlined,
       'Customs Clearance',
       'Expert documentation and fast customs clearance.',
@@ -635,8 +640,8 @@ class _Services extends StatelessWidget {
                   physics: const NeverScrollableScrollPhysics(),
                   mainAxisSpacing: 20,
                   crossAxisSpacing: 20,
-                  childAspectRatio: 0.82,
-                  children: _items.map((s) => _ServiceCard(icon: s.$1, title: s.$2, desc: s.$3)).toList(),
+                  childAspectRatio: 0.72,
+                  children: _items.map((s) => _ServiceCard(image: s.$1, icon: s.$2, title: s.$3, desc: s.$4)).toList(),
                 );
               },
             ),
@@ -648,10 +653,11 @@ class _Services extends StatelessWidget {
 }
 
 class _ServiceCard extends StatelessWidget {
+  final String image;
   final IconData icon;
   final String title;
   final String desc;
-  const _ServiceCard({required this.icon, required this.title, required this.desc});
+  const _ServiceCard({required this.image, required this.icon, required this.title, required this.desc});
 
   @override
   Widget build(BuildContext context) {
@@ -664,28 +670,35 @@ class _ServiceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: double.infinity,
-            height: 90,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [LandingScreen.navy, LandingScreen.secondaryNavy],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), topRight: Radius.circular(14)),
+                child: AspectRatio(
+                  aspectRatio: 3 / 2,
+                  child: Image.asset(image, fit: BoxFit.cover),
+                ),
               ),
-              borderRadius: BorderRadius.only(topLeft: Radius.circular(14), topRight: Radius.circular(14)),
-            ),
-            alignment: Alignment.center,
-            child: Container(
-              width: 46,
-              height: 46,
-              decoration: const BoxDecoration(color: LandingScreen.yellow, shape: BoxShape.circle),
-              alignment: Alignment.center,
-              child: Icon(icon, color: LandingScreen.navy, size: 24),
-            ),
+              Positioned(
+                bottom: -23,
+                left: 16,
+                child: Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: LandingScreen.yellow,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: LandingScreen.iceGray, width: 3),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(icon, color: LandingScreen.navy, size: 22),
+                ),
+              ),
+            ],
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+            padding: const EdgeInsets.fromLTRB(16, 32, 16, 18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -905,6 +918,14 @@ class _CtaSignup extends StatelessWidget {
       ],
     );
 
+    final image = ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: AspectRatio(
+        aspectRatio: 4 / 3,
+        child: Image.asset('assets/images/forklift_warehouse.jpg', fit: BoxFit.cover),
+      ),
+    );
+
     return Container(
       color: LandingScreen.iceGray,
       child: _MaxWidth(
@@ -913,9 +934,11 @@ class _CtaSignup extends StatelessWidget {
             ? Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Expanded(flex: 4, child: intro),
-                  const SizedBox(width: 32),
-                  Expanded(flex: 5, child: cards),
+                  Expanded(flex: 3, child: intro),
+                  const SizedBox(width: 28),
+                  Expanded(flex: 4, child: cards),
+                  const SizedBox(width: 28),
+                  Expanded(flex: 3, child: image),
                 ],
               )
             : Column(
@@ -923,6 +946,8 @@ class _CtaSignup extends StatelessWidget {
                   intro,
                   const SizedBox(height: 32),
                   cards,
+                  const SizedBox(height: 32),
+                  image,
                 ],
               ),
       ),

@@ -37,6 +37,12 @@ flutter:
 
   assets:
     - assets/images/one_village_logo.png
+    - assets/images/sea_freight.jpg
+    - assets/images/air_freight.jpg
+    - assets/images/warehousing.jpg
+    - assets/images/door_to_door.jpg
+    - assets/images/customs_clearance.jpg
+    - assets/images/forklift_warehouse.jpg
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
