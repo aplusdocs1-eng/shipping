@@ -54,7 +54,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     children: [
                       _SettingsField(
                         label: 'Company Name',
-                        value: 'Applizone Central Jamaica',
+                        value: 'One Village Shipping & Freight',
                       ),
                       _SettingsField(
                         label: 'Email',

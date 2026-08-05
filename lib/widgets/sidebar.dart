@@ -40,12 +40,12 @@ class AppNavDrawer extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 16, 16, 8),
               child: Row(
                 children: [
-                  Image.network(
-                    AppTheme.logoUrl,
+                  Image.asset(
+                    'assets/images/one_village_logo.png',
                     height: 36,
                     errorBuilder: (context, error, stackTrace) {
                       return const Text(
-                        'ACJ',
+                        'OV',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w900,

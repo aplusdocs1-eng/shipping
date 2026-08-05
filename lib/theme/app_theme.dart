@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // Applizone Central Jamaica brand colors
+  // One Village Shipping & Freight brand colors
   static const Color primary = Color(0xFFCC0000);
   static const Color primaryDark = Color(0xFFA30000);
   static const Color accent = Color(0xFF0EA5E9);

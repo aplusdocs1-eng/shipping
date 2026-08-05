@@ -222,7 +222,7 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
                             ),
                           ),
                           Text(
-                            TenantService().companyName ?? 'Applizone Shipping',
+                            TenantService().companyName ?? 'One Village Shipping & Freight',
                             style: const TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.w700,

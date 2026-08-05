@@ -361,7 +361,7 @@ class _Sidebar extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    TenantService().companyName ?? 'Applizone Shipping',
+                    TenantService().companyName ?? 'One Village Shipping & Freight',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -375,7 +375,7 @@ class _Sidebar extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
             child: Text(
-              (TenantService().companyName ?? 'Applizone Shipping').toUpperCase(),
+              (TenantService().companyName ?? 'One Village Shipping & Freight').toUpperCase(),
               style: const TextStyle(
                 fontSize: 10,
                 color: Color(0xFF9CA3AF),

@@ -76,9 +76,6 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
     ),
   ];
 
-  static const _logoUrl =
-      'https://s3.wasabisys.com/sethwan-logistics/public/d34a8505-1dd5-4eb1-8ea3-977bd875f4d8/logo/1000037101-37w2O21Tzolm1KUonlS5qshBChZ.png';
-
   @override
   void initState() {
     super.initState();
@@ -341,9 +338,9 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Image.network(
-                _logoUrl,
-                height: 52,
+              Image.asset(
+                'assets/images/one_village_logo.png',
+                height: 68,
                 errorBuilder: (_, __, ___) => const _AzLogo(),
               ),
               const SizedBox(height: 32),
@@ -380,7 +377,7 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
               ),
               const SizedBox(height: 24),
               Text(
-                'Copyright ${DateTime.now().year} Applizone Central Jamaica. All rights reserved.',
+                'Copyright ${DateTime.now().year} One Village Shipping & Freight LLC. All rights reserved.',
                 style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
               ),
             ],
@@ -814,7 +811,7 @@ class _AzLogo extends StatelessWidget {
     ),
     child: const Center(
       child: Text(
-        'AZ',
+        'OV',
         style: TextStyle(
           color: Colors.white,
           fontWeight: FontWeight.w900,

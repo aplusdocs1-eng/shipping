@@ -1131,7 +1131,7 @@ class MockDataService {
   final List<ShippingPartner> shippingPartners = [
     ShippingPartner(
       code: 'APS',
-      name: 'Applizone Shipping',
+      name: 'One Village Shipping',
       region: 'Caribbean',
       trackingPrefix: 'APS-',
       contactEmail: 'support@applizonecentralja.com',

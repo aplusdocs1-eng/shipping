@@ -1,26 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 
-/// Public marketing home page for the admin host, styled after a dark
-/// navy / teal SaaS landing page: hero with a live-data mockup, stats bar,
-/// platform-highlights bento grid, feature dashboard mockup, pricing, and
-/// footer. All navigation and CTAs are wired to real actions.
+/// Public marketing home page for One Village Shipping & Freight.
 class LandingScreen extends StatefulWidget {
   final VoidCallback onGetStarted;
   const LandingScreen({super.key, required this.onGetStarted});
 
-  static const bg = Color(0xFF0B1120);
-  static const bgAlt = Color(0xFF0F172A);
-  static const card = Color(0xFF111B2E);
-  static const cardAlt = Color(0xFF15213A);
-  static const teal = Color(0xFF2DD4BF);
-  static const tealDark = Color(0xFF14B8A6);
-  static const purple = Color(0xFFA78BFA);
-  static const amber = Color(0xFFFBBF24);
-  static const green = Color(0xFF34D399);
-  static const textPrimary = Color(0xFFF8FAFC);
-  static const textSecondary = Color(0xFF94A3B8);
-  static const border = Color(0xFF1E293B);
+  static const navy = Color(0xFF071B33);
+  static const secondaryNavy = Color(0xFF123A68);
+  static const yellow = Color(0xFFFFC400);
+  static const gold = Color(0xFFD9A514);
+  static const white = Color(0xFFFFFFFF);
+  static const iceGray = Color(0xFFF5F7FA);
+  static const borderGray = Color(0xFFDCE3EA);
+  static const charcoal = Color(0xFF263442);
+  static const green = Color(0xFF16845B);
+  static const red = Color(0xFFB83A3A);
+  static const charcoalSoft = Color(0xFF5B6B7A);
 
   @override
   State<LandingScreen> createState() => _LandingScreenState();
@@ -28,8 +23,8 @@ class LandingScreen extends StatefulWidget {
 
 class _LandingScreenState extends State<LandingScreen> {
   final _scrollController = ScrollController();
-  final _featuresKey = GlobalKey();
-  final _pricingKey = GlobalKey();
+  final _servicesKey = GlobalKey();
+  final _ctaKey = GlobalKey();
 
   void _scrollToTop() {
     _scrollController.animateTo(
@@ -54,21 +49,32 @@ class _LandingScreenState extends State<LandingScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: LandingScreen.card,
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: Text(title, style: const TextStyle(color: LandingScreen.textPrimary)),
+        title: Text(
+          title,
+          style: const TextStyle(color: LandingScreen.navy, fontWeight: FontWeight.w800),
+        ),
         content: Text(
           body,
-          style: const TextStyle(color: LandingScreen.textSecondary, height: 1.5),
+          style: const TextStyle(color: LandingScreen.charcoal, height: 1.5),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close', style: TextStyle(color: LandingScreen.teal)),
+            child: const Text('Close', style: TextStyle(color: LandingScreen.secondaryNavy)),
           ),
         ],
       ),
     );
+  }
+
+  void _goToCustomerSignUp() {
+    Navigator.of(context).pushNamed('/customer-login', arguments: {'signup': true});
+  }
+
+  void _goToPartnerSignUp() {
+    Navigator.of(context).pushNamed('/partner-login', arguments: {'signup': true});
   }
 
   @override
@@ -80,54 +86,46 @@ class _LandingScreenState extends State<LandingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: LandingScreen.bg,
+      backgroundColor: Colors.white,
       body: SingleChildScrollView(
         controller: _scrollController,
         child: Column(
           children: [
             _Header(
-              onGetStarted: widget.onGetStarted,
               onHome: _scrollToTop,
-              onFeatures: () => _scrollToKey(_featuresKey),
-              onPricing: () => _scrollToKey(_pricingKey),
-              onContact: () => _showInfoDialog(
-                'Contact us',
-                'Reach the Applizone Central Jamaica team at '
-                    'applizonecentralja@gmail.com.',
+              onServices: () => _scrollToKey(_servicesKey),
+              onRates: () => _showInfoDialog(
+                'Rates',
+                'Create a free account to get instant, personalized rates for sea and air freight, plus door-to-door and customs clearance pricing.',
               ),
+              onAbout: () => _showInfoDialog(
+                'About One Village Shipping & Freight',
+                'One Village Shipping & Freight is your trusted partner for shipping, freight, and delivery solutions worldwide — connecting the USA to Kingston, Jamaica via sea and air freight, with secure warehousing, door-to-door delivery, and expert customs clearance.',
+              ),
+              onContact: () => _showInfoDialog(
+                'Contact Us',
+                'Phone: 267-844-5155\nHollywood, Florida\nshipping@onevillageshipping.com',
+              ),
+              onGetStarted: () => _scrollToKey(_ctaKey),
+              onCustomerSignIn: _goToCustomerSignUp,
+              onPartnerSignIn: _goToPartnerSignUp,
+              onAdminSignIn: widget.onGetStarted,
             ),
-            _Hero(onGetStarted: widget.onGetStarted),
+            const _Hero(),
+            _Services(key: _servicesKey),
+            const _WhyChooseUs(),
             const _StatsBar(),
-            const _Highlights(),
-            _Features(key: _featuresKey, onGetStarted: widget.onGetStarted),
-            _Pricing(key: _pricingKey, onGetStarted: widget.onGetStarted),
-            _CtaBanner(onGetStarted: widget.onGetStarted),
+            _CtaSignup(
+              key: _ctaKey,
+              onWarehouseSignUp: _goToPartnerSignUp,
+              onCustomerSignUp: _goToCustomerSignUp,
+            ),
             _Footer(
               onHome: _scrollToTop,
-              onFeatures: () => _scrollToKey(_featuresKey),
-              onPricing: () => _scrollToKey(_pricingKey),
-              onAbout: () => _showInfoDialog(
-                'About Applizone',
-                'Applizone Central Jamaica builds the software that powers '
-                    'courier and warehouse operations for shipping partners '
-                    'across Jamaica — package tracking, invoicing, manifests, '
-                    'and multi-tenant partner portals in one platform.',
-              ),
+              onServices: () => _scrollToKey(_servicesKey),
               onContact: () => _showInfoDialog(
-                'Contact us',
-                'Reach the Applizone Central Jamaica team at '
-                    'applizonecentralja@gmail.com.',
-              ),
-              onPrivacy: () => _showInfoDialog(
-                'Privacy Policy',
-                'Applizone Central Jamaica\'s full privacy policy will be '
-                    'published here. Tenant data is isolated per shipping '
-                    'partner and never shared across accounts.',
-              ),
-              onTerms: () => _showInfoDialog(
-                'Terms of Service',
-                'Applizone Central Jamaica\'s full terms of service will be '
-                    'published here.',
+                'Contact Us',
+                'Phone: 267-844-5155\nHollywood, Florida\nshipping@onevillageshipping.com',
               ),
             ),
           ],
@@ -144,7 +142,7 @@ class _MaxWidth extends StatelessWidget {
   const _MaxWidth({
     required this.child,
     this.padding = const EdgeInsets.symmetric(horizontal: 24),
-    this.maxWidth = 1120,
+    this.maxWidth = 1180,
   });
 
   @override
@@ -166,68 +164,78 @@ class _MaxWidth extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _Header extends StatelessWidget {
-  final VoidCallback onGetStarted;
   final VoidCallback onHome;
-  final VoidCallback onFeatures;
-  final VoidCallback onPricing;
+  final VoidCallback onServices;
+  final VoidCallback onRates;
+  final VoidCallback onAbout;
   final VoidCallback onContact;
+  final VoidCallback onGetStarted;
+  final VoidCallback onCustomerSignIn;
+  final VoidCallback onPartnerSignIn;
+  final VoidCallback onAdminSignIn;
+
   const _Header({
-    required this.onGetStarted,
     required this.onHome,
-    required this.onFeatures,
-    required this.onPricing,
+    required this.onServices,
+    required this.onRates,
+    required this.onAbout,
     required this.onContact,
+    required this.onGetStarted,
+    required this.onCustomerSignIn,
+    required this.onPartnerSignIn,
+    required this.onAdminSignIn,
   });
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.of(context).size.width > 760;
+    final wide = MediaQuery.of(context).size.width > 900;
     return Container(
       decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: LandingScreen.border)),
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: LandingScreen.borderGray)),
       ),
       child: _MaxWidth(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
         child: Row(
           children: [
             InkWell(
               onTap: onHome,
-              child: const Row(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _LogoMark(),
-                  SizedBox(width: 10),
-                  Text(
-                    'Applizone',
-                    style: TextStyle(
-                      color: LandingScreen.textPrimary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                    ),
-                  ),
+                  Image.asset('assets/images/one_village_logo.png', height: 52),
                 ],
               ),
             ),
             const Spacer(),
             if (wide) ...[
-              _NavLink('Home', onHome),
-              const SizedBox(width: 28),
-              _NavLink('Pricing', onPricing),
-              const SizedBox(width: 28),
+              _NavLink('Home', onHome, active: true),
+              const SizedBox(width: 26),
+              _NavLink('About Us', onAbout),
+              const SizedBox(width: 26),
+              _NavLink('Services', onServices),
+              const SizedBox(width: 26),
+              _NavLink('Rates', onRates),
+              const SizedBox(width: 26),
               _NavLink('Contact', onContact),
-              const SizedBox(width: 28),
+              const SizedBox(width: 26),
             ],
-            _SignInMenu(onAdminSignIn: onGetStarted),
-            const SizedBox(width: 16),
+            _SignInMenu(
+              onCustomer: onCustomerSignIn,
+              onPartner: onPartnerSignIn,
+              onAdmin: onAdminSignIn,
+            ),
+            const SizedBox(width: 14),
             ElevatedButton(
               onPressed: onGetStarted,
               style: ElevatedButton.styleFrom(
-                backgroundColor: LandingScreen.teal,
-                foregroundColor: Colors.black,
+                backgroundColor: LandingScreen.yellow,
+                foregroundColor: LandingScreen.navy,
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
               ),
-              child: const Text('Get Started'),
+              child: const Text('GET STARTED'),
             ),
           ],
         ),
@@ -236,30 +244,64 @@ class _Header extends StatelessWidget {
   }
 }
 
+class _NavLink extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final bool active;
+  const _NavLink(this.label, this.onTap, {this.active = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              color: active ? LandingScreen.gold : LandingScreen.charcoal,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+            ),
+          ),
+          if (active) ...[
+            const SizedBox(height: 4),
+            Container(width: 18, height: 2, color: LandingScreen.gold),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _SignInMenu extends StatelessWidget {
-  final VoidCallback onAdminSignIn;
-  const _SignInMenu({required this.onAdminSignIn});
+  final VoidCallback onCustomer;
+  final VoidCallback onPartner;
+  final VoidCallback onAdmin;
+  const _SignInMenu({required this.onCustomer, required this.onPartner, required this.onAdmin});
 
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
-      color: LandingScreen.card,
+      color: Colors.white,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: const BorderSide(color: LandingScreen.border),
+        side: const BorderSide(color: LandingScreen.borderGray),
       ),
       offset: const Offset(0, 40),
       onSelected: (v) {
         switch (v) {
           case 'customer':
-            Navigator.of(context).pushNamed('/customer-login');
+            onCustomer();
             break;
           case 'partner':
-            Navigator.of(context).pushNamed('/partner-login');
+            onPartner();
             break;
           case 'admin':
-            onAdminSignIn();
+            onAdmin();
             break;
         }
       },
@@ -269,14 +311,14 @@ class _SignInMenu extends StatelessWidget {
           child: _SignInMenuItem(
             icon: Icons.person_outline,
             title: 'Customer',
-            subtitle: 'Track your packages',
+            subtitle: 'Track your shipments',
           ),
         ),
         PopupMenuItem(
           value: 'partner',
           child: _SignInMenuItem(
-            icon: Icons.business_center_outlined,
-            title: 'Shipping Partner',
+            icon: Icons.warehouse_outlined,
+            title: 'Warehouse Partner',
             subtitle: 'Manage your operation',
           ),
         ),
@@ -284,8 +326,8 @@ class _SignInMenu extends StatelessWidget {
           value: 'admin',
           child: _SignInMenuItem(
             icon: Icons.badge_outlined,
-            title: 'Warehouse Staff',
-            subtitle: 'Applizone admin login',
+            title: 'Staff',
+            subtitle: 'Admin login',
           ),
         ),
       ],
@@ -293,15 +335,16 @@ class _SignInMenu extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Sign In',
+            'SIGN IN',
             style: TextStyle(
-              color: LandingScreen.textSecondary,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
+              color: LandingScreen.charcoal,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
             ),
           ),
-          SizedBox(width: 4),
-          Icon(Icons.keyboard_arrow_down, size: 16, color: LandingScreen.textSecondary),
+          SizedBox(width: 2),
+          Icon(Icons.keyboard_arrow_down, size: 18, color: LandingScreen.charcoal),
         ],
       ),
     );
@@ -312,75 +355,25 @@ class _SignInMenuItem extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  const _SignInMenuItem({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
+  const _SignInMenuItem({required this.icon, required this.title, required this.subtitle});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: LandingScreen.teal),
+        Icon(icon, size: 18, color: LandingScreen.secondaryNavy),
         const SizedBox(width: 10),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               title,
-              style: const TextStyle(
-                color: LandingScreen.textPrimary,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(color: LandingScreen.navy, fontSize: 13, fontWeight: FontWeight.w700),
             ),
-            Text(
-              subtitle,
-              style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 11),
-            ),
+            Text(subtitle, style: const TextStyle(color: LandingScreen.charcoalSoft, fontSize: 11)),
           ],
         ),
       ],
-    );
-  }
-}
-
-class _LogoMark extends StatelessWidget {
-  const _LogoMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(9),
-        gradient: const LinearGradient(
-          colors: [LandingScreen.teal, LandingScreen.tealDark],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      alignment: Alignment.center,
-      child: const Icon(Icons.local_shipping_rounded, size: 17, color: Colors.black),
-    );
-  }
-}
-
-class _NavLink extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-  const _NavLink(this.label, this.onTap);
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Text(
-        label,
-        style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 14),
-      ),
     );
   }
 }
@@ -390,8 +383,14 @@ class _NavLink extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _Hero extends StatelessWidget {
-  final VoidCallback onGetStarted;
-  const _Hero({required this.onGetStarted});
+  const _Hero();
+
+  static const _features = [
+    (Icons.verified_user_outlined, 'SECURE', 'SHIPPING'),
+    (Icons.schedule_outlined, 'ON-TIME', 'DELIVERY'),
+    (Icons.public, 'GLOBAL', 'NETWORK'),
+    (Icons.headset_mic_outlined, '24/7', 'SUPPORT'),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -399,171 +398,173 @@ class _Hero extends StatelessWidget {
     final copy = Column(
       crossAxisAlignment: wide ? CrossAxisAlignment.start : CrossAxisAlignment.center,
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: LandingScreen.cardAlt,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: LandingScreen.border),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.circle, size: 7, color: LandingScreen.teal),
-              SizedBox(width: 8),
-              Text(
-                'Courier & Warehouse SaaS Platform',
-                style: TextStyle(
-                  color: LandingScreen.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 22),
         Text(
-          'Reliable Courier &',
+          'ONE VILLAGE.',
           textAlign: wide ? TextAlign.left : TextAlign.center,
           style: const TextStyle(
-            color: LandingScreen.textPrimary,
-            fontSize: 46,
-            fontWeight: FontWeight.w800,
-            height: 1.15,
-            letterSpacing: -1,
+            color: Colors.white,
+            fontSize: 44,
+            fontWeight: FontWeight.w900,
+            height: 1.1,
+            letterSpacing: -0.5,
           ),
         ),
-        Wrap(
-          alignment: wide ? WrapAlignment.start : WrapAlignment.center,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            ShaderMask(
-              shaderCallback: (bounds) => const LinearGradient(
-                colors: [LandingScreen.teal, LandingScreen.tealDark],
-              ).createShader(bounds),
-              child: const Text(
-                'Warehousing',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 46,
-                  fontWeight: FontWeight.w800,
-                  height: 1.15,
-                  letterSpacing: -1,
-                ),
-              ),
-            ),
-            const Text(
-              ' Software',
-              style: TextStyle(
-                color: LandingScreen.textPrimary,
-                fontSize: 46,
-                fontWeight: FontWeight.w800,
-                height: 1.15,
-                letterSpacing: -1,
-              ),
-            ),
-          ],
+        const Text(
+          'GLOBAL REACH.',
+          style: TextStyle(
+            color: LandingScreen.yellow,
+            fontSize: 44,
+            fontWeight: FontWeight.w900,
+            height: 1.1,
+            letterSpacing: -0.5,
+          ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
-          child: Text(
-            'The all-in-one platform to manage packages, shipments, invoices, '
-            'and customers. Built for couriers and warehouses that move fast.',
-            textAlign: wide ? TextAlign.left : TextAlign.center,
-            style: const TextStyle(
-              color: LandingScreen.textSecondary,
-              fontSize: 16,
-              height: 1.6,
-            ),
+          child: const Text(
+            'Your trusted partner for shipping, freight, and delivery solutions worldwide.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFFC7D2E0), fontSize: 16, height: 1.5),
           ),
         ),
-        const SizedBox(height: 30),
-        ElevatedButton(
-          onPressed: onGetStarted,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: LandingScreen.teal,
-            foregroundColor: Colors.black,
-            padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 15),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-            textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Get Started'),
-              SizedBox(width: 8),
-              Icon(Icons.arrow_forward, size: 16),
-            ],
-          ),
-        ),
-        const SizedBox(height: 26),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const _AvatarStack(),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Row(
+        const SizedBox(height: 28),
+        Wrap(
+          alignment: wide ? WrapAlignment.start : WrapAlignment.center,
+          spacing: 28,
+          runSpacing: 16,
+          children: _features
+              .map(
+                (f) => Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.star, size: 13, color: LandingScreen.amber),
-                    Icon(Icons.star, size: 13, color: LandingScreen.amber),
-                    Icon(Icons.star, size: 13, color: LandingScreen.amber),
-                    Icon(Icons.star, size: 13, color: LandingScreen.amber),
-                    Icon(Icons.star, size: 13, color: LandingScreen.amber),
+                    Icon(f.$1, color: LandingScreen.yellow, size: 22),
+                    const SizedBox(height: 6),
+                    Text(
+                      f.$2,
+                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800),
+                    ),
+                    Text(
+                      f.$3,
+                      style: const TextStyle(color: Color(0xFFC7D2E0), fontSize: 11, fontWeight: FontWeight.w700),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 2),
-                RichText(
-                  text: const TextSpan(
-                    style: TextStyle(fontSize: 12, color: LandingScreen.textSecondary),
-                    children: [
-                      TextSpan(text: 'Trusted by '),
-                      TextSpan(
-                        text: '50+',
-                        style: TextStyle(color: LandingScreen.textPrimary, fontWeight: FontWeight.w700),
-                      ),
-                      TextSpan(text: ' shipping partners'),
-                    ],
-                  ),
-                ),
-              ],
+              )
+              .toList(),
+        ),
+        const SizedBox(height: 30),
+        Wrap(
+          alignment: wide ? WrapAlignment.start : WrapAlignment.center,
+          spacing: 14,
+          runSpacing: 14,
+          children: [
+            ElevatedButton(
+              onPressed: () {},
+              style: ElevatedButton.styleFrom(
+                backgroundColor: LandingScreen.yellow,
+                foregroundColor: LandingScreen.navy,
+                padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('GET STARTED'),
+                  SizedBox(width: 6),
+                  Icon(Icons.arrow_forward, size: 16),
+                ],
+              ),
+            ),
+            OutlinedButton(
+              onPressed: () {},
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white, width: 1.4),
+                padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+              ),
+              child: const Text('TRACK SHIPMENT'),
             ),
           ],
+        ),
+        const SizedBox(height: 28),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+          ),
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              const Text('🇺🇸', style: TextStyle(fontSize: 18)),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('WE SHIP FROM', style: TextStyle(color: Color(0xFFC7D2E0), fontSize: 9, fontWeight: FontWeight.w700)),
+                  Text('ANYWHERE IN THE U.S.A.', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+                ],
+              ),
+              const Icon(Icons.double_arrow, color: LandingScreen.yellow, size: 16),
+              const Text('🇯🇲', style: TextStyle(fontSize: 18)),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('TO KINGSTON, JA', style: TextStyle(color: Color(0xFFC7D2E0), fontSize: 9, fontWeight: FontWeight.w700)),
+                  Text('via sea and air freight', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+                ],
+              ),
+            ],
+          ),
         ),
       ],
     );
 
-    final mockup = const _HeroMockup();
+    final visual = Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.asset('assets/images/one_village_logo.png', fit: BoxFit.contain),
+      ),
+    );
 
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [LandingScreen.bg, LandingScreen.bgAlt],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+          colors: [LandingScreen.navy, LandingScreen.secondaryNavy],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
       ),
       child: _MaxWidth(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 80),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 64),
         child: wide
             ? Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Expanded(flex: 5, child: copy),
-                  const SizedBox(width: 48),
-                  Expanded(flex: 4, child: mockup),
+                  Expanded(flex: 6, child: copy),
+                  const SizedBox(width: 40),
+                  Expanded(flex: 5, child: visual),
                 ],
               )
             : Column(
                 children: [
                   copy,
-                  const SizedBox(height: 48),
-                  mockup,
+                  const SizedBox(height: 40),
+                  visual,
                 ],
               ),
       ),
@@ -571,238 +572,221 @@ class _Hero extends StatelessWidget {
   }
 }
 
-class _AvatarStack extends StatelessWidget {
-  const _AvatarStack();
+// ---------------------------------------------------------------------------
+// Services
+// ---------------------------------------------------------------------------
 
-  static const _people = [
-    ('JD', LandingScreen.teal),
-    ('MK', LandingScreen.purple),
-    ('AS', LandingScreen.amber),
-    ('RL', LandingScreen.green),
+class _Services extends StatelessWidget {
+  const _Services({super.key});
+
+  static const _items = [
+    (
+      Icons.directions_boat_outlined,
+      'Sea Freight',
+      'Reliable and cost-effective ocean shipping to destinations worldwide.',
+    ),
+    (
+      Icons.flight_outlined,
+      'Air Freight',
+      'Fast and secure air cargo solutions when time matters.',
+    ),
+    (
+      Icons.warehouse_outlined,
+      'Warehousing',
+      'Secure storage, inventory management, and distribution.',
+    ),
+    (
+      Icons.local_shipping_outlined,
+      'Door to Door',
+      'Complete delivery solution from our warehouse to your door.',
+    ),
+    (
+      Icons.fact_check_outlined,
+      'Customs Clearance',
+      'Expert documentation and fast customs clearance.',
+    ),
   ];
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 26.0 * 3 + 28,
-      height: 28,
-      child: Stack(
-        children: [
-          for (var i = 0; i < _people.length; i++)
-            Positioned(
-              left: i * 20.0,
-              child: Container(
-                width: 28,
-                height: 28,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _people[i].$2,
-                  border: Border.all(color: LandingScreen.bg, width: 2),
-                ),
-                child: Text(
-                  _people[i].$1,
-                  style: const TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
+    return Container(
+      color: Colors.white,
+      child: _MaxWidth(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 88),
+        child: Column(
+          children: [
+            const Text(
+              'OUR SERVICES',
+              style: TextStyle(color: LandingScreen.gold, fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1.2),
             ),
-        ],
+            const SizedBox(height: 10),
+            const Text(
+              'Comprehensive Solutions. Delivered.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: LandingScreen.navy, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+            ),
+            const SizedBox(height: 44),
+            LayoutBuilder(
+              builder: (context, c) {
+                final cols = c.maxWidth > 1000 ? 5 : (c.maxWidth > 700 ? 3 : (c.maxWidth > 420 ? 2 : 1));
+                return GridView.count(
+                  crossAxisCount: cols,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 20,
+                  crossAxisSpacing: 20,
+                  childAspectRatio: 0.82,
+                  children: _items.map((s) => _ServiceCard(icon: s.$1, title: s.$2, desc: s.$3)).toList(),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _HeroMockup extends StatelessWidget {
-  const _HeroMockup();
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: LandingScreen.card,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: LandingScreen.border),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 40, offset: const Offset(0, 20)),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 30,
-                    height: 30,
-                    decoration: const BoxDecoration(color: LandingScreen.teal, shape: BoxShape.circle),
-                    alignment: Alignment.center,
-                    child: const Text('AZ', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.black)),
-                  ),
-                  const SizedBox(width: 10),
-                  const Text('Demo Courier Co.', style: TextStyle(color: LandingScreen.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
-                  const Spacer(),
-                  const Icon(Icons.notifications_none, size: 18, color: LandingScreen.textSecondary),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(child: _MockStat('Credit', '\$420.00')),
-                  const SizedBox(width: 10),
-                  Expanded(child: _MockStat('Points', '1,240')),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(child: _MockStat('Packages', '3 ready')),
-                  const SizedBox(width: 10),
-                  Expanded(child: _MockStat('This month', '\$1,180')),
-                ],
-              ),
-              const SizedBox(height: 18),
-              const Row(
-                children: [
-                  Text('Recent Packages', style: TextStyle(color: LandingScreen.textPrimary, fontWeight: FontWeight.w700, fontSize: 12)),
-                  Spacer(),
-                  Text('View all', style: TextStyle(color: LandingScreen.teal, fontSize: 11)),
-                ],
-              ),
-              const SizedBox(height: 10),
-              const _MockPackageRow('AZ394894589', 'Shipped', LandingScreen.teal),
-              const SizedBox(height: 8),
-              const _MockPackageRow('AZ798767898', 'In transit', LandingScreen.amber),
-              const SizedBox(height: 8),
-              const _MockPackageRow('AZ356765435', 'Delivered', LandingScreen.green),
-              const SizedBox(height: 28),
-            ],
-          ),
-        ),
-        Positioned(
-          top: -16,
-          right: -12,
-          child: _FloatingChip(icon: Icons.inventory_2_outlined, label: '1,204', sub: 'Packages tracked'),
-        ),
-        Positioned(
-          bottom: -14,
-          left: -12,
-          child: _FloatingChip(icon: Icons.trending_up, label: '99.9%', sub: 'Uptime'),
-        ),
-      ],
-    );
-  }
-}
-
-class _MockStat extends StatelessWidget {
-  final String label;
-  final String value;
-  const _MockStat(this.label, this.value);
+class _ServiceCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String desc;
+  const _ServiceCard({required this.icon, required this.title, required this.desc});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: LandingScreen.cardAlt,
-        borderRadius: BorderRadius.circular(10),
+        color: LandingScreen.iceGray,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: LandingScreen.borderGray),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 10)),
-          const SizedBox(height: 2),
-          Text(value, style: const TextStyle(color: LandingScreen.textPrimary, fontSize: 13, fontWeight: FontWeight.w700)),
-        ],
-      ),
-    );
-  }
-}
-
-class _MockPackageRow extends StatelessWidget {
-  final String tracking;
-  final String status;
-  final Color color;
-  const _MockPackageRow(this.tracking, this.status, this.color);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: LandingScreen.cardAlt,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.qr_code_2, size: 14, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              tracking,
-              style: const TextStyle(color: LandingScreen.textPrimary, fontSize: 11),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(999),
+            width: double.infinity,
+            height: 90,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [LandingScreen.navy, LandingScreen.secondaryNavy],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.only(topLeft: Radius.circular(14), topRight: Radius.circular(14)),
             ),
-            child: Text(status, style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FloatingChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String sub;
-  const _FloatingChip({required this.icon, required this.label, required this.sub});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: LandingScreen.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: LandingScreen.border),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 8)),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(color: LandingScreen.teal.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(7)),
             alignment: Alignment.center,
-            child: Icon(icon, size: 14, color: LandingScreen.teal),
+            child: Container(
+              width: 46,
+              height: 46,
+              decoration: const BoxDecoration(color: LandingScreen.yellow, shape: BoxShape.circle),
+              alignment: Alignment.center,
+              child: Icon(icon, color: LandingScreen.navy, size: 24),
+            ),
           ),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label, style: const TextStyle(color: LandingScreen.textPrimary, fontSize: 12, fontWeight: FontWeight.w800)),
-              Text(sub, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 9)),
-            ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(color: LandingScreen.navy, fontWeight: FontWeight.w800, fontSize: 15),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  desc,
+                  style: const TextStyle(color: LandingScreen.charcoalSoft, fontSize: 12.5, height: 1.5),
+                ),
+                const SizedBox(height: 12),
+                const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('LEARN MORE', style: TextStyle(color: LandingScreen.secondaryNavy, fontSize: 11, fontWeight: FontWeight.w800)),
+                    SizedBox(width: 4),
+                    Icon(Icons.arrow_forward, size: 12, color: LandingScreen.secondaryNavy),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Why choose us
+// ---------------------------------------------------------------------------
+
+class _WhyChooseUs extends StatelessWidget {
+  const _WhyChooseUs();
+
+  static const _items = [
+    (Icons.groups_outlined, 'Experienced Team', 'Professionals with years of industry expertise.'),
+    (Icons.shield_outlined, 'Secure & Reliable', 'Your cargo is safe with us.'),
+    (Icons.attach_money, 'Competitive Rates', 'Quality service at the best value.'),
+    (Icons.public, 'Global Coverage', 'Strong network across the world.'),
+    (Icons.support_agent_outlined, '24/7 Customer Support', "We're here whenever you need us."),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: LandingScreen.navy,
+      child: _MaxWidth(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 72),
+        child: Column(
+          children: [
+            const Text(
+              'WHY CHOOSE US',
+              style: TextStyle(color: LandingScreen.gold, fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1.2),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'We go the extra mile for your cargo.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.3),
+            ),
+            const SizedBox(height: 44),
+            LayoutBuilder(
+              builder: (context, c) {
+                final cols = c.maxWidth > 900 ? 5 : (c.maxWidth > 560 ? 3 : 1);
+                return GridView.count(
+                  crossAxisCount: cols,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 28,
+                  crossAxisSpacing: 20,
+                  childAspectRatio: cols == 1 ? 3.4 : 1.0,
+                  children: _items
+                      .map(
+                        (w) => Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Icon(w.$1, color: LandingScreen.yellow, size: 28),
+                            const SizedBox(height: 12),
+                            Text(
+                              w.$2,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              w.$3,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 11.5, height: 1.4),
+                            ),
+                          ],
+                        ),
+                      )
+                      .toList(),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -816,37 +800,50 @@ class _StatsBar extends StatelessWidget {
   const _StatsBar();
 
   static const _stats = [
-    ('50+', 'Active Partners'),
-    ('250K+', 'Packages Processed'),
-    ('99.9%', 'Platform Uptime'),
-    ('12+', 'Parishes Served'),
+    (Icons.directions_boat_filled_outlined, '10+', 'YEARS EXPERIENCE'),
+    (Icons.inventory_2_outlined, '50,000+', 'SHIPMENTS DELIVERED'),
+    (Icons.public, '100+', 'COUNTRIES SERVED'),
+    (Icons.groups_outlined, '5,000+', 'SATISFIED CUSTOMERS'),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: LandingScreen.bgAlt,
+      color: LandingScreen.yellow,
       child: _MaxWidth(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-        child: Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 48,
-          runSpacing: 24,
-          children: _stats
-              .map(
-                (s) => Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      s.$1,
-                      style: const TextStyle(color: LandingScreen.textPrimary, fontSize: 30, fontWeight: FontWeight.w800),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final cols = c.maxWidth > 700 ? 4 : (c.maxWidth > 420 ? 2 : 1);
+            return GridView.count(
+              crossAxisCount: cols,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: cols == 1 ? 4.5 : 2.4,
+              children: _stats
+                  .map(
+                    (s) => Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(s.$1, color: LandingScreen.navy, size: 26),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(s.$2, style: const TextStyle(color: LandingScreen.navy, fontSize: 20, fontWeight: FontWeight.w900)),
+                            Text(s.$3, style: const TextStyle(color: LandingScreen.navy, fontSize: 10, fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(s.$2, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 12)),
-                  ],
-                ),
-              )
-              .toList(),
+                  )
+                  .toList(),
+            );
+          },
         ),
       ),
     );
@@ -854,1027 +851,293 @@ class _StatsBar extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Platform highlights (bento grid)
+// Ready to ship CTA + dual sign up
 // ---------------------------------------------------------------------------
 
-class _Highlights extends StatelessWidget {
-  const _Highlights();
+class _CtaSignup extends StatelessWidget {
+  final VoidCallback onWarehouseSignUp;
+  final VoidCallback onCustomerSignUp;
+  const _CtaSignup({super.key, required this.onWarehouseSignUp, required this.onCustomerSignUp});
 
   @override
   Widget build(BuildContext context) {
-    return _MaxWidth(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 88),
-      child: Column(
-        children: [
-          const Text(
-            'PLATFORM HIGHLIGHTS',
-            style: TextStyle(color: LandingScreen.teal, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.2),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Everything you need to scale',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: LandingScreen.textPrimary, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: -0.5),
-          ),
-          const SizedBox(height: 40),
-          LayoutBuilder(
-            builder: (context, c) {
-              final wide = c.maxWidth > 900;
-              const chart = _AnalyticsCard();
-              const security = _SecurityCard();
-              const scalable = _ScalableCard();
-              const trust = _TrustCard();
-              const mobile = _MobileCard();
-              if (!wide) {
-                return const Column(
-                  children: [chart, SizedBox(height: 16), security, SizedBox(height: 16), scalable, SizedBox(height: 16), trust, SizedBox(height: 16), mobile],
-                );
-              }
-              return const Column(
-                children: [
-                  IntrinsicHeight(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(flex: 2, child: chart),
-                        SizedBox(width: 16),
-                        Expanded(child: security),
-                      ],
-                    ),
-                  ),
-                  SizedBox(height: 16),
-                  IntrinsicHeight(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(child: scalable),
-                        SizedBox(width: 16),
-                        Expanded(child: trust),
-                        SizedBox(width: 16),
-                        Expanded(child: mobile),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HighlightCard extends StatelessWidget {
-  final Widget child;
-  const _HighlightCard({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: LandingScreen.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: LandingScreen.border),
-      ),
-      child: child,
-    );
-  }
-}
-
-class _AnalyticsCard extends StatelessWidget {
-  const _AnalyticsCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return _HighlightCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(color: LandingScreen.teal.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-                alignment: Alignment.center,
-                child: const Icon(Icons.bar_chart_rounded, size: 16, color: LandingScreen.teal),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Realtime Analytics', style: TextStyle(color: LandingScreen.textPrimary, fontWeight: FontWeight.w700, fontSize: 14)),
-                    Text('Live tracking dashboard', style: TextStyle(color: LandingScreen.textSecondary, fontSize: 11)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Wrap(
-            spacing: 14,
-            runSpacing: 6,
-            children: [
-              _LegendDot(color: LandingScreen.teal, label: 'Packages'),
-              _LegendDot(color: LandingScreen.purple, label: 'Deliveries'),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 180,
-            child: LineChart(
-              LineChartData(
-                gridData: const FlGridData(show: false),
-                titlesData: const FlTitlesData(show: false),
-                borderData: FlBorderData(show: false),
-                lineTouchData: const LineTouchData(enabled: false),
-                minY: 0,
-                maxY: 300,
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: const [
-                      FlSpot(0, 190), FlSpot(1, 230), FlSpot(2, 205), FlSpot(3, 260),
-                      FlSpot(4, 240), FlSpot(5, 270), FlSpot(6, 250), FlSpot(7, 225),
-                      FlSpot(8, 255), FlSpot(9, 230), FlSpot(10, 200), FlSpot(11, 215),
-                    ],
-                    isCurved: true,
-                    color: LandingScreen.teal,
-                    barWidth: 2.5,
-                    dotData: const FlDotData(show: false),
-                    belowBarData: BarAreaData(show: true, color: LandingScreen.teal.withValues(alpha: 0.08)),
-                  ),
-                  LineChartBarData(
-                    spots: const [
-                      FlSpot(0, 130), FlSpot(1, 150), FlSpot(2, 120), FlSpot(3, 160),
-                      FlSpot(4, 110), FlSpot(5, 140), FlSpot(6, 125), FlSpot(7, 100),
-                      FlSpot(8, 135), FlSpot(9, 105), FlSpot(10, 90), FlSpot(11, 115),
-                    ],
-                    isCurved: true,
-                    color: LandingScreen.purple,
-                    barWidth: 2.5,
-                    dotData: const FlDotData(show: false),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LegendDot extends StatelessWidget {
-  final Color color;
-  final String label;
-  const _LegendDot({required this.color, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    final wide = MediaQuery.of(context).size.width > 900;
+    final intro = Column(
+      crossAxisAlignment: wide ? CrossAxisAlignment.start : CrossAxisAlignment.center,
       children: [
-        Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        const SizedBox(width: 5),
-        Text(label, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 10)),
+        const Text(
+          'Ready to ship?',
+          style: TextStyle(color: LandingScreen.gold, fontSize: 22, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          "Let's move your world forward.",
+          textAlign: TextAlign.center,
+          style: TextStyle(color: LandingScreen.navy, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.3),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Get a free quote today and experience the One Village difference.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: LandingScreen.charcoalSoft, fontSize: 14),
+        ),
       ],
     );
-  }
-}
 
-class _SecurityCard extends StatelessWidget {
-  const _SecurityCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return _HighlightCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(color: LandingScreen.purple.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-            alignment: Alignment.center,
-            child: const Icon(Icons.verified_user_outlined, size: 16, color: LandingScreen.purple),
-          ),
-          const SizedBox(height: 14),
-          const Text('Enterprise-grade Security', style: TextStyle(color: LandingScreen.textPrimary, fontWeight: FontWeight.w700, fontSize: 14)),
-          const SizedBox(height: 8),
-          const Text(
-            'Your data is protected with tenant isolation, encrypted transport, and automatic backups.',
-            style: TextStyle(color: LandingScreen.textSecondary, fontSize: 12, height: 1.5),
-          ),
-          const SizedBox(height: 16),
-          const Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _Pill('SSL/TLS', LandingScreen.purple),
-              _Pill('RLS', LandingScreen.purple),
-              _Pill('Encrypted', LandingScreen.purple),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Pill extends StatelessWidget {
-  final String label;
-  final Color color;
-  const _Pill(this.label, this.color);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
-      child: Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
-    );
-  }
-}
-
-class _ScalableCard extends StatelessWidget {
-  const _ScalableCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return _HighlightCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(color: LandingScreen.amber.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-                alignment: Alignment.center,
-                child: const Icon(Icons.bolt, size: 16, color: LandingScreen.amber),
-              ),
-              const Spacer(),
-              const _Pill('15+ modules', LandingScreen.amber),
-            ],
-          ),
-          const SizedBox(height: 14),
-          const Text('Infinitely Scalable', style: TextStyle(color: LandingScreen.textPrimary, fontWeight: FontWeight.w700, fontSize: 14)),
-          const SizedBox(height: 8),
-          const Text(
-            'Multiple branches, unlimited staff accounts, and an API built for growth.',
-            style: TextStyle(color: LandingScreen.textSecondary, fontSize: 12, height: 1.5),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TrustCard extends StatelessWidget {
-  const _TrustCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return _HighlightCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Trusted by shipping partners', style: TextStyle(color: LandingScreen.textSecondary, fontSize: 11)),
-          const SizedBox(height: 10),
-          const Text('50+', style: TextStyle(color: LandingScreen.textPrimary, fontSize: 30, fontWeight: FontWeight.w800)),
-          const Text('partners across Jamaica', style: TextStyle(color: LandingScreen.textSecondary, fontSize: 11)),
-          const SizedBox(height: 12),
-          const Row(
-            children: [
-              Icon(Icons.star, size: 13, color: LandingScreen.amber),
-              Icon(Icons.star, size: 13, color: LandingScreen.amber),
-              Icon(Icons.star, size: 13, color: LandingScreen.amber),
-              Icon(Icons.star, size: 13, color: LandingScreen.amber),
-              Icon(Icons.star_half, size: 13, color: LandingScreen.amber),
-              SizedBox(width: 6),
-              Text('4.8/5 average rating', style: TextStyle(color: LandingScreen.textSecondary, fontSize: 10)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MobileCard extends StatelessWidget {
-  const _MobileCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return _HighlightCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(color: LandingScreen.green.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-            alignment: Alignment.center,
-            child: const Icon(Icons.devices_outlined, size: 16, color: LandingScreen.green),
-          ),
-          const SizedBox(height: 14),
-          const Text('Mobile-first Design', style: TextStyle(color: LandingScreen.textPrimary, fontWeight: FontWeight.w700, fontSize: 14)),
-          const SizedBox(height: 8),
-          const Text(
-            'Built to work great on any device — warehouse floor, front desk, or on the road.',
-            style: TextStyle(color: LandingScreen.textSecondary, fontSize: 12, height: 1.5),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Features + dashboard mockup
-// ---------------------------------------------------------------------------
-
-class _Features extends StatelessWidget {
-  final VoidCallback onGetStarted;
-  const _Features({super.key, required this.onGetStarted});
-
-  static const _items = [
-    (Icons.location_on_outlined, 'Advanced Tracking', 'Live status timeline from pre-alert through delivery.'),
-    (Icons.dashboard_outlined, 'Dashboard Portals', 'Separate portals for admins, partners, and customers.'),
-    (Icons.mark_email_read_outlined, 'Email Notifications', 'Automated updates keep customers informed at every step.'),
-    (Icons.receipt_long_outlined, 'Invoice Management', 'Generate and track invoices tied to every shipment.'),
-    (Icons.api_outlined, 'Powerful API', 'Integrate pre-alerts and tracking with 3rd-party systems.'),
-    (Icons.insights_outlined, 'Advanced Reporting', 'Operational reports across branches, staff, and warehouses.'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: LandingScreen.bgAlt,
-      child: _MaxWidth(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 88),
-        child: Column(
-          children: [
-            const Text(
-              'The ultimate courier & warehouse platform',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: LandingScreen.textPrimary, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: -0.5),
-            ),
-            const SizedBox(height: 12),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: const Text(
-                'Keep everything in one place — efficiently and securely. Built to manage '
-                'every part of your courier or warehouse operation.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: LandingScreen.textSecondary, fontSize: 15, height: 1.6),
-              ),
-            ),
-            const SizedBox(height: 48),
-            const _DashboardMockup(),
-            const SizedBox(height: 56),
-            LayoutBuilder(
-              builder: (context, c) {
-                final cols = c.maxWidth > 900 ? 3 : (c.maxWidth > 600 ? 2 : 1);
-                return GridView.count(
-                  crossAxisCount: cols,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 28,
-                  crossAxisSpacing: 28,
-                  childAspectRatio: cols == 1 ? 3.2 : 2.3,
-                  children: _items.map((f) => _FeatureRow(icon: f.$1, title: f.$2, desc: f.$3)).toList(),
-                );
-              },
-            ),
-          ],
+    final cards = Wrap(
+      spacing: 16,
+      runSpacing: 16,
+      children: [
+        _SignupCard(
+          icon: Icons.warehouse_outlined,
+          title: 'WAREHOUSE SIGN UP',
+          desc: 'Partner with us for secure storage and fulfillment.',
+          filled: true,
+          onTap: onWarehouseSignUp,
         ),
+        _SignupCard(
+          icon: Icons.person_outline,
+          title: 'CUSTOMER SIGN UP',
+          desc: 'Create an account to ship faster and easier.',
+          filled: false,
+          onTap: onCustomerSignUp,
+        ),
+      ],
+    );
+
+    return Container(
+      color: LandingScreen.iceGray,
+      child: _MaxWidth(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 72),
+        child: wide
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(flex: 4, child: intro),
+                  const SizedBox(width: 32),
+                  Expanded(flex: 5, child: cards),
+                ],
+              )
+            : Column(
+                children: [
+                  intro,
+                  const SizedBox(height: 32),
+                  cards,
+                ],
+              ),
       ),
     );
   }
 }
 
-class _FeatureRow extends StatelessWidget {
+class _SignupCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String desc;
-  const _FeatureRow({required this.icon, required this.title, required this.desc});
+  final bool filled;
+  final VoidCallback onTap;
+  const _SignupCard({
+    required this.icon,
+    required this.title,
+    required this.desc,
+    required this.filled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 260,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: filled ? LandingScreen.navy : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: filled ? LandingScreen.navy : LandingScreen.borderGray),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: filled ? LandingScreen.yellow : LandingScreen.navy, size: 28),
+          const SizedBox(height: 14),
+          Text(
+            title,
+            style: TextStyle(
+              color: filled ? Colors.white : LandingScreen.navy,
+              fontWeight: FontWeight.w800,
+              fontSize: 14,
+              letterSpacing: 0.3,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            desc,
+            style: TextStyle(
+              color: filled ? const Color(0xFFC7D2E0) : LandingScreen.charcoalSoft,
+              fontSize: 12.5,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: onTap,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: filled ? LandingScreen.yellow : LandingScreen.navy,
+                foregroundColor: filled ? LandingScreen.navy : Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('SIGN UP NOW'),
+                  SizedBox(width: 6),
+                  Icon(Icons.arrow_forward, size: 14),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Footer
+// ---------------------------------------------------------------------------
+
+class _Footer extends StatelessWidget {
+  final VoidCallback onHome;
+  final VoidCallback onServices;
+  final VoidCallback onContact;
+  const _Footer({required this.onHome, required this.onServices, required this.onContact});
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.of(context).size.width > 900;
+    return Container(
+      color: LandingScreen.navy,
+      child: Column(
+        children: [
+          _MaxWidth(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+            child: Flex(
+              direction: wide ? Axis.horizontal : Axis.vertical,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: wide ? 3 : 0,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Image.asset('assets/images/one_village_logo.png', height: 44),
+                      const SizedBox(height: 12),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 280),
+                        child: const Text(
+                          'Your trusted partner for shipping, freight, and delivery solutions worldwide.',
+                          style: TextStyle(color: Color(0xFFA9B8CC), fontSize: 12.5, height: 1.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!wide) const SizedBox(height: 32),
+                Expanded(
+                  flex: wide ? 2 : 0,
+                  child: _FooterColumn(
+                    'QUICK LINKS',
+                    [('Home', onHome), ('Services', onServices), ('Contact', onContact)],
+                  ),
+                ),
+                if (!wide) const SizedBox(height: 32),
+                const Expanded(
+                  flex: 2,
+                  child: _FooterStaticColumn(
+                    'SERVICES',
+                    ['Sea Freight', 'Air Freight', 'Warehousing', 'Door to Door', 'Customs Clearance'],
+                  ),
+                ),
+                if (!wide) const SizedBox(height: 32),
+                Expanded(
+                  flex: wide ? 3 : 0,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'CONTACT US',
+                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6),
+                      ),
+                      const SizedBox(height: 14),
+                      const _FooterContactRow(Icons.phone_outlined, '267-844-5155'),
+                      const SizedBox(height: 10),
+                      const _FooterContactRow(Icons.location_on_outlined, 'Hollywood, Florida'),
+                      const SizedBox(height: 10),
+                      const _FooterContactRow(Icons.email_outlined, 'shipping@onevillageshipping.com'),
+                      const SizedBox(height: 16),
+                      const Row(
+                        children: [
+                          _SocialIcon(Icons.camera_alt_outlined),
+                          SizedBox(width: 10),
+                          _SocialIcon(Icons.music_note_outlined),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(color: Color(0xFF1E3556), height: 1),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            child: Text(
+              '© ${DateTime.now().year} One Village Shipping & Freight LLC. All Rights Reserved.',
+              style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 11.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FooterContactRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _FooterContactRow(this.icon, this.text);
 
   @override
   Widget build(BuildContext context) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(color: LandingScreen.teal.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(9)),
-          alignment: Alignment.center,
-          child: Icon(icon, size: 18, color: LandingScreen.teal),
-        ),
-        const SizedBox(width: 14),
+        Icon(icon, color: LandingScreen.yellow, size: 15),
+        const SizedBox(width: 8),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(color: LandingScreen.textPrimary, fontWeight: FontWeight.w700, fontSize: 14)),
-              const SizedBox(height: 4),
-              Text(desc, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 12, height: 1.5)),
-            ],
-          ),
+          child: Text(text, style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 12.5)),
         ),
       ],
     );
   }
 }
 
-class _DashboardMockup extends StatelessWidget {
-  const _DashboardMockup();
-
-  static const _nav = [
-    (Icons.dashboard_outlined, 'Dashboard', true),
-    (Icons.point_of_sale_outlined, 'Point of Sale', false),
-    (Icons.people_outline, 'Customers', false),
-    (Icons.inventory_2_outlined, 'Packages', false),
-    (Icons.local_shipping_outlined, 'Shipments', false),
-    (Icons.notifications_active_outlined, 'Pre-Alerts', false),
-    (Icons.insights_outlined, 'Reports', false),
-    (Icons.settings_outlined, 'Settings', false),
-  ];
-
-  static const _stats = [
-    ('Total Customers', '58', LandingScreen.teal, Icons.people_outline),
-    ('Registered Users', '219', LandingScreen.purple, Icons.person_outline),
-    ('Packages Processed', '14', LandingScreen.green, Icons.inventory_2_outlined),
-    ('Revenue (30d)', '\$8,240', LandingScreen.amber, Icons.attach_money),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final showSidebar = c.maxWidth > 700;
-        return Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: LandingScreen.card,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: LandingScreen.border),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 40, offset: const Offset(0, 20)),
-            ],
-          ),
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (showSidebar)
-                  Container(
-                    width: 170,
-                    padding: const EdgeInsets.all(14),
-                    decoration: const BoxDecoration(
-                      border: Border(right: BorderSide(color: LandingScreen.border)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            _LogoMark(),
-                            SizedBox(width: 8),
-                            Text('Applizone', style: TextStyle(color: LandingScreen.textPrimary, fontSize: 11, fontWeight: FontWeight.w700)),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-                        for (final n in _nav)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                              decoration: BoxDecoration(
-                                color: n.$3 ? LandingScreen.teal.withValues(alpha: 0.12) : null,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(n.$1, size: 13, color: n.$3 ? LandingScreen.teal : LandingScreen.textSecondary),
-                                  const SizedBox(width: 8),
-                                  Text(n.$2, style: TextStyle(fontSize: 10, color: n.$3 ? LandingScreen.textPrimary : LandingScreen.textSecondary)),
-                                ],
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Dashboard  ›  Overview', style: TextStyle(color: LandingScreen.textSecondary, fontSize: 11)),
-                        const SizedBox(height: 16),
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
-                          children: _stats
-                              .map(
-                                (s) => Container(
-                                  width: 140,
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(color: LandingScreen.cardAlt, borderRadius: BorderRadius.circular(10)),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Icon(s.$4, size: 14, color: s.$3),
-                                      const SizedBox(height: 8),
-                                      Text(s.$2, style: const TextStyle(color: LandingScreen.textPrimary, fontSize: 16, fontWeight: FontWeight.w800)),
-                                      Text(s.$1, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 9)),
-                                    ],
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(color: LandingScreen.cardAlt, borderRadius: BorderRadius.circular(10)),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Package & Customer Growth', style: TextStyle(color: LandingScreen.textPrimary, fontSize: 11, fontWeight: FontWeight.w700)),
-                              const SizedBox(height: 10),
-                              SizedBox(
-                                height: 110,
-                                child: LineChart(
-                                  LineChartData(
-                                    gridData: const FlGridData(show: false),
-                                    titlesData: const FlTitlesData(show: false),
-                                    borderData: FlBorderData(show: false),
-                                    lineTouchData: const LineTouchData(enabled: false),
-                                    lineBarsData: [
-                                      LineChartBarData(
-                                        spots: const [
-                                          FlSpot(0, 30), FlSpot(1, 55), FlSpot(2, 40), FlSpot(3, 70),
-                                          FlSpot(4, 50), FlSpot(5, 90), FlSpot(6, 60), FlSpot(7, 75),
-                                        ],
-                                        isCurved: true,
-                                        color: LandingScreen.teal,
-                                        barWidth: 2,
-                                        dotData: const FlDotData(show: false),
-                                        belowBarData: BarAreaData(show: true, color: LandingScreen.teal.withValues(alpha: 0.08)),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Pricing
-// ---------------------------------------------------------------------------
-
-class _Pricing extends StatelessWidget {
-  final VoidCallback onGetStarted;
-  const _Pricing({super.key, required this.onGetStarted});
-
-  static const _customerFeatures = [
-    'Free forever',
-    'Real-time package tracking',
-    'Submit pre-alerts',
-    'View & pay invoices online',
-    'Personal shipping address',
-    'Refer & earn rewards',
-  ];
-
-  static const _courierFeatures = [
-    'Customer Portal',
-    'iOS & Android Apps',
-    'Advanced Package Tracking',
-    'Backoffice Portal',
-    'Pre-Alert System',
-    'Invoice Management',
-    'Unlimited Staff Users',
-    'Multiple Branch Locations',
-    'Point of Sale',
-    'Label Generation',
-    'Manifest Generation',
-    'Advanced Reporting',
-    'No Setup Fee',
-    'Partner Branding',
-  ];
-
-  static const _warehouseFeatures = [
-    'Courier Portal',
-    'Advanced Package Tracking',
-    'Invoice Management',
-    'Shipment Management',
-    'API for 3rd-Party Vendors',
-    'Manifest Generation',
-    'Label Generation',
-    'Cloud Printing',
-    'Advanced Reporting',
-    'No Setup Fee',
-    'Staff Mobile Access',
-    'White Label',
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return _MaxWidth(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 88),
-      child: Column(
-        children: [
-          const Text('PRICING', style: TextStyle(color: LandingScreen.teal, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
-          const SizedBox(height: 12),
-          const Text(
-            'Plans that grow with you',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: LandingScreen.textPrimary, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: -0.5),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Transparent pricing with no hidden fees. Start with what you need and scale as you grow.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: LandingScreen.textSecondary, fontSize: 14),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: LandingScreen.cardAlt,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: LandingScreen.border),
-            ),
-            child: const Text(
-              'Illustrative pricing — contact us for a plan tailored to your operation',
-              style: TextStyle(color: LandingScreen.textSecondary, fontSize: 11),
-            ),
-          ),
-          const SizedBox(height: 40),
-          LayoutBuilder(
-            builder: (context, c) {
-              final wide = c.maxWidth > 980;
-              final customer = const _PricingCard(
-                badge: null,
-                title: 'Customer',
-                subtitle: 'Track and manage your own packages',
-                price: 'Free',
-                perPackage: null,
-                callout: null,
-                buttonFilled: false,
-                features: _customerFeatures,
-                planId: 'customer',
-              );
-              final courier = const _PricingCard(
-                badge: 'MOST POPULAR',
-                title: 'Courier Platform',
-                subtitle: 'Manage all your customers and packages in one place',
-                price: '\$29',
-                perPackage: '+ \$0.15 per package',
-                callout: 'iOS & Android apps included at no extra cost',
-                buttonFilled: true,
-                features: _courierFeatures,
-                planId: 'courier',
-              );
-              final warehouse = const _PricingCard(
-                badge: null,
-                title: 'Warehouse Platform',
-                subtitle: 'End-to-end warehouse management for large operations',
-                price: '\$199',
-                perPackage: '+ \$0.12 per package',
-                callout: null,
-                buttonFilled: false,
-                features: _warehouseFeatures,
-                planId: 'warehouse',
-              );
-              if (!wide) {
-                return Column(children: [customer, const SizedBox(height: 20), courier, const SizedBox(height: 20), warehouse]);
-              }
-              return IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(child: customer),
-                    const SizedBox(width: 20),
-                    Expanded(child: courier),
-                    const SizedBox(width: 20),
-                    Expanded(child: warehouse),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PricingCard extends StatelessWidget {
-  final String? badge;
-  final String title;
-  final String subtitle;
-  final String price;
-  final String? perPackage;
-  final String? callout;
-  final bool buttonFilled;
-  final List<String> features;
-  final String planId;
-
-  const _PricingCard({
-    required this.badge,
-    required this.title,
-    required this.subtitle,
-    required this.price,
-    required this.perPackage,
-    required this.callout,
-    required this.buttonFilled,
-    required this.features,
-    required this.planId,
-  });
-
-  bool get _isCustomerPlan => planId == 'customer';
-
-  void _goToSignUp(BuildContext context) {
-    if (_isCustomerPlan) {
-      Navigator.of(context).pushNamed('/customer-login', arguments: {'signup': true});
-      return;
-    }
-    Navigator.of(
-      context,
-    ).pushNamed('/partner-login', arguments: {'signup': true, 'plan': planId});
-  }
+class _SocialIcon extends StatelessWidget {
+  final IconData icon;
+  const _SocialIcon(this.icon);
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: LandingScreen.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: badge != null ? LandingScreen.teal.withValues(alpha: 0.5) : LandingScreen.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (badge != null) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(color: LandingScreen.teal, borderRadius: BorderRadius.circular(999)),
-              child: Text(badge!, style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w800)),
-            ),
-            const SizedBox(height: 14),
-          ],
-          Text(title, style: const TextStyle(color: LandingScreen.textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 6),
-          Text(subtitle, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 12, height: 1.4)),
-          const SizedBox(height: 18),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(price, style: const TextStyle(color: LandingScreen.textPrimary, fontSize: 34, fontWeight: FontWeight.w800)),
-              if (perPackage != null)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 6, left: 4),
-                  child: Text('/mo', style: TextStyle(color: LandingScreen.textSecondary, fontSize: 13)),
-                ),
-            ],
-          ),
-          if (perPackage != null)
-            Text(perPackage!, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 11))
-          else
-            const Text('No credit card required', style: TextStyle(color: LandingScreen.textSecondary, fontSize: 11)),
-          if (callout != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(color: LandingScreen.cardAlt, borderRadius: BorderRadius.circular(8)),
-              child: Text(callout!, textAlign: TextAlign.center, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 11)),
-            ),
-          ],
-          const SizedBox(height: 18),
-          SizedBox(
-            width: double.infinity,
-            child: buttonFilled
-                ? ElevatedButton(
-                    onPressed: () => _goToSignUp(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: LandingScreen.teal,
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                    ),
-                    child: Text(_isCustomerPlan ? 'Sign Up Free' : 'Get Started'),
-                  )
-                : OutlinedButton(
-                    onPressed: () => _goToSignUp(context),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: LandingScreen.textPrimary,
-                      side: const BorderSide(color: LandingScreen.border),
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                    ),
-                    child: Text(_isCustomerPlan ? 'Sign Up Free' : 'Get Started'),
-                  ),
-          ),
-          const SizedBox(height: 20),
-          const Divider(color: LandingScreen.border, height: 1),
-          const SizedBox(height: 16),
-          Text('WHAT\'S INCLUDED', style: TextStyle(color: LandingScreen.textSecondary.withValues(alpha: 0.8), fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.6)),
-          const SizedBox(height: 12),
-          for (final f in features)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 9),
-              child: Row(
-                children: [
-                  const Icon(Icons.check_circle, size: 14, color: LandingScreen.teal),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(f, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 12))),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// CTA + footer
-// ---------------------------------------------------------------------------
-
-class _CtaBanner extends StatelessWidget {
-  final VoidCallback onGetStarted;
-  const _CtaBanner({required this.onGetStarted});
-
-  @override
-  Widget build(BuildContext context) {
-    return _MaxWidth(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 88),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 56),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          gradient: LinearGradient(
-            colors: [LandingScreen.teal.withValues(alpha: 0.15), LandingScreen.bgAlt],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          border: Border.all(color: LandingScreen.border),
-        ),
-        child: Column(
-          children: [
-            const Text(
-              'Ready to streamline your operations?',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: LandingScreen.textPrimary, fontSize: 26, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Join 50+ shipping partners that trust Applizone to power their courier and warehouse operations.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: LandingScreen.textSecondary, fontSize: 14),
-            ),
-            const SizedBox(height: 26),
-            ElevatedButton(
-              onPressed: onGetStarted,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: LandingScreen.teal,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 15),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-                textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Get Started'),
-                  SizedBox(width: 8),
-                  Icon(Icons.arrow_forward, size: 16),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Footer extends StatelessWidget {
-  final VoidCallback onHome;
-  final VoidCallback onFeatures;
-  final VoidCallback onPricing;
-  final VoidCallback onAbout;
-  final VoidCallback onContact;
-  final VoidCallback onPrivacy;
-  final VoidCallback onTerms;
-  const _Footer({
-    required this.onHome,
-    required this.onFeatures,
-    required this.onPricing,
-    required this.onAbout,
-    required this.onContact,
-    required this.onPrivacy,
-    required this.onTerms,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final wide = MediaQuery.of(context).size.width > 760;
-    final columns = [
-      _FooterColumn('PRODUCT', [('Features', onFeatures), ('Pricing', onPricing)]),
-      _FooterColumn('COMPANY', [('About', onAbout), ('Contact', onContact)]),
-      _FooterColumn('LEGAL', [('Privacy', onPrivacy), ('Terms', onTerms)]),
-    ];
-
-    return Container(
-      decoration: const BoxDecoration(border: Border(top: BorderSide(color: LandingScreen.border))),
-      child: _MaxWidth(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
-        child: Column(
-          children: [
-            Flex(
-              direction: wide ? Axis.horizontal : Axis.vertical,
-              crossAxisAlignment: wide ? CrossAxisAlignment.start : CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: wide ? 2 : 0,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      InkWell(
-                        onTap: onHome,
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _LogoMark(),
-                            SizedBox(width: 10),
-                            Text('Applizone', style: TextStyle(color: LandingScreen.textPrimary, fontWeight: FontWeight.w700, fontSize: 15)),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 260),
-                        child: const Text(
-                          'Reliable courier and warehousing software for businesses that move fast.',
-                          style: TextStyle(color: LandingScreen.textSecondary, fontSize: 12, height: 1.5),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (!wide) const SizedBox(height: 28),
-                Expanded(
-                  flex: wide ? 3 : 0,
-                  child: Wrap(
-                    spacing: 40,
-                    runSpacing: 24,
-                    children: columns,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 36),
-            const Divider(color: LandingScreen.border, height: 1),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Text(
-                  '© ${DateTime.now().year} Applizone Central Jamaica. All rights reserved.',
-                  style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 12),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(color: LandingScreen.yellow, borderRadius: BorderRadius.circular(8)),
+      alignment: Alignment.center,
+      child: Icon(icon, size: 16, color: LandingScreen.navy),
     );
   }
 }
@@ -1886,23 +1149,42 @@ class _FooterColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 140,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.6)),
-          const SizedBox(height: 12),
-          for (final l in links)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: InkWell(
-                onTap: l.$2,
-                child: Text(l.$1, style: const TextStyle(color: LandingScreen.textSecondary, fontSize: 13)),
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6)),
+        const SizedBox(height: 14),
+        for (final l in links)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: InkWell(
+              onTap: l.$2,
+              child: Text(l.$1, style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 12.5)),
             ),
-        ],
-      ),
+          ),
+      ],
+    );
+  }
+}
+
+class _FooterStaticColumn extends StatelessWidget {
+  final String title;
+  final List<String> items;
+  const _FooterStaticColumn(this.title, this.items);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6)),
+        const SizedBox(height: 14),
+        for (final i in items)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Text(i, style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 12.5)),
+          ),
+      ],
     );
   }
 }

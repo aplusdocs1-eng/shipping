@@ -44,12 +44,12 @@ class TenantService {
   /// the hostname does not match any approved partner.
   Map<String, dynamic>? get partner => _partner;
 
-  /// Applizone's own direct-tenant partner_accounts row — the fallback
+  /// One Village's own direct-tenant partner_accounts row — the fallback
   /// tenant for customers who sign up from the main site instead of a
   /// partner's own domain. See migration 20260805010000_direct_tenant.sql.
   static const directPartnerId = '00000000-0000-0000-0000-000000000001';
-  static const _directCompanyName = 'Applizone Central Jamaica';
-  static const _directTrackingPrefix = 'ACJ-';
+  static const _directCompanyName = 'One Village Shipping & Freight';
+  static const _directTrackingPrefix = 'OVS-';
 
   String? get partnerId =>
       _partner?['id'] as String? ?? (isAdminHost ? directPartnerId : null);

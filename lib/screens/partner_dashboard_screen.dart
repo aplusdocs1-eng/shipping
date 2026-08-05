@@ -1451,7 +1451,7 @@ class _FeaturePage extends StatelessWidget {
       case 'Settings':
         return 'Configure your company profile, branch locations, tax rates, rate cards, and branding.';
       case 'Support':
-        return 'Get help from the Applizone Central JA support team 24/7.';
+        return 'Get help from the One Village support team 24/7.';
       case 'Instructions':
         return 'Onboarding guides, API docs, and best practices for getting the most out of your portal.';
       default:
@@ -4538,7 +4538,7 @@ class _BrandingTab extends StatelessWidget {
                 const SizedBox(height: 16),
                 _SettingsField(
                   label: 'Email Sender Name',
-                  initial: 'Applizone Central JA',
+                  initial: 'One Village Shipping & Freight',
                 ),
                 const SizedBox(height: 16),
                 _SettingsField(
@@ -5260,7 +5260,7 @@ class _ReferralsPage extends StatelessWidget {
         .toUpperCase();
     return _PagePanel(
       title: 'Referrals',
-      subtitle: 'Earn rewards by referring other couriers to Applizone.',
+      subtitle: 'Earn rewards by referring other couriers to One Village.',
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -5930,7 +5930,7 @@ class _InstructionsPage extends StatelessWidget {
         'API & Webhooks',
         Icons.code,
         '8 min read',
-        'Integrate Applizone with your own systems via REST + webhooks.',
+        'Integrate One Village with your own systems via REST + webhooks.',
       ),
     ];
     return _PagePanel(

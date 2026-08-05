@@ -103,16 +103,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   // Logo
-                  Image.network(
-                    AppTheme.logoUrl,
-                    height: 80,
+                  Image.asset(
+                    'assets/images/one_village_logo.png',
+                    height: 100,
                     errorBuilder: (context, error, stackTrace) {
                       return Container(
                         height: 80,
                         width: 160,
                         alignment: Alignment.center,
                         child: const Text(
-                          'ACJ',
+                          'OV',
                           style: TextStyle(
                             fontSize: 36,
                             fontWeight: FontWeight.w900,
@@ -138,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'For Applizone Central Jamaica warehouse staff only. '
+                    'For One Village Shipping & Freight warehouse staff only. '
                     'Shipping partners — use the Partner Portal.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
@@ -342,7 +342,7 @@ class _CourierPlatformCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Applizone Courier Platform',
+            'One Village Courier Platform',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w800,

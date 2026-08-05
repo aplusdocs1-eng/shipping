@@ -113,7 +113,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 2),
                   const Text(
-                    'Applizone Central Jamaica',
+                    'One Village Shipping & Freight',
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.w800,

@@ -40,7 +40,7 @@ class CourierWarehouseApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Applizone Central Jamaica — Courier Portal',
+      title: 'One Village Shipping & Freight — Courier Portal',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       initialRoute: TenantService().isAdminHost ? '/' : '/partner-login',
@@ -137,12 +137,12 @@ class _MainShellState extends State<MainShell> {
             tooltip: 'Toggle navigation menu',
           ),
         ),
-        title: Image.network(
-          AppTheme.logoUrl,
-          height: 32,
+        title: Image.asset(
+          'assets/images/one_village_logo.png',
+          height: 40,
           errorBuilder: (context, error, stackTrace) {
             return const Text(
-              'Applizone Central JA',
+              'One Village Shipping & Freight',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
