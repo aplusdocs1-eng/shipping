@@ -233,6 +233,19 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
     try {
       final response = await _db.signUp(email, pass);
       if (!mounted) return;
+      // Supabase returns a mocked user (no identities) instead of an error
+      // when the email is already registered, to avoid leaking which
+      // emails exist. Catch that here rather than hitting a confusing
+      // foreign-key/unique-constraint error from the account RPC.
+      if (response.user != null &&
+          (response.user!.identities?.isEmpty ?? false)) {
+        setState(() {
+          _loading = false;
+          _error =
+              'An account with this email already exists. Please log in instead.';
+        });
+        return;
+      }
       if (response.user != null) {
         final apiKey = _generatePartnerApiKey();
         // create_partner_account also creates the linked shipping_partners

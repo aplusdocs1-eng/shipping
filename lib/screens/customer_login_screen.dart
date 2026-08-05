@@ -112,6 +112,18 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
         });
         return;
       }
+      // Supabase returns a mocked user (no identities) instead of an error
+      // when the email is already registered, to avoid leaking which
+      // emails exist. Catch that here rather than hitting a confusing
+      // foreign-key error from the account-creation RPC.
+      if (response.user!.identities?.isEmpty ?? false) {
+        setState(() {
+          _loading = false;
+          _error =
+              'An account with this email already exists. Please sign in instead.';
+        });
+        return;
+      }
       await _db.insertCustomerAccount(
         authUserId: response.user!.id,
         partnerId: partnerId,

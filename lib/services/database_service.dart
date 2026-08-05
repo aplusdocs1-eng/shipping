@@ -9,6 +9,27 @@ class DatabaseService {
 
   SupabaseClient get _db => SupabaseConfig.client;
 
+  /// Retries an action that references a just-created auth user by id.
+  /// Immediately after `auth.signUp()`, the new row in `auth.users` can
+  /// occasionally not yet be visible to a following query on a different
+  /// connection (observed as a foreign-key violation on auth_user_id) —
+  /// this is a brief replication/visibility race, not a real error, so a
+  /// short retry resolves it instead of failing the sign-up outright.
+  Future<T> _retryOnAuthRace<T>(Future<T> Function() action) async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await action();
+      } on PostgrestException catch (e) {
+        final isAuthRace =
+            e.code == '23503' &&
+            (e.message.contains('auth_user_id') ||
+                (e.details?.toString().contains('table "users"') ?? false));
+        if (!isAuthRace || attempt >= 3) rethrow;
+        await Future.delayed(Duration(milliseconds: 400 * (attempt + 1)));
+      }
+    }
+  }
+
   // ─── Warehouse Entries ───────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> getWarehouseEntries() async {
@@ -176,15 +197,17 @@ class DatabaseService {
     required String email,
     String? phone,
   }) async {
-    final data = await _db.rpc(
-      'create_customer_account',
-      params: {
-        'p_auth_user_id': authUserId,
-        'p_partner_id': partnerId,
-        'p_name': name,
-        'p_email': email,
-        'p_phone': phone,
-      },
+    final data = await _retryOnAuthRace(
+      () => _db.rpc(
+        'create_customer_account',
+        params: {
+          'p_auth_user_id': authUserId,
+          'p_partner_id': partnerId,
+          'p_name': name,
+          'p_email': email,
+          'p_phone': phone,
+        },
+      ),
     );
     final list = List<Map<String, dynamic>>.from(data as List);
     return list.first;
