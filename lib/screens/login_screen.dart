@@ -102,6 +102,22 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () =>
+                          Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        foregroundColor: AppTheme.textSecondary,
+                      ),
+                      icon: const Icon(Icons.arrow_back, size: 15),
+                      label: const Text('Back to homepage', style: TextStyle(fontSize: 13)),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
                   // Logo
                   Image.asset(
                     'assets/images/one_village_logo.png',
@@ -126,7 +142,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   // Heading
                   const Text(
-                    'Warehouse Admin Sign-in',
+                    'Staff & Warehouse Sign-in',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 24,
@@ -138,8 +154,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'For One Village Shipping & Freight warehouse staff only. '
-                    'Shipping partners — use the Partner Portal.',
+                    'For One Village Shipping & Freight staff only. '
+                    'Couriers — use the Courier Portal.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 13,

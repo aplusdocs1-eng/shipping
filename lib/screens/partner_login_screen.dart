@@ -55,25 +55,6 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
         'Partner Branding',
       ],
     ),
-    (
-      'warehouse',
-      'Warehouse Platform',
-      'End-to-end warehouse management for large operations',
-      [
-        'Courier Portal',
-        'Advanced Package Tracking',
-        'Invoice Management',
-        'Shipment Management',
-        'API for 3rd-Party Vendors',
-        'Manifest Generation',
-        'Label Generation',
-        'Cloud Printing',
-        'Advanced Reporting',
-        'No Setup Fee',
-        'Staff Mobile Access',
-        'White Label',
-      ],
-    ),
   ];
 
   @override
@@ -516,7 +497,7 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Create Partner Account',
+          'Create Courier Account',
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w700,
@@ -529,10 +510,6 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
           style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
         ),
         const SizedBox(height: 24),
-        _label('Choose a plan *'),
-        const SizedBox(height: 8),
-        ..._plans.map((p) => _planCard(p.$1, p.$2, p.$3)),
-        const SizedBox(height: 20),
         _label('Company Name *'),
         const SizedBox(height: 6),
         _field(
@@ -652,59 +629,6 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
           ],
         ),
       ],
-    );
-  }
-
-  Widget _planCard(String id, String title, String subtitle) {
-    final selected = _selectedPlan == id;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedPlan = id),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: selected
-              ? AppTheme.primary.withValues(alpha: 0.06)
-              : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: selected ? AppTheme.primary : const Color(0xFFD1D5DB),
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              size: 20,
-              color: selected ? AppTheme.primary : const Color(0xFF9CA3AF),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 

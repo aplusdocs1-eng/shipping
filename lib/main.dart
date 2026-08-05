@@ -45,7 +45,8 @@ class CourierWarehouseApp extends StatelessWidget {
       theme: AppTheme.light,
       initialRoute: TenantService().isAdminHost ? '/' : '/partner-login',
       routes: {
-        '/': (context) => const _AppRoot(),
+        '/': (context) => const LandingScreen(),
+        '/team': (context) => const _TeamPortalRoot(),
         '/partner-login': (context) => const PartnerLoginScreen(),
         '/partner-home': (context) => const PartnerDashboardScreen(),
         '/customer-login': (context) => const CustomerLoginScreen(),
@@ -55,17 +56,19 @@ class CourierWarehouseApp extends StatelessWidget {
   }
 }
 
-class _AppRoot extends StatefulWidget {
-  const _AppRoot();
+/// Internal entry point for One Village staff and warehouse operations.
+/// Deliberately not linked from the public landing page — reach it directly
+/// via /#/team.
+class _TeamPortalRoot extends StatefulWidget {
+  const _TeamPortalRoot();
 
   @override
-  State<_AppRoot> createState() => _AppRootState();
+  State<_TeamPortalRoot> createState() => _TeamPortalRootState();
 }
 
-class _AppRootState extends State<_AppRoot> {
+class _TeamPortalRootState extends State<_TeamPortalRoot> {
   bool _loggedIn = false;
   bool _loadingData = false;
-  bool _showLogin = false;
 
   Future<void> _handleLogin() async {
     setState(() => _loadingData = true);
@@ -88,9 +91,6 @@ class _AppRootState extends State<_AppRoot> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (!_loggedIn) {
-      if (!_showLogin) {
-        return LandingScreen(onGetStarted: () => setState(() => _showLogin = true));
-      }
       return LoginScreen(onLogin: _handleLogin);
     }
     return MainShell(onLogout: () => setState(() => _loggedIn = false));

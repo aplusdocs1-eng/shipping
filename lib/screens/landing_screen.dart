@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 
 /// Public marketing home page for One Village Shipping & Freight.
 class LandingScreen extends StatefulWidget {
-  final VoidCallback onGetStarted;
-  const LandingScreen({super.key, required this.onGetStarted});
+  const LandingScreen({super.key});
 
   static const navy = Color(0xFF071B33);
   static const secondaryNavy = Color(0xFF123A68);
@@ -149,7 +148,6 @@ class _LandingScreenState extends State<LandingScreen> {
               onGetStarted: () => _scrollToKey(_ctaKey),
               onCustomerSignIn: _goToCustomerSignIn,
               onPartnerSignIn: _goToPartnerSignIn,
-              onAdminSignIn: widget.onGetStarted,
             ),
             _Hero(
               onGetStarted: () => _scrollToKey(_ctaKey),
@@ -161,7 +159,7 @@ class _LandingScreenState extends State<LandingScreen> {
             const _StatsBar(),
             _CtaSignup(
               key: _ctaKey,
-              onWarehouseSignUp: _goToPartnerSignUp,
+              onCourierSignUp: _goToPartnerSignUp,
               onCustomerSignUp: _goToCustomerSignUp,
             ),
             _Footer(
@@ -218,7 +216,6 @@ class _Header extends StatelessWidget {
   final VoidCallback onGetStarted;
   final VoidCallback onCustomerSignIn;
   final VoidCallback onPartnerSignIn;
-  final VoidCallback onAdminSignIn;
 
   const _Header({
     required this.onHome,
@@ -229,7 +226,6 @@ class _Header extends StatelessWidget {
     required this.onGetStarted,
     required this.onCustomerSignIn,
     required this.onPartnerSignIn,
-    required this.onAdminSignIn,
   });
 
   @override
@@ -269,7 +265,6 @@ class _Header extends StatelessWidget {
             _SignInMenu(
               onCustomer: onCustomerSignIn,
               onPartner: onPartnerSignIn,
-              onAdmin: onAdminSignIn,
             ),
             const SizedBox(width: 14),
             ElevatedButton(
@@ -325,8 +320,7 @@ class _NavLink extends StatelessWidget {
 class _SignInMenu extends StatelessWidget {
   final VoidCallback onCustomer;
   final VoidCallback onPartner;
-  final VoidCallback onAdmin;
-  const _SignInMenu({required this.onCustomer, required this.onPartner, required this.onAdmin});
+  const _SignInMenu({required this.onCustomer, required this.onPartner});
 
   @override
   Widget build(BuildContext context) {
@@ -346,9 +340,6 @@ class _SignInMenu extends StatelessWidget {
           case 'partner':
             onPartner();
             break;
-          case 'admin':
-            onAdmin();
-            break;
         }
       },
       itemBuilder: (context) => const [
@@ -363,17 +354,9 @@ class _SignInMenu extends StatelessWidget {
         PopupMenuItem(
           value: 'partner',
           child: _SignInMenuItem(
-            icon: Icons.warehouse_outlined,
-            title: 'Warehouse Partner',
-            subtitle: 'Manage your operation',
-          ),
-        ),
-        PopupMenuItem(
-          value: 'admin',
-          child: _SignInMenuItem(
-            icon: Icons.badge_outlined,
-            title: 'Staff',
-            subtitle: 'Admin login',
+            icon: Icons.local_shipping_outlined,
+            title: 'Courier',
+            subtitle: 'Manage your shipments',
           ),
         ),
       ],
@@ -1028,9 +1011,9 @@ class _StatsBar extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _CtaSignup extends StatelessWidget {
-  final VoidCallback onWarehouseSignUp;
+  final VoidCallback onCourierSignUp;
   final VoidCallback onCustomerSignUp;
-  const _CtaSignup({super.key, required this.onWarehouseSignUp, required this.onCustomerSignUp});
+  const _CtaSignup({super.key, required this.onCourierSignUp, required this.onCustomerSignUp});
 
   @override
   Widget build(BuildContext context) {
@@ -1062,11 +1045,11 @@ class _CtaSignup extends StatelessWidget {
       runSpacing: 16,
       children: [
         _SignupCard(
-          icon: Icons.warehouse_outlined,
-          title: 'WAREHOUSE SIGN UP',
-          desc: 'Partner with us for secure storage and fulfillment.',
+          icon: Icons.local_shipping_outlined,
+          title: 'COURIER SIGN UP',
+          desc: 'Partner with us to manage your own customers and shipments.',
           filled: true,
-          onTap: onWarehouseSignUp,
+          onTap: onCourierSignUp,
         ),
         _SignupCard(
           icon: Icons.person_outline,
