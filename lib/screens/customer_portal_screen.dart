@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/database_service.dart';
 import '../services/tenant_service.dart';
 import '../theme/app_theme.dart';
+import 'landing_screen.dart' show LandingScreen;
 
 /// Customer Portal — mirrors applizonecentralja.com/customer
 ///
@@ -205,7 +206,7 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: LandingScreen.iceGray,
       body: SafeArea(
         child: Row(
           children: [
@@ -333,60 +334,67 @@ class _Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 248,
+      width: 252,
       decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(right: BorderSide(color: Color(0xFFE5E7EB))),
+        color: LandingScreen.navy,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(18, 20, 18, 8),
             child: Row(
               children: [
                 Container(
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: AppTheme.primary.withValues(alpha: 0.1),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(
-                    Icons.local_shipping_outlined,
-                    color: AppTheme.primary,
-                    size: 22,
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset(
+                    'assets/images/one_village_logo.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.local_shipping_outlined,
+                      color: LandingScreen.navy,
+                      size: 22,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     TenantService().companyName ?? 'One Village Shipping & Freight',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF111827),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      height: 1.2,
                     ),
                   ),
                 ),
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(18, 10, 18, 10),
             child: Text(
-              (TenantService().companyName ?? 'One Village Shipping & Freight').toUpperCase(),
-              style: const TextStyle(
+              'CUSTOMER PORTAL',
+              style: TextStyle(
                 fontSize: 10,
-                color: Color(0xFF9CA3AF),
-                letterSpacing: 0.8,
-                fontWeight: FontWeight.w600,
+                color: LandingScreen.gold,
+                letterSpacing: 1,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ),
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
               itemCount: nav.length,
               itemBuilder: (_, i) {
                 final item = nav[i];
@@ -395,16 +403,19 @@ class _Sidebar extends StatelessWidget {
                   onTap: () => onSelect(i),
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 1),
+                    margin: const EdgeInsets.symmetric(vertical: 2),
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 9,
+                      horizontal: 12,
+                      vertical: 10,
                     ),
                     decoration: BoxDecoration(
                       color: selected
-                          ? const Color(0xFFF3F4F6)
+                          ? Colors.white.withValues(alpha: 0.08)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(8),
+                      border: selected
+                          ? const Border(left: BorderSide(color: LandingScreen.yellow, width: 3))
+                          : const Border(left: BorderSide(color: Colors.transparent, width: 3)),
                     ),
                     child: Row(
                       children: [
@@ -412,20 +423,22 @@ class _Sidebar extends StatelessWidget {
                           item.icon,
                           size: 18,
                           color: selected
-                              ? AppTheme.primary
-                              : const Color(0xFF6B7280),
+                              ? LandingScreen.yellow
+                              : const Color(0xFFA9B8CC),
                         ),
-                        const SizedBox(width: 10),
-                        Text(
-                          item.label,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: selected
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                            color: selected
-                                ? const Color(0xFF111827)
-                                : const Color(0xFF374151),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            item.label,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: selected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: selected
+                                  ? Colors.white
+                                  : const Color(0xFFC7D2E0),
+                            ),
                           ),
                         ),
                       ],
@@ -435,18 +448,18 @@ class _Sidebar extends StatelessWidget {
               },
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          Divider(height: 1, color: Colors.white.withValues(alpha: 0.1)),
           InkWell(
             onTap: () {},
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               child: Row(
-                children: const [
-                  Icon(Icons.help_outline, size: 18, color: Color(0xFF6B7280)),
+                children: [
+                  Icon(Icons.help_outline, size: 18, color: Color(0xFFA9B8CC)),
                   SizedBox(width: 10),
                   Text(
                     'Support',
-                    style: TextStyle(fontSize: 13, color: Color(0xFF374151)),
+                    style: TextStyle(fontSize: 13, color: Color(0xFFC7D2E0), fontWeight: FontWeight.w500),
                   ),
                 ],
               ),
@@ -455,9 +468,10 @@ class _Sidebar extends StatelessWidget {
           InkWell(
             onTap: onLogout,
             child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: LandingScreen.secondaryNavy.withValues(alpha: 0.4),
+                border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
               ),
               child: Row(
                 children: [
@@ -465,15 +479,15 @@ class _Sidebar extends StatelessWidget {
                     width: 32,
                     height: 32,
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEDE9FE),
-                      borderRadius: BorderRadius.circular(16),
+                    decoration: const BoxDecoration(
+                      color: LandingScreen.yellow,
+                      shape: BoxShape.circle,
                     ),
                     child: Text(
                       _initials(customer?['name'] as String? ?? '—'),
                       style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF6D28D9),
+                        fontWeight: FontWeight.w800,
+                        color: LandingScreen.navy,
                         fontSize: 12,
                       ),
                     ),
@@ -488,8 +502,9 @@ class _Sidebar extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                             fontSize: 12,
+                            color: Colors.white,
                           ),
                         ),
                         Text(
@@ -497,7 +512,7 @@ class _Sidebar extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: Color(0xFF6B7280),
+                            color: Color(0xFFA9B8CC),
                             fontSize: 11,
                           ),
                         ),
@@ -505,9 +520,9 @@ class _Sidebar extends StatelessWidget {
                     ),
                   ),
                   const Icon(
-                    Icons.unfold_more,
+                    Icons.logout,
                     size: 16,
-                    color: Color(0xFF9CA3AF),
+                    color: Color(0xFFA9B8CC),
                   ),
                 ],
               ),
@@ -533,11 +548,11 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 48,
+      height: 52,
       padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+        border: Border(bottom: BorderSide(color: LandingScreen.borderGray)),
       ),
       child: Row(
         children: [
@@ -556,8 +571,8 @@ class _TopBar extends StatelessWidget {
             label,
             style: const TextStyle(
               fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF111827),
+              fontWeight: FontWeight.w700,
+              color: LandingScreen.navy,
             ),
           ),
         ],
@@ -599,41 +614,71 @@ class _OverviewPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [LandingScreen.navy, LandingScreen.secondaryNavy],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              runSpacing: 16,
+              children: [
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       'Welcome back, $firstName',
                       style: const TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF111827),
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
                       ),
                     ),
                     const SizedBox(height: 4),
                     const Text(
                       "Here's what's happening with your packages today.",
-                      style: TextStyle(color: Color(0xFF6B7280)),
+                      style: TextStyle(color: Color(0xFFC7D2E0)),
                     ),
                   ],
                 ),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => onNavigate('Pre-Alerts'),
-                icon: const Icon(Icons.notifications_outlined, size: 16),
-                label: const Text('Pre-Alerts'),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: () => onNavigate('Shipping Addresses'),
-                icon: const Icon(Icons.location_on_outlined, size: 16),
-                label: const Text('Address'),
-              ),
-            ],
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => onNavigate('Pre-Alerts'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white38),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: const Icon(Icons.notifications_outlined, size: 16),
+                      label: const Text('Pre-Alerts'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: () => onNavigate('Shipping Addresses'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: LandingScreen.yellow,
+                        foregroundColor: LandingScreen.navy,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      icon: const Icon(Icons.location_on_outlined, size: 16),
+                      label: const Text('Address'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 20),
           _StatGrid(
@@ -643,42 +688,42 @@ class _OverviewPage extends StatelessWidget {
                 value: '\$${balanceDue.toStringAsFixed(2)}',
                 sub: 'JMD · All open invoices',
                 icon: Icons.receipt_long_outlined,
-                tint: const Color(0xFFFEE2E2),
-                iconColor: const Color(0xFFEF4444),
+                tint: const Color(0xFFB83A3A).withValues(alpha: 0.10),
+                iconColor: const Color(0xFFB83A3A),
               ),
               _StatTileData(
                 title: 'Credit Balance',
                 value: '\$0.00',
                 sub: 'Available for future payments',
                 icon: Icons.account_balance_wallet_outlined,
-                tint: const Color(0xFFDCFCE7),
-                iconColor: const Color(0xFF16A34A),
+                tint: const Color(0xFF16845B).withValues(alpha: 0.10),
+                iconColor: const Color(0xFF16845B),
               ),
               _StatTileData(
                 title: 'Account Number',
                 value: mailbox,
                 sub: 'Your unique identifier',
                 icon: Icons.badge_outlined,
-                tint: const Color(0xFFE0E7FF),
-                iconColor: const Color(0xFF6366F1),
+                tint: LandingScreen.secondaryNavy.withValues(alpha: 0.10),
+                iconColor: LandingScreen.secondaryNavy,
               ),
               _StatTileData(
                 title: 'Ready for Pickup',
                 value: '$readyForPickup',
                 sub: 'Packages available',
                 icon: Icons.inventory_2_outlined,
-                tint: const Color(0xFFE0F2FE),
-                iconColor: const Color(0xFF0EA5E9),
+                tint: LandingScreen.gold.withValues(alpha: 0.14),
+                iconColor: const Color(0xFFB8860B),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
           const Text(
             'Your Packages',
             style: TextStyle(
               fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF111827),
+              fontWeight: FontWeight.w800,
+              color: LandingScreen.navy,
             ),
           ),
           const SizedBox(height: 12),
@@ -746,7 +791,7 @@ class _StatTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: LandingScreen.borderGray),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -805,15 +850,16 @@ class _PackagesTable extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: LandingScreen.borderGray),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: DataTable(
+          headingRowColor: WidgetStateProperty.all(LandingScreen.iceGray),
           headingTextStyle: const TextStyle(
             fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF6B7280),
+            fontWeight: FontWeight.w700,
+            color: LandingScreen.navy,
           ),
           columns: const [
             DataColumn(label: Text('Tracking')),
