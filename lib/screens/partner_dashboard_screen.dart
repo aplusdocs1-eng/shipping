@@ -3402,7 +3402,7 @@ class _SubscriptionBody extends StatelessWidget {
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [AppTheme.primary, const Color(0xFF8B0000)],
+                colors: [AppTheme.primary, AppTheme.secondaryNavy],
               ),
               borderRadius: BorderRadius.circular(12),
             ),
@@ -5478,7 +5478,7 @@ class _ReferralsPage extends StatelessWidget {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [AppTheme.primary, const Color(0xFF8B0000)],
+                  colors: [AppTheme.primary, AppTheme.secondaryNavy],
                 ),
                 borderRadius: BorderRadius.circular(12),
               ),

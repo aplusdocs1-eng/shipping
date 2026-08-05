@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // One Village Shipping & Freight brand colors
-  static const Color primary = Color(0xFFCC0000);
-  static const Color primaryDark = Color(0xFFA30000);
+  // One Village Shipping & Freight brand colors — matches the navy/gold
+  // palette used on the landing page and customer portal (LandingScreen).
+  static const Color primary = Color(0xFF071B33);
+  static const Color primaryDark = Color(0xFF04101F);
+  static const Color secondaryNavy = Color(0xFF123A68);
+  static const Color gold = Color(0xFFD9A514);
   static const Color accent = Color(0xFF0EA5E9);
   static const Color success = Color(0xFF10B981);
   static const Color warning = Color(0xFFF59E0B);
@@ -16,7 +19,7 @@ class AppTheme {
   static const Color border = Color(0xFFE5E7EB);
   static const Color sidebarBg = Color(0xFFFFFFFF);
   static const Color sidebarText = Color(0xFF6B7280);
-  static const Color sidebarActive = Color(0xFFCC0000);
+  static const Color sidebarActive = Color(0xFF071B33);
   static const Color topBarBg = Color(0xFFFFFFFF);
 
   // Logo URL for network image
