@@ -30,10 +30,39 @@ class _CustomersScreenState extends State<CustomersScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final rows = await _db.getCustomers();
+      final results = await Future.wait([
+        _db.getCustomers(),
+        _db.getPackages(),
+        _db.getCustomerBillingInvoices(),
+      ]);
+      final customerRows = (results[0] as List).cast<Map<String, dynamic>>();
+      final packageRows = (results[1] as List).cast<Map<String, dynamic>>();
+      final invoiceRows = (results[2] as List).cast<Map<String, dynamic>>();
+
+      final packageCounts = <String, int>{};
+      for (final p in packageRows) {
+        final cid = p['customer_id']?.toString();
+        if (cid != null) packageCounts[cid] = (packageCounts[cid] ?? 0) + 1;
+      }
+      final balances = <String, double>{};
+      for (final inv in invoiceRows) {
+        if (inv['status']?.toString() == 'paid') continue;
+        final cid = inv['customer_id']?.toString();
+        if (cid == null) continue;
+        final total = (inv['total'] as num?)?.toDouble() ?? 0;
+        balances[cid] = (balances[cid] ?? 0) + total;
+      }
+
+      final customers = customerRows.map(Customer.fromMap).map((c) {
+        return c.copyWith(
+          totalPackages: packageCounts[c.id] ?? 0,
+          balance: balances[c.id] ?? 0,
+        );
+      }).toList();
+
       if (mounted)
         setState(() {
-          _allCustomers = rows.map(Customer.fromMap).toList();
+          _allCustomers = customers;
           _loading = false;
         });
     } catch (_) {
@@ -208,8 +237,12 @@ class _CustomersScreenState extends State<CustomersScreen> {
     );
   }
 
-  void _showNewCustomerDialog() {
-    showDialog(context: context, builder: (context) => _NewCustomerDialog());
+  Future<void> _showNewCustomerDialog() async {
+    final result = await showDialog(
+      context: context,
+      builder: (context) => const _NewCustomerDialog(),
+    );
+    if (result != null) _load();
   }
 }
 
@@ -520,8 +553,10 @@ class _CustomerDetailPanelState extends State<_CustomerDetailPanel> {
                       Expanded(
                         child: _MiniStatCard(
                           label: 'Balance',
-                          value: '\$0.00',
-                          color: AppTheme.success,
+                          value: '\$${widget.customer.balance.toStringAsFixed(2)}',
+                          color: widget.customer.balance > 0
+                              ? AppTheme.warning
+                              : AppTheme.success,
                         ),
                       ),
                     ],
@@ -685,8 +720,66 @@ class _MiniStatCard extends StatelessWidget {
   }
 }
 
-class _NewCustomerDialog extends StatelessWidget {
-  _NewCustomerDialog();
+class _NewCustomerDialog extends StatefulWidget {
+  const _NewCustomerDialog();
+
+  @override
+  State<_NewCustomerDialog> createState() => _NewCustomerDialogState();
+}
+
+class _NewCustomerDialogState extends State<_NewCustomerDialog> {
+  final _db = DatabaseService();
+  final _name = TextEditingController();
+  final _email = TextEditingController();
+  final _phone = TextEditingController();
+  final _address = TextEditingController();
+  final _city = TextEditingController();
+  final _country = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _email.dispose();
+    _phone.dispose();
+    _address.dispose();
+    _city.dispose();
+    _country.dispose();
+    super.dispose();
+  }
+
+  Future<void> _create() async {
+    if (_name.text.trim().isEmpty) {
+      setState(() => _error = 'Full name is required.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final addressParts = [
+        _address.text.trim(),
+        _city.text.trim(),
+        _country.text.trim(),
+      ].where((p) => p.isNotEmpty).join(', ');
+      final row = await _db.insertCustomer({
+        'name': _name.text.trim(),
+        'email': _email.text.trim().isEmpty ? null : _email.text.trim(),
+        'phone': _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+        'address': addressParts.isEmpty ? null : addressParts,
+        'status': 'active',
+      });
+      if (!mounted) return;
+      Navigator.pop(context, row);
+    } catch (e) {
+      setState(() {
+        _saving = false;
+        _error = 'Failed to add customer: $e';
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -717,31 +810,41 @@ class _NewCustomerDialog extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            _buildField('Full Name', 'e.g. John Doe'),
+            _buildField('Full Name', 'e.g. John Doe', _name),
             const SizedBox(height: 12),
             _buildRow([
-              ['Email', 'john@example.com'],
-              ['Phone', '+1 000 000 0000'],
+              ('Email', 'john@example.com', _email),
+              ('Phone', '+1 000 000 0000', _phone),
             ]),
             const SizedBox(height: 12),
-            _buildField('Address', 'Street address'),
+            _buildField('Address', 'Street address', _address),
             const SizedBox(height: 12),
             _buildRow([
-              ['City', 'City'],
-              ['Country', 'Country'],
+              ('City', 'City', _city),
+              ('Country', 'Country', _country),
             ]),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
+            ],
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: _saving ? null : () => Navigator.pop(context),
                   child: const Text('Cancel'),
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Add Customer'),
+                  onPressed: _saving ? null : _create,
+                  child: _saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Add Customer'),
                 ),
               ],
             ),
@@ -751,7 +854,7 @@ class _NewCustomerDialog extends StatelessWidget {
     );
   }
 
-  Widget _buildField(String label, String hint) {
+  Widget _buildField(String label, String hint, TextEditingController controller) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -765,6 +868,7 @@ class _NewCustomerDialog extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         TextField(
+          controller: controller,
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: const TextStyle(
@@ -778,13 +882,13 @@ class _NewCustomerDialog extends StatelessWidget {
     );
   }
 
-  Widget _buildRow(List<List<String>> fields) {
+  Widget _buildRow(List<(String, String, TextEditingController)> fields) {
     return Row(
       children:
           fields
               .expand(
                 (f) => [
-                  Expanded(child: _buildField(f[0], f[1])),
+                  Expanded(child: _buildField(f.$1, f.$2, f.$3)),
                   const SizedBox(width: 12),
                 ],
               )

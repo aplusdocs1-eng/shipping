@@ -222,11 +222,12 @@ class _PackagesScreenState extends State<PackagesScreen> {
     );
   }
 
-  void _showNewPackageDialog() {
-    showDialog(
+  Future<void> _showNewPackageDialog() async {
+    final result = await showDialog(
       context: context,
       builder: (context) => const _NewPackageDialog(),
     );
+    if (result != null) _load();
   }
 }
 
@@ -674,8 +675,68 @@ class _TrackingEventTile extends StatelessWidget {
   }
 }
 
-class _NewPackageDialog extends StatelessWidget {
+class _NewPackageDialog extends StatefulWidget {
   const _NewPackageDialog();
+
+  @override
+  State<_NewPackageDialog> createState() => _NewPackageDialogState();
+}
+
+class _NewPackageDialogState extends State<_NewPackageDialog> {
+  final _db = DatabaseService();
+  final _customerName = TextEditingController();
+  final _description = TextEditingController();
+  final _origin = TextEditingController();
+  final _destination = TextEditingController();
+  final _weight = TextEditingController();
+  final _declaredValue = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _customerName.dispose();
+    _description.dispose();
+    _origin.dispose();
+    _destination.dispose();
+    _weight.dispose();
+    _declaredValue.dispose();
+    super.dispose();
+  }
+
+  Future<void> _create() async {
+    if (_customerName.text.trim().isEmpty || _description.text.trim().isEmpty) {
+      setState(() => _error = 'Customer name and description are required.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final trackingNumber =
+          'PKG-${DateTime.now().millisecondsSinceEpoch}';
+      final row = await _db.insertPackage({
+        'tracking_number': trackingNumber,
+        'customer_name': _customerName.text.trim(),
+        'description': _description.text.trim(),
+        'origin': _origin.text.trim().isEmpty ? null : _origin.text.trim(),
+        'destination':
+            _destination.text.trim().isEmpty ? null : _destination.text.trim(),
+        'weight': double.tryParse(_weight.text.trim()) ?? 0,
+        'declared_value': double.tryParse(_declaredValue.text.trim()) ?? 0,
+        'status': 'pending',
+        'service_type': 'standard',
+      });
+      if (!mounted) return;
+      Navigator.pop(context, row);
+    } catch (e) {
+      setState(() {
+        _saving = false;
+        _error = 'Failed to create package: $e';
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -706,38 +767,74 @@ class _NewPackageDialog extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            const _FormRow(
+            _FormRow(
               children: [
-                _FormField(label: 'Customer Name', hint: 'e.g. John Doe'),
-                _FormField(label: 'Description', hint: 'Package contents'),
+                _FormField(
+                  label: 'Customer Name',
+                  hint: 'e.g. John Doe',
+                  controller: _customerName,
+                ),
+                _FormField(
+                  label: 'Description',
+                  hint: 'Package contents',
+                  controller: _description,
+                ),
               ],
             ),
             const SizedBox(height: 12),
-            const _FormRow(
+            _FormRow(
               children: [
-                _FormField(label: 'Origin', hint: 'City, Country'),
-                _FormField(label: 'Destination', hint: 'City, Country'),
+                _FormField(
+                  label: 'Origin',
+                  hint: 'City, Country',
+                  controller: _origin,
+                ),
+                _FormField(
+                  label: 'Destination',
+                  hint: 'City, Country',
+                  controller: _destination,
+                ),
               ],
             ),
             const SizedBox(height: 12),
-            const _FormRow(
+            _FormRow(
               children: [
-                _FormField(label: 'Weight (kg)', hint: '0.0'),
-                _FormField(label: 'Declared Value (\$)', hint: '0.00'),
+                _FormField(
+                  label: 'Weight (kg)',
+                  hint: '0.0',
+                  controller: _weight,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                ),
+                _FormField(
+                  label: 'Declared Value (\$)',
+                  hint: '0.00',
+                  controller: _declaredValue,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                ),
               ],
             ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
+            ],
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: _saving ? null : () => Navigator.pop(context),
                   child: const Text('Cancel'),
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Create Package'),
+                  onPressed: _saving ? null : _create,
+                  child: _saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Create Package'),
                 ),
               ],
             ),
@@ -767,7 +864,14 @@ class _FormRow extends StatelessWidget {
 class _FormField extends StatelessWidget {
   final String label;
   final String hint;
-  const _FormField({required this.label, required this.hint});
+  final TextEditingController? controller;
+  final TextInputType? keyboardType;
+  const _FormField({
+    required this.label,
+    required this.hint,
+    this.controller,
+    this.keyboardType,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -784,6 +888,8 @@ class _FormField extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         TextField(
+          controller: controller,
+          keyboardType: keyboardType,
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: const TextStyle(

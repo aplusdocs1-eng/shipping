@@ -197,92 +197,171 @@ class _ShipmentsScreenState extends State<ShipmentsScreen> {
     );
   }
 
-  void _showNewShipmentDialog(BuildContext context) {
-    showDialog(
+  Future<void> _showNewShipmentDialog(BuildContext context) async {
+    final shipmentNumber = TextEditingController();
+    final origin = TextEditingController();
+    final destination = TextEditingController();
+    final vesselFlight = TextEditingController();
+    final arrivalDate = TextEditingController();
+    String type = 'Air';
+    bool saving = false;
+    String? error;
+
+    final created = await showDialog<bool>(
       context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Container(
-          width: 520,
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Text(
-                    'New Shipment',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textPrimary,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Container(
+            width: 520,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'New Shipment',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    icon: const Icon(Icons.close, size: 18),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(child: _DField('Shipment #', 'e.g. AIR-2025-001')),
-                  const SizedBox(width: 12),
-                  Expanded(child: _DDrop('Type', ['Air', 'Sea'])),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: _DField('Origin', 'Departure city')),
-                  const SizedBox(width: 12),
-                  Expanded(child: _DField('Destination', 'Arrival city')),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _DField(
-                      'Vessel / Flight',
-                      'Flight # or vessel name',
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.close, size: 18),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(child: _DField('Master BL/AWB', 'Bill of lading #')),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DField(
+                        'Shipment #',
+                        'e.g. AIR-2025-001',
+                        controller: shipmentNumber,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DDrop(
+                        'Type',
+                        const ['Air', 'Sea'],
+                        value: type,
+                        onChanged: (v) => setDialogState(() => type = v ?? 'Air'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: _DField('Origin', 'Departure city', controller: origin)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DField('Destination', 'Arrival city', controller: destination),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DField(
+                        'Vessel / Flight',
+                        'Flight # or vessel name',
+                        controller: vesselFlight,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DField(
+                        'Est. Arrival',
+                        'YYYY-MM-DD',
+                        controller: arrivalDate,
+                      ),
+                    ),
+                  ],
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
                 ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: _DField('Departure Date', 'YYYY-MM-DD')),
-                  const SizedBox(width: 12),
-                  Expanded(child: _DField('Arrival Date', 'YYYY-MM-DD')),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Create Shipment'),
-                  ),
-                ],
-              ),
-            ],
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: saving ? null : () => Navigator.pop(ctx),
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              if (shipmentNumber.text.trim().isEmpty ||
+                                  origin.text.trim().isEmpty ||
+                                  destination.text.trim().isEmpty) {
+                                setDialogState(
+                                  () => error =
+                                      'Shipment #, origin, and destination are required.',
+                                );
+                                return;
+                              }
+                              setDialogState(() {
+                                saving = true;
+                                error = null;
+                              });
+                              try {
+                                final parsedArrival = DateTime.tryParse(arrivalDate.text.trim());
+                                await _db.insertShipment({
+                                  'shipment_number': shipmentNumber.text.trim(),
+                                  'origin': origin.text.trim(),
+                                  'destination': destination.text.trim(),
+                                  'carrier': type,
+                                  'status': 'preparing',
+                                  if (type == 'Air')
+                                    'flight_number': vesselFlight.text.trim().isEmpty
+                                        ? null
+                                        : vesselFlight.text.trim()
+                                  else
+                                    'vessel_name': vesselFlight.text.trim().isEmpty
+                                        ? null
+                                        : vesselFlight.text.trim(),
+                                  if (parsedArrival != null)
+                                    'estimated_arrival': parsedArrival.toIso8601String(),
+                                });
+                                if (!ctx.mounted) return;
+                                Navigator.pop(ctx, true);
+                              } catch (e) {
+                                setDialogState(() {
+                                  saving = false;
+                                  error = 'Failed to create shipment: $e';
+                                });
+                              }
+                            },
+                      child: saving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Create Shipment'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
+    if (created == true) _load();
   }
 }
 
@@ -761,7 +840,8 @@ class _DropFilter<T> extends StatelessWidget {
 class _DField extends StatelessWidget {
   final String label;
   final String hint;
-  const _DField(this.label, this.hint);
+  final TextEditingController? controller;
+  const _DField(this.label, this.hint, {this.controller});
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -776,6 +856,7 @@ class _DField extends StatelessWidget {
       ),
       const SizedBox(height: 4),
       TextField(
+        controller: controller,
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(
@@ -792,7 +873,9 @@ class _DField extends StatelessWidget {
 class _DDrop extends StatelessWidget {
   final String label;
   final List<String> items;
-  const _DDrop(this.label, this.items);
+  final String? value;
+  final ValueChanged<String?>? onChanged;
+  const _DDrop(this.label, this.items, {this.value, this.onChanged});
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -817,6 +900,7 @@ class _DDrop extends StatelessWidget {
         child: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
             isExpanded: true,
+            value: value,
             hint: Text(items.first, style: const TextStyle(fontSize: 13)),
             items: items
                 .map(
@@ -826,7 +910,7 @@ class _DDrop extends StatelessWidget {
                   ),
                 )
                 .toList(),
-            onChanged: (_) {},
+            onChanged: onChanged,
           ),
         ),
       ),

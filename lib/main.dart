@@ -108,22 +108,22 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
 
-  static const List<Widget> _screens = [
-    DashboardScreen(), // 0
-    PackagesScreen(), // 1
-    PreAlertsScreen(), // 2
-    ShipmentsScreen(), // 3
-    CustomersScreen(), // 4
-    InvoicesScreen(), // 5
-    PosScreen(), // 6
-    LabelsScreen(), // 7
-    ManifestScreen(), // 8
-    ReportsScreen(), // 9
-    StaffScreen(), // 10
-    BranchesScreen(), // 11
-    SettingsScreen(), // 12
-    WarehouseScreen(), // 13
-    ShippingPartnersScreen(), // 14
+  List<Widget> get _screens => [
+    DashboardScreen(onViewShipments: () => setState(() => _selectedIndex = 3)), // 0
+    const PackagesScreen(), // 1
+    const PreAlertsScreen(), // 2
+    const ShipmentsScreen(), // 3
+    const CustomersScreen(), // 4
+    const InvoicesScreen(), // 5
+    const PosScreen(), // 6
+    const LabelsScreen(), // 7
+    const ManifestScreen(), // 8
+    const ReportsScreen(), // 9
+    const StaffScreen(), // 10
+    const BranchesScreen(), // 11
+    const SettingsScreen(), // 12
+    const WarehouseScreen(), // 13
+    const ShippingPartnersScreen(), // 14
   ];
 
   @override

@@ -278,14 +278,52 @@ class DatabaseService {
     return List<Map<String, dynamic>>.from(data);
   }
 
+  Future<Map<String, dynamic>> insertShipment(
+    Map<String, dynamic> row,
+  ) async {
+    final data = await _db.from('shipments').insert(row).select().single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<Map<String, dynamic>> updateShipment(
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
+    final data = await _db
+        .from('shipments')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
   // ─── Staff ───────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> getStaff() async {
     final data = await _db
         .from('staff')
-        .select()
+        .select('*, branches(name)')
         .order('name', ascending: true);
     return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> insertStaff(Map<String, dynamic> row) async {
+    final data = await _db.from('staff').insert(row).select().single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<Map<String, dynamic>> updateStaff(
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
+    final data = await _db
+        .from('staff')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
   }
 
   // ─── Branches ────────────────────────────────────────────────────────
@@ -296,6 +334,49 @@ class DatabaseService {
         .select()
         .order('name', ascending: true);
     return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> insertBranch(Map<String, dynamic> row) async {
+    final data = await _db.from('branches').insert(row).select().single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<Map<String, dynamic>> updateBranch(
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
+    final data = await _db
+        .from('branches')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  // ─── Storage Zones & Locations ───────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> getStorageZones() async {
+    final data = await _db
+        .from('storage_zones')
+        .select()
+        .order('code', ascending: true);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<List<Map<String, dynamic>>> getStorageLocations() async {
+    final data = await _db
+        .from('storage_locations')
+        .select('*, storage_zones(code, name)')
+        .order('label', ascending: true);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<void> setStorageLocationOccupied(String id, bool occupied) async {
+    await _db
+        .from('storage_locations')
+        .update({'is_occupied': occupied})
+        .eq('id', id);
   }
 
   // ─── Pre-Alerts ──────────────────────────────────────────────────────
@@ -317,6 +398,26 @@ class DatabaseService {
         .eq('partner_id', partnerId)
         .order('created_at', ascending: false);
     return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> insertPreAlert(
+    Map<String, dynamic> row,
+  ) async {
+    final data = await _db.from('pre_alerts').insert(row).select().single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<Map<String, dynamic>> updatePreAlert(
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
+    final data = await _db
+        .from('pre_alerts')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
   }
 
   // ─── Package / Invoice mutations used by the partner dashboard ─────

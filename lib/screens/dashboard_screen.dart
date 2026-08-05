@@ -6,7 +6,8 @@ import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  final VoidCallback? onViewShipments;
+  const DashboardScreen({super.key, this.onViewShipments});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -237,7 +238,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   SectionHeader(
                     title: 'Recent Shipments',
                     actionLabel: 'View all',
-                    onAction: () {},
+                    onAction: widget.onViewShipments ?? () {},
                   ),
                   const SizedBox(height: 12),
                   _RecentShipmentsTable(

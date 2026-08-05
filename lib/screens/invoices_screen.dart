@@ -74,6 +74,23 @@ class _InvoicesScreenState extends State<InvoicesScreen>
   List<Invoice> get _activeInvoices =>
       _tabController.index == 0 ? _partnerInvoices : _customerInvoices;
 
+  Future<void> _markPaid(Invoice invoice) async {
+    try {
+      await _db.markInvoicePaid(invoice.id);
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${invoice.invoiceNumber} marked as paid')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to mark paid: $e')),
+      );
+    }
+  }
+
   List<Invoice> get _filtered {
     return _activeInvoices.where((inv) {
       final matchesSearch =
@@ -464,6 +481,9 @@ class _InvoicesScreenState extends State<InvoicesScreen>
                                             ? null
                                             : inv,
                                       ),
+                                      onMarkPaid: _tabController.index == 0
+                                          ? () => _markPaid(inv)
+                                          : null,
                                     );
                                   },
                                 ),
@@ -630,11 +650,13 @@ class _InvoiceRow extends StatelessWidget {
   final Invoice invoice;
   final bool isSelected;
   final VoidCallback onTap;
+  final VoidCallback? onMarkPaid;
 
   const _InvoiceRow({
     required this.invoice,
     required this.isSelected,
     required this.onTap,
+    this.onMarkPaid,
   });
 
   @override
@@ -707,16 +729,30 @@ class _InvoiceRow extends StatelessWidget {
             ),
             SizedBox(
               width: 36,
-              child: IconButton(
-                onPressed: () {},
-                icon: const Icon(
-                  Icons.more_horiz,
-                  size: 16,
-                  color: AppTheme.textSecondary,
-                ),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
+              child: onMarkPaid == null || invoice.status == InvoiceStatus.paid
+                  ? const SizedBox.shrink()
+                  : PopupMenuButton<String>(
+                      icon: const Icon(
+                        Icons.more_horiz,
+                        size: 16,
+                        color: AppTheme.textSecondary,
+                      ),
+                      padding: EdgeInsets.zero,
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: 'mark_paid',
+                          child: ListTile(
+                            leading: Icon(Icons.check_circle_outline, size: 18),
+                            title: Text('Mark as Paid', style: TextStyle(fontSize: 13)),
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ],
+                      onSelected: (v) {
+                        if (v == 'mark_paid') onMarkPaid?.call();
+                      },
+                    ),
             ),
           ],
         ),

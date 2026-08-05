@@ -61,6 +61,14 @@ class _ShippingPartnersScreenState extends State<ShippingPartnersScreen> {
     return 'az_live_$token';
   }
 
+  Future<void> _openPartnerDialog({ShippingPartner? existing}) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => _ShippingPartnerDialog(db: _db, existing: existing),
+    );
+    if (saved == true) await _loadShippingPartners();
+  }
+
   Future<void> _openPendingDetails(Map<String, dynamic> account) async {
     final result = await showDialog<String>(
       context: context,
@@ -268,17 +276,28 @@ class _ShippingPartnersScreenState extends State<ShippingPartnersScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Registered Shipping Partners',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
-                  ),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Registered Shipping Partners',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _openPartnerDialog(),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Add Partner'),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Packages with a matching tracking prefix are automatically linked to the partner when scanned in.',
+                  'Packages with a matching tracking prefix are automatically linked to the partner when scanned in. Tap a row to edit.',
                   style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
                 ),
                 const SizedBox(height: 16),
@@ -331,19 +350,23 @@ class _ShippingPartnersScreenState extends State<ShippingPartnersScreen> {
   }
 
   TableRow _partnerRow(ShippingPartner p) {
+    Widget tappable(Widget child) => InkWell(
+      onTap: () => _openPartnerDialog(existing: p),
+      child: child,
+    );
     return TableRow(
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: AppTheme.border, width: 0.5)),
       ),
       children: [
         _TD(
-          child: Text(
+          child: tappable(Text(
             p.code,
             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-          ),
+          )),
         ),
-        _TD(child: Text(p.name, style: const TextStyle(fontSize: 13))),
-        _TD(child: Text(p.region, style: const TextStyle(fontSize: 13))),
+        _TD(child: tappable(Text(p.name, style: const TextStyle(fontSize: 13)))),
+        _TD(child: tappable(Text(p.region, style: const TextStyle(fontSize: 13)))),
         _TD(
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1613,6 +1636,165 @@ class _PendingPartnerDialogState extends State<_PendingPartnerDialog> {
               : const Icon(Icons.check, size: 16),
           label: const Text('Approve'),
           style: FilledButton.styleFrom(backgroundColor: AppTheme.success),
+        ),
+      ],
+    );
+  }
+}
+
+class _ShippingPartnerDialog extends StatefulWidget {
+  final DatabaseService db;
+  final ShippingPartner? existing;
+  const _ShippingPartnerDialog({required this.db, this.existing});
+
+  @override
+  State<_ShippingPartnerDialog> createState() => _ShippingPartnerDialogState();
+}
+
+class _ShippingPartnerDialogState extends State<_ShippingPartnerDialog> {
+  late final TextEditingController _code;
+  late final TextEditingController _name;
+  late final TextEditingController _region;
+  late final TextEditingController _prefix;
+  late final TextEditingController _email;
+  late bool _isActive;
+  bool _saving = false;
+  String? _error;
+
+  bool get _isEdit => widget.existing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _code = TextEditingController(text: e?.code ?? '');
+    _name = TextEditingController(text: e?.name ?? '');
+    _region = TextEditingController(text: e?.region ?? '');
+    _prefix = TextEditingController(text: e?.trackingPrefix ?? '');
+    _email = TextEditingController(text: e?.contactEmail ?? '');
+    _isActive = e?.isActive ?? true;
+  }
+
+  @override
+  void dispose() {
+    _code.dispose();
+    _name.dispose();
+    _region.dispose();
+    _prefix.dispose();
+    _email.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_code.text.trim().isEmpty || _name.text.trim().isEmpty || _prefix.text.trim().isEmpty) {
+      setState(() => _error = 'Code, name, and tracking prefix are required.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      if (_isEdit) {
+        await widget.db.updateShippingPartner(widget.existing!.id, {
+          'code': _code.text.trim().toUpperCase(),
+          'name': _name.text.trim(),
+          'region': _region.text.trim(),
+          'tracking_prefix': _prefix.text.trim().toUpperCase(),
+          'contact_email': _email.text.trim(),
+          'is_active': _isActive,
+        });
+      } else {
+        await widget.db.insertShippingPartner(
+          code: _code.text.trim().toUpperCase(),
+          name: _name.text.trim(),
+          region: _region.text.trim(),
+          trackingPrefix: _prefix.text.trim().toUpperCase(),
+          contactEmail: _email.text.trim(),
+          isActive: _isActive,
+        );
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      setState(() {
+        _saving = false;
+        _error = 'Failed to save: $e';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(_isEdit ? 'Edit Shipping Partner' : 'Add Shipping Partner'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _code,
+                    decoration: const InputDecoration(labelText: 'Code (e.g. MYC)'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _prefix,
+                    decoration: const InputDecoration(labelText: 'Tracking Prefix'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _name,
+              decoration: const InputDecoration(labelText: 'Company Name'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _region,
+              decoration: const InputDecoration(labelText: 'Region'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _email,
+              decoration: const InputDecoration(labelText: 'Contact Email'),
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Active', style: TextStyle(fontSize: 14)),
+              value: _isActive,
+              onChanged: (v) => setState(() => _isActive = v),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : Text(_isEdit ? 'Save Changes' : 'Add Partner'),
         ),
       ],
     );

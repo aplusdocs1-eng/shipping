@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
@@ -21,6 +22,9 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   String? _zoneFilter;
   bool _loading = true;
   List<Package> _allPackages = [];
+  List<StorageLocation> _storageLocations = [];
+  List<StorageZone> _zones = [];
+  List<ShippingPartner> _partners = [];
 
   @override
   void initState() {
@@ -35,8 +39,45 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
       final results = await Future.wait([
         _db.getWarehouseEntries(),
         _db.getPackages(),
+        _db.getStorageZones(),
+        _db.getStorageLocations(),
+        _db.getShippingPartners(),
       ]);
       if (!mounted) return;
+      final zoneRows = (results[2] as List).cast<Map<String, dynamic>>();
+      final locationRows = (results[3] as List).cast<Map<String, dynamic>>();
+      final partners = (results[4] as List)
+          .cast<Map<String, dynamic>>()
+          .map(ShippingPartner.fromMap)
+          .toList();
+      final locations = locationRows.map((r) {
+        final zone = r['storage_zones'] as Map<String, dynamic>?;
+        return StorageLocation(
+          id: r['id'] as String,
+          zoneId: (zone?['code'] as String?) ?? '',
+          zoneName: (zone?['name'] as String?) ?? '',
+          shelf: r['shelf'] as String? ?? '',
+          slot: r['bin'] as String? ?? '',
+          branchId: '',
+          branchName: '',
+        );
+      }).toList();
+      final occupiedByZone = <String, int>{};
+      for (final r in locationRows) {
+        if (r['is_occupied'] == true) {
+          final zoneId = r['zone_id'] as String?;
+          if (zoneId != null) {
+            occupiedByZone[zoneId] = (occupiedByZone[zoneId] ?? 0) + 1;
+          }
+        }
+      }
+      final totalByZone = <String, int>{};
+      for (final r in locationRows) {
+        final zoneId = r['zone_id'] as String?;
+        if (zoneId != null) {
+          totalByZone[zoneId] = (totalByZone[zoneId] ?? 0) + 1;
+        }
+      }
       setState(() {
         _entries = (results[0] as List)
             .cast<Map<String, dynamic>>()
@@ -46,11 +87,36 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
             .cast<Map<String, dynamic>>()
             .map(Package.fromMap)
             .toList();
+        _storageLocations = locations;
+        _partners = partners;
+        _zones = zoneRows
+            .map(
+              (z) => StorageZone(
+                id: z['id'] as String,
+                name: z['name'] as String? ?? (z['code'] as String? ?? ''),
+                branchId: '',
+                branchName: '',
+                totalSlots: totalByZone[z['id']] ?? 0,
+                usedSlots: occupiedByZone[z['id']] ?? 0,
+              ),
+            )
+            .toList();
         _loading = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  List<StorageLocation> get _availableLocations {
+    final occupiedLabels = _entries
+        .where((e) => e.status != WarehouseEntryStatus.pickedUp)
+        .map((e) => e.storageLocation?.displayLabel)
+        .whereType<String>()
+        .toSet();
+    return _storageLocations
+        .where((l) => !occupiedLabels.contains(l.displayLabel))
+        .toList();
   }
 
   List<WarehouseEntry> get _filteredEntries {
@@ -138,7 +204,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
           const SizedBox(height: 20),
 
           // Zone overview
-          if (!_loading) _ZoneOverview(zones: const []),
+          if (!_loading) _ZoneOverview(zones: _zones),
           const SizedBox(height: 20),
 
           // Filters & search
@@ -413,7 +479,14 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      items: const [],
+                      items: _availableLocations
+                          .map(
+                            (loc) => DropdownMenuItem(
+                              value: loc,
+                              child: Text(loc.displayLabel),
+                            ),
+                          )
+                          .toList(),
                       onChanged: (v) =>
                           setDialogState(() => selectedLocation = v),
                     ),
@@ -485,30 +558,39 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                             synced = result.success;
                           }
 
-                          final entry = WarehouseEntry(
-                            id: 'we-${DateTime.now().millisecondsSinceEpoch}',
-                            packageId: packageMatch?.id ?? 'unknown',
-                            trackingNumber: tracking,
-                            customerName:
-                                packageMatch?.customerName ??
-                                'Unknown Customer',
-                            description:
-                                packageMatch?.description ?? 'Scanned package',
-                            weight: packageMatch?.weight ?? 0.0,
-                            storageLocation: selectedLocation,
-                            status: selectedLocation != null
-                                ? WarehouseEntryStatus.stored
-                                : WarehouseEntryStatus.scannedIn,
-                            scannedInAt: DateTime.now(),
-                            scannedInBy: 'Admin Staff',
-                            shippingPartnerCode: partner?.code,
-                            syncedToPartner: synced,
-                          );
-
-                          setState(() {
-                            _entries.add(entry);
-                          });
+                          try {
+                            final row = await _db.insertWarehouseEntry(
+                              trackingNumber: tracking,
+                              customerName:
+                                  packageMatch?.customerName ??
+                                  'Unknown Customer',
+                              description:
+                                  packageMatch?.description ??
+                                  'Scanned package',
+                              weight: packageMatch?.weight ?? 0.0,
+                              storageZone: selectedLocation?.zoneName,
+                              storageLocation: selectedLocation?.displayLabel,
+                              status: selectedLocation != null
+                                  ? 'stored'
+                                  : 'scanned_in',
+                              scannedInBy: 'Admin Staff',
+                              shippingPartnerCode: partner?.code,
+                              syncedToPartner: synced,
+                            );
+                            if (!mounted) return;
+                            setState(() {
+                              _entries.add(WarehouseEntry.fromMap(row));
+                            });
+                          } catch (e) {
+                            setDialogState(
+                              () => errorText = 'Failed to save: $e',
+                            );
+                            setDialogState(() => syncing = false);
+                            return;
+                          }
+                          if (!context.mounted) return;
                           Navigator.of(context).pop();
+                          unawaited(_load());
 
                           final partnerMsg = partner != null
                               ? ' · Partner: ${partner.name}'
@@ -591,7 +673,19 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      items: const [],
+                      items: {
+                        if (entry.storageLocation != null)
+                          entry.storageLocation!,
+                        ..._availableLocations,
+                      }
+                          .toList()
+                          .map(
+                            (loc) => DropdownMenuItem(
+                              value: loc,
+                              child: Text(loc.displayLabel),
+                            ),
+                          )
+                          .toList(),
                       onChanged: (v) =>
                           setDialogState(() => selectedLocation = v),
                     ),
@@ -604,10 +698,23 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (selectedLocation == null) return;
+                    try {
+                      await _db.updateWarehouseEntry(entry.id, {
+                        'storage_zone': selectedLocation!.zoneName,
+                        'storage_location': selectedLocation!.displayLabel,
+                        'status': 'stored',
+                      });
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to assign location: $e')),
+                      );
+                      return;
+                    }
                     final idx = _entries.indexOf(entry);
-                    if (idx != -1) {
+                    if (idx != -1 && mounted) {
                       setState(() {
                         _entries[idx] = entry.copyWith(
                           storageLocation: selectedLocation,
@@ -615,7 +722,9 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                         );
                       });
                     }
+                    if (!context.mounted) return;
                     Navigator.of(context).pop();
+                    unawaited(_load());
                     ScaffoldMessenger.of(this.context).showSnackBar(
                       SnackBar(
                         content: Text(
@@ -639,45 +748,77 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     );
   }
 
-  void _markReadyForPickup(WarehouseEntry entry) {
+  Future<void> _markReadyForPickup(WarehouseEntry entry) async {
     final idx = _entries.indexOf(entry);
-    if (idx != -1) {
-      setState(() {
-        _entries[idx] = entry.copyWith(
-          status: WarehouseEntryStatus.readyForPickup,
-        );
-      });
+    if (idx == -1) return;
+    try {
+      await _db.updateWarehouseEntry(entry.id, {'status': 'ready_for_pickup'});
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${entry.trackingNumber} marked ready for pickup'),
-          backgroundColor: AppTheme.primary,
-          behavior: SnackBarBehavior.floating,
-        ),
+        SnackBar(content: Text('Failed to update: $e')),
       );
+      return;
     }
+    if (!mounted) return;
+    setState(() {
+      _entries[idx] = entry.copyWith(
+        status: WarehouseEntryStatus.readyForPickup,
+      );
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${entry.trackingNumber} marked ready for pickup'),
+        backgroundColor: AppTheme.primary,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
-  void _markPickedUp(WarehouseEntry entry) {
+  Future<void> _markPickedUp(WarehouseEntry entry) async {
     final idx = _entries.indexOf(entry);
-    if (idx != -1) {
-      setState(() {
-        _entries[idx] = entry.copyWith(
-          status: WarehouseEntryStatus.pickedUp,
-          pickedUpAt: DateTime.now(),
-          pickedUpBy: entry.customerName,
-        );
+    if (idx == -1) return;
+    final now = DateTime.now();
+    try {
+      await _db.updateWarehouseEntry(entry.id, {
+        'status': 'picked_up',
+        'picked_up_at': now.toIso8601String(),
+        'picked_up_by': entry.customerName,
       });
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${entry.trackingNumber} picked up'),
-          backgroundColor: AppTheme.primary,
-          behavior: SnackBarBehavior.floating,
-        ),
+        SnackBar(content: Text('Failed to update: $e')),
       );
+      return;
     }
+    if (!mounted) return;
+    setState(() {
+      _entries[idx] = entry.copyWith(
+        status: WarehouseEntryStatus.pickedUp,
+        pickedUpAt: now,
+        pickedUpBy: entry.customerName,
+      );
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${entry.trackingNumber} picked up'),
+        backgroundColor: AppTheme.primary,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
-  ShippingPartner? _matchPartnerByTracking(String tracking) => null;
+  ShippingPartner? _matchPartnerByTracking(String tracking) {
+    if (tracking.isEmpty) return null;
+    final upper = tracking.toUpperCase();
+    for (final p in _partners) {
+      if (p.trackingPrefix.isNotEmpty && upper.startsWith(p.trackingPrefix.toUpperCase())) {
+        return p;
+      }
+    }
+    return null;
+  }
 }
 
 // ─── Status Summary Row ──────────────────────────────────────────────────────

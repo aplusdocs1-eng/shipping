@@ -190,6 +190,20 @@ class Customer {
     balance: 0.0,
     isActive: (m['status']?.toString() ?? 'active') != 'inactive',
   );
+
+  Customer copyWith({int? totalPackages, double? balance}) => Customer(
+    id: id,
+    name: name,
+    email: email,
+    phone: phone,
+    address: address,
+    city: city,
+    country: country,
+    joinedAt: joinedAt,
+    totalPackages: totalPackages ?? this.totalPackages,
+    balance: balance ?? this.balance,
+    isActive: isActive,
+  );
 }
 
 enum InvoiceStatus { draft, sent, paid, overdue, cancelled }
@@ -547,13 +561,26 @@ class Branch {
     id: m['id']?.toString() ?? '',
     name: m['name']?.toString() ?? '',
     address: m['address']?.toString() ?? '',
-    city: '',
+    city: m['city']?.toString() ?? '',
     phone: m['phone']?.toString() ?? '',
     email: m['email']?.toString() ?? '',
     isMainBranch: false,
     isActive: m['is_active'] == true,
     staffCount: 0,
     packagesThisMonth: 0,
+  );
+
+  Branch copyWith({int? staffCount, int? packagesThisMonth}) => Branch(
+    id: id,
+    name: name,
+    address: address,
+    city: city,
+    phone: phone,
+    email: email,
+    isMainBranch: isMainBranch,
+    isActive: isActive,
+    staffCount: staffCount ?? this.staffCount,
+    packagesThisMonth: packagesThisMonth ?? this.packagesThisMonth,
   );
 }
 
@@ -950,6 +977,7 @@ class WarehouseEntry {
 // ─── Shipping Partner ────────────────────────────────────────────────────────
 
 class ShippingPartner {
+  final String id;
   final String code;
   final String name;
   final String region;
@@ -958,6 +986,7 @@ class ShippingPartner {
   final bool isActive;
 
   ShippingPartner({
+    this.id = '',
     required this.code,
     required this.name,
     required this.region,
@@ -967,6 +996,7 @@ class ShippingPartner {
   });
 
   factory ShippingPartner.fromMap(Map<String, dynamic> m) => ShippingPartner(
+    id: m['id']?.toString() ?? '',
     code: m['code'] as String? ?? '',
     name: m['name'] as String? ?? '',
     region: m['region'] as String? ?? '',

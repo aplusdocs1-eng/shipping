@@ -233,91 +233,194 @@ class _PreAlertsScreenState extends State<PreAlertsScreen> {
           _PreAlertDetail(
             preAlert: _selected!,
             onClose: () => setState(() => _selected = null),
+            onStatusChange: _updateStatus,
           ),
       ],
     );
   }
 
-  void _showNewPreAlertDialog(BuildContext context) {
-    showDialog(
+  Future<void> _updateStatus(PreAlert alert, PreAlertStatus status) async {
+    final dbValue = switch (status) {
+      PreAlertStatus.pending => 'pending',
+      PreAlertStatus.received => 'received',
+      PreAlertStatus.processing => 'processing',
+      PreAlertStatus.ready => 'ready',
+      PreAlertStatus.completed => 'completed',
+    };
+    try {
+      await _db.updatePreAlert(alert.id, {'status': dbValue});
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      final matches = _allAlerts.where((a) => a.id == alert.id);
+      setState(() {
+        _selected = matches.isEmpty ? null : matches.first;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update status: $e')),
+      );
+    }
+  }
+
+  Future<void> _showNewPreAlertDialog(BuildContext context) async {
+    final customerName = TextEditingController();
+    final tracking = TextEditingController();
+    final carrier = TextEditingController();
+    final description = TextEditingController();
+    final weight = TextEditingController();
+    final declaredValue = TextEditingController();
+    String freightType = 'Air';
+    bool saving = false;
+    String? error;
+
+    final created = await showDialog<bool>(
       context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Container(
-          width: 540,
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Text(
-                    'New Pre-Alert',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textPrimary,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Container(
+            width: 540,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'New Pre-Alert',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, size: 18),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              _DialogField('Customer', 'Search customer...'),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _DialogField(
-                      'Tracking Number',
-                      'e.g. 1Z999AA10123...',
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, size: 18),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _DialogField('Carrier', 'UPS, FedEx, USPS...'),
-                  ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                _DialogField('Customer', 'Full name', controller: customerName),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DialogField(
+                        'Tracking Number',
+                        'e.g. 1Z999AA10123...',
+                        controller: tracking,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DialogField('Carrier', 'UPS, FedEx, USPS...', controller: carrier),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _DialogField('Description', 'What is in the package?', controller: description),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DialogField(
+                        'Weight (lbs)',
+                        '0.0',
+                        controller: weight,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DialogField(
+                        'Declared Value (\$)',
+                        '0.00',
+                        controller: declaredValue,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DialogDropdown(
+                        'Freight Type',
+                        const ['Air', 'Sea'],
+                        value: freightType,
+                        onChanged: (v) => setDialogState(() => freightType = v ?? 'Air'),
+                      ),
+                    ),
+                  ],
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
                 ],
-              ),
-              const SizedBox(height: 12),
-              _DialogField('Description', 'What is in the package?'),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: _DialogField('Weight (lbs)', '0.0')),
-                  const SizedBox(width: 12),
-                  Expanded(child: _DialogField('Declared Value (\$)', '0.00')),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _DialogDropdown('Freight Type', ['Air', 'Sea']),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Submit Pre-Alert'),
-                  ),
-                ],
-              ),
-            ],
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: saving ? null : () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              if (customerName.text.trim().isEmpty ||
+                                  tracking.text.trim().isEmpty) {
+                                setDialogState(
+                                  () => error = 'Customer and tracking number are required.',
+                                );
+                                return;
+                              }
+                              setDialogState(() {
+                                saving = true;
+                                error = null;
+                              });
+                              try {
+                                await _db.insertPreAlert({
+                                  'customer_name': customerName.text.trim(),
+                                  'tracking_number': tracking.text.trim(),
+                                  'carrier': carrier.text.trim(),
+                                  'description': description.text.trim(),
+                                  'weight': double.tryParse(weight.text.trim()) ?? 0,
+                                  'declared_value':
+                                      double.tryParse(declaredValue.text.trim()) ?? 0,
+                                  'freight_type': freightType.toLowerCase(),
+                                  'status': 'pending',
+                                });
+                                if (!context.mounted) return;
+                                Navigator.pop(context, true);
+                              } catch (e) {
+                                setDialogState(() {
+                                  saving = false;
+                                  error = 'Failed to submit: $e';
+                                });
+                              }
+                            },
+                      child: saving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Submit Pre-Alert'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
+    if (created == true) _load();
   }
 }
 
@@ -606,8 +709,13 @@ class _TypeBadge extends StatelessWidget {
 class _PreAlertDetail extends StatelessWidget {
   final PreAlert preAlert;
   final VoidCallback onClose;
+  final void Function(PreAlert, PreAlertStatus) onStatusChange;
 
-  const _PreAlertDetail({required this.preAlert, required this.onClose});
+  const _PreAlertDetail({
+    required this.preAlert,
+    required this.onClose,
+    required this.onStatusChange,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -690,7 +798,7 @@ class _PreAlertDetail extends StatelessWidget {
                     children: PreAlertStatus.values
                         .map(
                           (s) => GestureDetector(
-                            onTap: () {},
+                            onTap: () => onStatusChange(preAlert, s),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -777,7 +885,9 @@ class _KV extends StatelessWidget {
 class _DialogField extends StatelessWidget {
   final String label;
   final String hint;
-  const _DialogField(this.label, this.hint);
+  final TextEditingController? controller;
+  final TextInputType? keyboardType;
+  const _DialogField(this.label, this.hint, {this.controller, this.keyboardType});
 
   @override
   Widget build(BuildContext context) => Column(
@@ -793,6 +903,8 @@ class _DialogField extends StatelessWidget {
       ),
       const SizedBox(height: 4),
       TextField(
+        controller: controller,
+        keyboardType: keyboardType,
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(
@@ -809,7 +921,9 @@ class _DialogField extends StatelessWidget {
 class _DialogDropdown extends StatelessWidget {
   final String label;
   final List<String> items;
-  const _DialogDropdown(this.label, this.items);
+  final String? value;
+  final ValueChanged<String?>? onChanged;
+  const _DialogDropdown(this.label, this.items, {this.value, this.onChanged});
 
   @override
   Widget build(BuildContext context) => Column(
@@ -835,6 +949,7 @@ class _DialogDropdown extends StatelessWidget {
         child: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
             isExpanded: true,
+            value: value,
             hint: Text(items.first, style: const TextStyle(fontSize: 13)),
             items: items
                 .map(
@@ -844,7 +959,7 @@ class _DialogDropdown extends StatelessWidget {
                   ),
                 )
                 .toList(),
-            onChanged: (_) {},
+            onChanged: onChanged,
           ),
         ),
       ),

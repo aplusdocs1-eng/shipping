@@ -26,14 +26,41 @@ class _BranchesScreenState extends State<BranchesScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final rows = await _db.getBranches();
+      final results = await Future.wait([_db.getBranches(), _db.getStaff()]);
+      final branchRows = (results[0] as List).cast<Map<String, dynamic>>();
+      final staffRows = (results[1] as List).cast<Map<String, dynamic>>();
+      final staffCounts = <String, int>{};
+      for (final s in staffRows) {
+        final bid = s['branch_id']?.toString();
+        if (bid != null) staffCounts[bid] = (staffCounts[bid] ?? 0) + 1;
+      }
+      final branches = branchRows
+          .map(Branch.fromMap)
+          .map((b) => b.copyWith(staffCount: staffCounts[b.id] ?? 0))
+          .toList();
       if (mounted)
         setState(() {
-          _allBranches = rows.map(Branch.fromMap).toList();
+          _allBranches = branches;
           _loading = false;
+          if (_selected != null) {
+            final match = branches.where((b) => b.id == _selected!.id);
+            _selected = match.isEmpty ? null : match.first;
+          }
         });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _setActive(Branch branch, bool active) async {
+    try {
+      await _db.updateBranch(branch.id, {'is_active': active});
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update branch: $e')),
+      );
     }
   }
 
@@ -129,6 +156,7 @@ class _BranchesScreenState extends State<BranchesScreen> {
                       _BranchDetail(
                         branch: _selected!,
                         onClose: () => setState(() => _selected = null),
+                        onToggleActive: () => _setActive(_selected!, !_selected!.isActive),
                       ),
                     ],
                   )
@@ -143,69 +171,118 @@ class _BranchesScreenState extends State<BranchesScreen> {
     );
   }
 
-  void _showAddBranchDialog(BuildContext context) {
-    showDialog(
+  Future<void> _showAddBranchDialog(BuildContext context) async {
+    final name = TextEditingController();
+    final address = TextEditingController();
+    final city = TextEditingController();
+    final phone = TextEditingController();
+    final email = TextEditingController();
+    bool saving = false;
+    String? error;
+
+    final created = await showDialog<bool>(
       context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Container(
-          width: 480,
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Text(
-                    'Add New Branch',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textPrimary,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Container(
+            width: 480,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'Add New Branch',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    icon: const Icon(Icons.close, size: 18),
-                  ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.close, size: 18),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                _DField('Branch Name', 'e.g. Spanish Town Branch', controller: name),
+                const SizedBox(height: 12),
+                _DField('Address', '123 Main Street', controller: address),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: _DField('City', 'Kingston', controller: city)),
+                    const SizedBox(width: 12),
+                    Expanded(child: _DField('Phone', '+1 876 ...', controller: phone)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _DField('Email', 'branch@company.com', controller: email),
+                if (error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
                 ],
-              ),
-              const SizedBox(height: 20),
-              _DField('Branch Name', 'e.g. Spanish Town Branch'),
-              const SizedBox(height: 12),
-              _DField('Address', '123 Main Street'),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: _DField('City', 'Kingston')),
-                  const SizedBox(width: 12),
-                  Expanded(child: _DField('Phone', '+1 876 ...')),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _DField('Email', 'branch@company.com'),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Create Branch'),
-                  ),
-                ],
-              ),
-            ],
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: saving ? null : () => Navigator.pop(ctx),
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              if (name.text.trim().isEmpty) {
+                                setDialogState(() => error = 'Branch name is required.');
+                                return;
+                              }
+                              setDialogState(() {
+                                saving = true;
+                                error = null;
+                              });
+                              try {
+                                await _db.insertBranch({
+                                  'name': name.text.trim(),
+                                  'address': address.text.trim(),
+                                  'city': city.text.trim(),
+                                  'phone': phone.text.trim().isEmpty ? null : phone.text.trim(),
+                                  'email': email.text.trim().isEmpty ? null : email.text.trim(),
+                                  'is_active': true,
+                                });
+                                if (!ctx.mounted) return;
+                                Navigator.pop(ctx, true);
+                              } catch (e) {
+                                setDialogState(() {
+                                  saving = false;
+                                  error = 'Failed to create branch: $e';
+                                });
+                              }
+                            },
+                      child: saving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Create Branch'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
+    if (created == true) _load();
   }
 }
 
@@ -405,7 +482,12 @@ class _BranchMetric extends StatelessWidget {
 class _BranchDetail extends StatelessWidget {
   final Branch branch;
   final VoidCallback onClose;
-  const _BranchDetail({required this.branch, required this.onClose});
+  final VoidCallback onToggleActive;
+  const _BranchDetail({
+    required this.branch,
+    required this.onClose,
+    required this.onToggleActive,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -529,16 +611,7 @@ class _BranchDetail extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: () {},
-                      icon: const Icon(Icons.edit_outlined, size: 14),
-                      label: const Text('Edit Branch'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () {},
+                      onPressed: onToggleActive,
                       icon: Icon(
                         branch.isActive
                             ? Icons.block
@@ -691,7 +764,8 @@ class _BranchStat extends StatelessWidget {
 class _DField extends StatelessWidget {
   final String label;
   final String hint;
-  const _DField(this.label, this.hint);
+  final TextEditingController? controller;
+  const _DField(this.label, this.hint, {this.controller});
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -706,6 +780,7 @@ class _DField extends StatelessWidget {
       ),
       const SizedBox(height: 4),
       TextField(
+        controller: controller,
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(

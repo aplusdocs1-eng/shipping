@@ -19,6 +19,7 @@ class _StaffScreenState extends State<StaffScreen> {
   StaffMember? _selected;
   bool _loading = true;
   List<StaffMember> _allStaff = [];
+  List<Map<String, dynamic>> _branches = [];
 
   @override
   void initState() {
@@ -29,14 +30,34 @@ class _StaffScreenState extends State<StaffScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final rows = await _db.getStaff();
+      final results = await Future.wait([_db.getStaff(), _db.getBranches()]);
       if (mounted)
         setState(() {
-          _allStaff = rows.map(StaffMember.fromMap).toList();
+          _allStaff = (results[0] as List)
+              .cast<Map<String, dynamic>>()
+              .map(StaffMember.fromMap)
+              .toList();
+          _branches = (results[1] as List).cast<Map<String, dynamic>>();
           _loading = false;
+          if (_selected != null) {
+            final match = _allStaff.where((s) => s.id == _selected!.id);
+            _selected = match.isEmpty ? null : match.first;
+          }
         });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _setActive(StaffMember member, bool active) async {
+    try {
+      await _db.updateStaff(member.id, {'is_active': active});
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update staff: $e')),
+      );
     }
   }
 
@@ -230,84 +251,148 @@ class _StaffScreenState extends State<StaffScreen> {
           _StaffDetail(
             member: _selected!,
             onClose: () => setState(() => _selected = null),
+            onToggleActive: () => _setActive(_selected!, !_selected!.isActive),
           ),
       ],
     );
   }
 
-  void _showInviteDialog(BuildContext context) {
-    showDialog(
+  Future<void> _showInviteDialog(BuildContext context) async {
+    final firstName = TextEditingController();
+    final lastName = TextEditingController();
+    final email = TextEditingController();
+    StaffRole role = StaffRole.agent;
+    String? branchId = _branches.isNotEmpty ? _branches.first['id'] as String : null;
+    bool saving = false;
+    String? error;
+
+    final created = await showDialog<bool>(
       context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Container(
-          width: 480,
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Text(
-                    'Invite Staff Member',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textPrimary,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Container(
+            width: 480,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'Add Staff Member',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    icon: const Icon(Icons.close, size: 18),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(child: _DField('First Name', 'John')),
-                  const SizedBox(width: 12),
-                  Expanded(child: _DField('Last Name', 'Smith')),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _DField('Email Address', 'john.smith@company.com'),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _DDrop(
-                      'Role',
-                      StaffRole.values.map((r) => r.label).toList(),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.close, size: 18),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(child: _DDrop('Branch', const ['Main Branch'])),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(child: _DField('First Name', 'John', controller: firstName)),
+                    const SizedBox(width: 12),
+                    Expanded(child: _DField('Last Name', 'Smith', controller: lastName)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _DField('Email Address', 'john.smith@company.com', controller: email),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DDrop<StaffRole>(
+                        'Role',
+                        StaffRole.values,
+                        (r) => r.label,
+                        value: role,
+                        onChanged: (v) => setDialogState(() => role = v ?? StaffRole.agent),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DDrop<String>(
+                        'Branch',
+                        _branches.map((b) => b['id'] as String).toList(),
+                        (id) => _branches.firstWhere((b) => b['id'] == id)['name'] as String,
+                        value: branchId,
+                        onChanged: (v) => setDialogState(() => branchId = v),
+                      ),
+                    ),
+                  ],
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
                 ],
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: () => Navigator.pop(ctx),
-                    icon: const Icon(Icons.send_outlined, size: 14),
-                    label: const Text('Send Invite'),
-                  ),
-                ],
-              ),
-            ],
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: saving ? null : () => Navigator.pop(ctx),
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              final name = '${firstName.text.trim()} ${lastName.text.trim()}'
+                                  .trim();
+                              if (name.isEmpty || email.text.trim().isEmpty) {
+                                setDialogState(
+                                  () => error = 'Name and email are required.',
+                                );
+                                return;
+                              }
+                              setDialogState(() {
+                                saving = true;
+                                error = null;
+                              });
+                              try {
+                                await _db.insertStaff({
+                                  'name': name,
+                                  'email': email.text.trim(),
+                                  'role': role.name,
+                                  'branch_id': branchId,
+                                  'is_active': true,
+                                });
+                                if (!ctx.mounted) return;
+                                Navigator.pop(ctx, true);
+                              } catch (e) {
+                                setDialogState(() {
+                                  saving = false;
+                                  error = 'Failed to add staff member: $e';
+                                });
+                              }
+                            },
+                      icon: saving
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.person_add_outlined, size: 14),
+                      label: const Text('Add Staff'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
+    if (created == true) _load();
   }
 }
 
@@ -476,7 +561,8 @@ class _StaffRow extends StatelessWidget {
 class _StaffDetail extends StatelessWidget {
   final StaffMember member;
   final VoidCallback onClose;
-  const _StaffDetail({required this.member, required this.onClose});
+  final VoidCallback onToggleActive;
+  const _StaffDetail({required this.member, required this.onClose, required this.onToggleActive});
 
   @override
   Widget build(BuildContext context) {
@@ -565,19 +651,11 @@ class _StaffDetail extends StatelessWidget {
                   ),
                   _KV('Status', member.isActive ? 'Active' : 'Inactive'),
                   const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () {},
-                      icon: const Icon(Icons.edit_outlined, size: 14),
-                      label: const Text('Edit Staff'),
-                    ),
-                  ),
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: () {},
+                      onPressed: onToggleActive,
                       icon: Icon(
                         member.isActive
                             ? Icons.block
@@ -700,7 +778,8 @@ class _DropFilter<T> extends StatelessWidget {
 class _DField extends StatelessWidget {
   final String label;
   final String hint;
-  const _DField(this.label, this.hint);
+  final TextEditingController? controller;
+  const _DField(this.label, this.hint, {this.controller});
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -715,6 +794,7 @@ class _DField extends StatelessWidget {
       ),
       const SizedBox(height: 4),
       TextField(
+        controller: controller,
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(
@@ -728,10 +808,13 @@ class _DField extends StatelessWidget {
   );
 }
 
-class _DDrop extends StatelessWidget {
+class _DDrop<T> extends StatelessWidget {
   final String label;
-  final List<String> items;
-  const _DDrop(this.label, this.items);
+  final List<T> items;
+  final String Function(T) itemLabel;
+  final T? value;
+  final ValueChanged<T?>? onChanged;
+  const _DDrop(this.label, this.items, this.itemLabel, {this.value, this.onChanged});
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -754,18 +837,21 @@ class _DDrop extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
         ),
         child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
+          child: DropdownButton<T>(
             isExpanded: true,
-            hint: Text(items.first, style: const TextStyle(fontSize: 13)),
+            value: value,
+            hint: items.isEmpty
+                ? const Text('—', style: TextStyle(fontSize: 13))
+                : Text(itemLabel(items.first), style: const TextStyle(fontSize: 13)),
             items: items
                 .map(
                   (i) => DropdownMenuItem(
                     value: i,
-                    child: Text(i, style: const TextStyle(fontSize: 13)),
+                    child: Text(itemLabel(i), style: const TextStyle(fontSize: 13)),
                   ),
                 )
                 .toList(),
-            onChanged: (_) {},
+            onChanged: onChanged,
           ),
         ),
       ),
