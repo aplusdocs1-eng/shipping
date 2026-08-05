@@ -108,14 +108,24 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     }
   }
 
+  /// Occupied slots as "zoneName|shelf-slot" keys. Compared against real
+  /// StorageLocation identity rather than displayLabel text, since the
+  /// synthetic StorageLocation reconstructed by WarehouseEntry.fromMap
+  /// (from the warehouse_entries.storage_zone/storage_location text
+  /// columns) formats slightly differently than the real one joined from
+  /// the storage_locations table.
   List<StorageLocation> get _availableLocations {
-    final occupiedLabels = _entries
+    final occupied = _entries
         .where((e) => e.status != WarehouseEntryStatus.pickedUp)
-        .map((e) => e.storageLocation?.displayLabel)
+        .map((e) {
+          final loc = e.storageLocation;
+          if (loc == null) return null;
+          return '${loc.zoneName}|${loc.shelf}';
+        })
         .whereType<String>()
         .toSet();
     return _storageLocations
-        .where((l) => !occupiedLabels.contains(l.displayLabel))
+        .where((l) => !occupied.contains('${l.zoneName}|${l.shelf}-${l.slot}'))
         .toList();
   }
 
@@ -569,7 +579,9 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                                   'Scanned package',
                               weight: packageMatch?.weight ?? 0.0,
                               storageZone: selectedLocation?.zoneName,
-                              storageLocation: selectedLocation?.displayLabel,
+                              storageLocation: selectedLocation == null
+                                  ? null
+                                  : '${selectedLocation!.shelf}-${selectedLocation!.slot}',
                               status: selectedLocation != null
                                   ? 'stored'
                                   : 'scanned_in',
@@ -703,7 +715,8 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                     try {
                       await _db.updateWarehouseEntry(entry.id, {
                         'storage_zone': selectedLocation!.zoneName,
-                        'storage_location': selectedLocation!.displayLabel,
+                        'storage_location':
+                            '${selectedLocation!.shelf}-${selectedLocation!.slot}',
                         'status': 'stored',
                       });
                     } catch (e) {

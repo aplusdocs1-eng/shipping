@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/database_service.dart';
 import '../theme/app_theme.dart';
@@ -2592,21 +2593,151 @@ class _BillCustomerDialogState extends State<_BillCustomerDialog> {
 }
 
 // ─── Shipments Page ──────────────────────────────────────────────────────
-class _ShipmentsPage extends StatelessWidget {
+class _ShipmentsPage extends StatefulWidget {
   final DatabaseService db;
   final String? partnerId;
   const _ShipmentsPage({required this.db, required this.partnerId});
+
+  @override
+  State<_ShipmentsPage> createState() => _ShipmentsPageState();
+}
+
+class _ShipmentsPageState extends State<_ShipmentsPage> {
+  late Future<List<Map<String, dynamic>>> _future;
+
+  Future<List<Map<String, dynamic>>> _fetch() => widget.partnerId != null
+      ? widget.db.getShipmentsByPartner(widget.partnerId!)
+      : widget.db.getShipments();
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _fetch();
+  }
+
+  void _refresh() => setState(() => _future = _fetch());
+
+  Future<void> _openNewShipmentDialog() async {
+    final shipmentNumber = TextEditingController();
+    final origin = TextEditingController();
+    final destination = TextEditingController();
+    String type = 'Air';
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => AlertDialog(
+          title: const Text('New Shipment'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: shipmentNumber,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Shipment # *',
+                      prefixIcon: Icon(Icons.confirmation_number_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: type,
+                    decoration: const InputDecoration(labelText: 'Type'),
+                    items: const [
+                      DropdownMenuItem(value: 'Air', child: Text('Air')),
+                      DropdownMenuItem(value: 'Sea', child: Text('Sea')),
+                    ],
+                    onChanged: (v) => setDialogState(() => type = v ?? 'Air'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: origin,
+                    decoration: const InputDecoration(
+                      labelText: 'Origin *',
+                      prefixIcon: Icon(Icons.flight_takeoff),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: destination,
+                    decoration: const InputDecoration(
+                      labelText: 'Destination *',
+                      prefixIcon: Icon(Icons.flight_land),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                if (shipmentNumber.text.trim().isEmpty ||
+                    origin.text.trim().isEmpty ||
+                    destination.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(dialogCtx).showSnackBar(
+                    const SnackBar(content: Text('Shipment #, origin, and destination are required')),
+                  );
+                  return;
+                }
+                try {
+                  await widget.db.insertShipment({
+                    'shipment_number': shipmentNumber.text.trim(),
+                    'origin': origin.text.trim(),
+                    'destination': destination.text.trim(),
+                    'carrier': type,
+                    'status': 'preparing',
+                    if (widget.partnerId != null) 'partner_id': widget.partnerId,
+                  });
+                  if (dialogCtx.mounted) Navigator.pop(dialogCtx, true);
+                } catch (e) {
+                  if (dialogCtx.mounted) {
+                    ScaffoldMessenger.of(dialogCtx).showSnackBar(
+                      SnackBar(content: Text('Failed to save: $e')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Create Shipment'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Shipment created')),
+      );
+      _refresh();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return _PagePanel(
       title: 'Shipments',
       subtitle: 'Outgoing and incoming shipment manifests.',
-      actions: const [_PrimaryAction(label: 'New Shipment', icon: Icons.add)],
+      actions: [
+        _PrimaryAction(
+          label: 'New Shipment',
+          icon: Icons.add,
+          onTap: _openNewShipmentDialog,
+        ),
+      ],
       child: _futureList<Map<String, dynamic>>(
-        future: partnerId != null
-            ? db.getShipmentsByPartner(partnerId!)
-            : db.getShipments(),
+        future: _future,
         builder: (data) => _DataTableCard(
           columns: const [
             'Shipment #',
@@ -4860,14 +4991,86 @@ class _UserManagementTab extends StatelessWidget {
   }
 }
 
-class _ApiKeysTab extends StatelessWidget {
+class _ApiKeysTab extends StatefulWidget {
   final Map<String, dynamic> account;
   const _ApiKeysTab({required this.account});
+
+  @override
+  State<_ApiKeysTab> createState() => _ApiKeysTabState();
+}
+
+class _ApiKeysTabState extends State<_ApiKeysTab> {
+  final _db = DatabaseService();
+  late String _apiKey =
+      (widget.account['api_key'] as String?) ??
+      'sk_live_${(widget.account['id']?.toString() ?? 'XXXXXXXX').substring(0, 8)}';
+  bool _regenerating = false;
+
+  String _generateApiKey() {
+    final rand = DateTime.now().microsecondsSinceEpoch;
+    final chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    final buf = StringBuffer('sk_live_');
+    var seed = rand;
+    for (var i = 0; i < 32; i++) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      buf.write(chars[seed % chars.length]);
+    }
+    return buf.toString();
+  }
+
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: _apiKey));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('API key copied to clipboard')),
+    );
+  }
+
+  Future<void> _regenerate() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Regenerate API key?'),
+        content: const Text(
+          'The existing key will stop working immediately. Any integration using it must be updated.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Regenerate'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    setState(() => _regenerating = true);
+    final newKey = _generateApiKey();
+    try {
+      await _db.setPartnerApiKey(widget.account['id'] as String, newKey);
+      if (!mounted) return;
+      setState(() {
+        _apiKey = newKey;
+        _regenerating = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('API key regenerated')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _regenerating = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to regenerate key: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final apiKey =
-        (account['api_key'] as String?) ??
-        'sk_live_${(account['id']?.toString() ?? 'XXXXXXXX').substring(0, 8)}';
+    final apiKey = _apiKey;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -4944,7 +5147,7 @@ class _ApiKeysTab extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     OutlinedButton.icon(
-                      onPressed: () {},
+                      onPressed: _copy,
                       icon: const Icon(Icons.copy, size: 14),
                       label: const Text('Copy'),
                       style: OutlinedButton.styleFrom(
@@ -4954,8 +5157,14 @@ class _ApiKeysTab extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     OutlinedButton.icon(
-                      onPressed: () {},
-                      icon: const Icon(Icons.refresh, size: 14),
+                      onPressed: _regenerating ? null : _regenerate,
+                      icon: _regenerating
+                          ? const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh, size: 14),
                       label: const Text('Regenerate'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppTheme.danger,

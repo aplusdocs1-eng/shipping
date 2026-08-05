@@ -18,6 +18,9 @@ dependencies:
   google_fonts: ^6.2.1
   http: ^1.2.0
   supabase_flutter: ^2.8.0
+  pdf: ^3.11.1
+  printing: ^5.13.4
+  csv: ^6.0.0
 
 dev_dependencies:
   flutter_test:

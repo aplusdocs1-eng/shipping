@@ -76,6 +76,7 @@ class Package {
   final DateTime? estimatedDelivery;
   final double declaredValue;
   final String? notes;
+  final String? shipmentId;
   final List<TrackingEvent> events;
 
   Package({
@@ -92,6 +93,7 @@ class Package {
     this.estimatedDelivery,
     required this.declaredValue,
     this.notes,
+    this.shipmentId,
     this.events = const [],
   });
 
@@ -133,6 +135,7 @@ class Package {
       declaredValue:
           double.tryParse(m['declared_value']?.toString() ?? '0') ?? 0.0,
       notes: m['notes']?.toString(),
+      shipmentId: m['shipment_id']?.toString(),
     );
   }
 }

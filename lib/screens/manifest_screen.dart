@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
+import '../services/export_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 
@@ -46,7 +47,13 @@ class _ManifestScreenState extends State<ManifestScreen> {
       setState(() {
         _allShipments = shipments;
         _allPackages = packages;
-        if (shipments.isNotEmpty) _selectedShipment = shipments.first;
+        if (_selectedShipment != null) {
+          final match = shipments.where((s) => s.id == _selectedShipment!.id);
+          _selectedShipment = match.isEmpty ? null : match.first;
+        }
+        if (_selectedShipment == null && shipments.isNotEmpty) {
+          _selectedShipment = shipments.first;
+        }
         _loading = false;
       });
     } catch (_) {
@@ -61,13 +68,37 @@ class _ManifestScreenState extends State<ManifestScreen> {
   }
 
   List<Package> get _manifestPackages {
-    // In real app these would be linked to a shipment; show all packages for demo.
     return _allPackages.where((p) {
-      return _query.isEmpty ||
+      final matchesShipment =
+          _selectedShipment == null || p.shipmentId == _selectedShipment!.id;
+      final matchesQuery =
+          _query.isEmpty ||
           p.trackingNumber.toLowerCase().contains(_query.toLowerCase()) ||
           p.customerName.toLowerCase().contains(_query.toLowerCase()) ||
           p.description.toLowerCase().contains(_query.toLowerCase());
+      return matchesShipment && matchesQuery;
     }).toList();
+  }
+
+  List<Package> get _unassignedPackages =>
+      _allPackages.where((p) => p.shipmentId == null).toList();
+
+  Future<void> _addPackageToManifest() async {
+    if (_selectedShipment == null) return;
+    final picked = await showDialog<Package>(
+      context: context,
+      builder: (ctx) => _PickPackageDialog(packages: _unassignedPackages),
+    );
+    if (picked == null) return;
+    try {
+      await _db.updatePackage(picked.id, {'shipment_id': _selectedShipment!.id});
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to add package: $e')),
+      );
+    }
   }
 
   double get _totalWeight =>
@@ -115,19 +146,19 @@ class _ManifestScreenState extends State<ManifestScreen> {
               _ActionBtn(
                 icon: Icons.picture_as_pdf_outlined,
                 label: 'Export PDF',
-                onTap: () => _notify(context, 'Exporting PDF...'),
+                onTap: _exportPdf,
               ),
               const SizedBox(width: 8),
               _ActionBtn(
                 icon: Icons.table_chart_outlined,
                 label: 'Export CSV',
-                onTap: () => _notify(context, 'Exporting CSV...'),
+                onTap: _exportCsv,
               ),
               const SizedBox(width: 8),
               _ActionBtn(
                 icon: Icons.print_outlined,
                 label: 'Print',
-                onTap: () => _notify(context, 'Sending to printer...'),
+                onTap: _printManifest,
               ),
             ],
           ),
@@ -213,6 +244,13 @@ class _ManifestScreenState extends State<ManifestScreen> {
                   ),
                 ],
               ],
+              const Spacer(),
+              if (_selectedShipment != null)
+                OutlinedButton.icon(
+                  onPressed: _addPackageToManifest,
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Add Package'),
+                ),
             ],
           ),
           const SizedBox(height: 20),
@@ -346,13 +384,58 @@ class _ManifestScreenState extends State<ManifestScreen> {
     );
   }
 
-  void _notify(BuildContext context, String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: AppTheme.success,
-        behavior: SnackBarBehavior.floating,
-      ),
+  List<String> get _manifestHeaders =>
+      const ['#', 'Tracking #', 'Customer', 'Description', 'Weight', 'Value', 'Status'];
+
+  List<List<String>> get _manifestRows => [
+    for (var i = 0; i < _manifestPackages.length; i++)
+      [
+        (i + 1).toString(),
+        _manifestPackages[i].trackingNumber,
+        _manifestPackages[i].customerName,
+        _manifestPackages[i].description,
+        '${_manifestPackages[i].weight} lbs',
+        '\$${_manifestPackages[i].declaredValue.toStringAsFixed(2)}',
+        _manifestPackages[i].status.label,
+      ],
+  ];
+
+  Map<String, String> get _manifestSummary => {
+    'Total Packages': _manifestPackages.length.toString(),
+    'Total Weight': '${_totalWeight.toStringAsFixed(1)} lbs',
+    'Declared Value': '\$${_totalValue.toStringAsFixed(2)}',
+  };
+
+  Future<void> _exportPdf() async {
+    await ExportService.downloadPdf(
+      filename: 'manifest-${_selectedShipment?.shipmentNumber ?? 'all'}.pdf',
+      title: 'Manifest — ${_selectedShipment?.shipmentNumber ?? 'All Packages'}',
+      subtitle: _selectedShipment != null
+          ? '${_selectedShipment!.origin} → ${_selectedShipment!.destination}'
+          : null,
+      headers: _manifestHeaders,
+      rows: _manifestRows,
+      summary: _manifestSummary,
+    );
+  }
+
+  void _exportCsv() {
+    ExportService.downloadCsv(
+      filename: 'manifest-${_selectedShipment?.shipmentNumber ?? 'all'}.csv',
+      headers: _manifestHeaders,
+      rows: _manifestRows,
+    );
+  }
+
+  Future<void> _printManifest() async {
+    await ExportService.printPdf(
+      title: 'Manifest — ${_selectedShipment?.shipmentNumber ?? 'All Packages'}',
+      subtitle: _selectedShipment != null
+          ? '${_selectedShipment!.origin} → ${_selectedShipment!.destination}'
+          : null,
+      headers: _manifestHeaders,
+      rows: _manifestRows,
+      summary: _manifestSummary,
     );
   }
 }
@@ -567,4 +650,80 @@ class _ActionBtn extends StatelessWidget {
     icon: Icon(icon, size: 14),
     label: Text(label, style: const TextStyle(fontSize: 13)),
   );
+}
+
+class _PickPackageDialog extends StatefulWidget {
+  final List<Package> packages;
+  const _PickPackageDialog({required this.packages});
+
+  @override
+  State<_PickPackageDialog> createState() => _PickPackageDialogState();
+}
+
+class _PickPackageDialogState extends State<_PickPackageDialog> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = widget.packages.where((p) {
+      if (_query.isEmpty) return true;
+      final q = _query.toLowerCase();
+      return p.trackingNumber.toLowerCase().contains(q) ||
+          p.customerName.toLowerCase().contains(q);
+    }).toList();
+
+    return AlertDialog(
+      title: const Text('Add Package to Manifest'),
+      content: SizedBox(
+        width: 420,
+        height: 420,
+        child: Column(
+          children: [
+            TextField(
+              autofocus: true,
+              onChanged: (v) => setState(() => _query = v),
+              decoration: const InputDecoration(
+                hintText: 'Search by tracking # or customer...',
+                prefixIcon: Icon(Icons.search, size: 18),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: filtered.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'No unassigned packages found.',
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: filtered.length,
+                      itemBuilder: (context, i) {
+                        final p = filtered[i];
+                        return ListTile(
+                          dense: true,
+                          title: Text(
+                            p.trackingNumber,
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: Text(
+                            '${p.customerName} · ${p.description}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          onTap: () => Navigator.of(context).pop(p),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
 }

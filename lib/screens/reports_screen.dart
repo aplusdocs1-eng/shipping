@@ -78,6 +78,36 @@ class _ReportsScreenState extends State<ReportsScreen> {
       decimalDigits: 2,
     );
 
+    // Delivery performance metrics computed from real data.
+    final terminalPackages = packages.where(
+      (p) =>
+          p.status == PackageStatus.delivered ||
+          p.status == PackageStatus.exception ||
+          p.status == PackageStatus.returned,
+    );
+    final onTimeRate = terminalPackages.isEmpty
+        ? 0.0
+        : packages.where((p) => p.status == PackageStatus.delivered).length /
+              terminalPackages.length;
+    final exceptionRate = packages.isEmpty
+        ? 0.0
+        : packages.where((p) => p.status == PackageStatus.exception).length /
+              packages.length;
+    final invoiceCollectionRate = invoices.isEmpty
+        ? 0.0
+        : invoices.where((i) => i.status == InvoiceStatus.paid).length /
+              invoices.length;
+    final packagesPerCustomer = <String, int>{};
+    for (final p in packages) {
+      if (p.customerId.isEmpty) continue;
+      packagesPerCustomer[p.customerId] =
+          (packagesPerCustomer[p.customerId] ?? 0) + 1;
+    }
+    final repeatCustomers = packagesPerCustomer.values.where((c) => c > 1).length;
+    final customerRetention = packagesPerCustomer.isEmpty
+        ? 0.0
+        : repeatCustomers / packagesPerCustomer.length;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(28),
       child: Column(
@@ -353,57 +383,68 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       const SizedBox(height: 16),
                       _PerformanceRow(
                         'On-Time Delivery Rate',
-                        0.87,
+                        onTimeRate,
                         AppTheme.success,
                       ),
                       const SizedBox(height: 12),
                       _PerformanceRow(
                         'Package Exception Rate',
-                        0.04,
+                        exceptionRate,
                         AppTheme.danger,
                       ),
                       const SizedBox(height: 12),
                       _PerformanceRow(
                         'Invoice Collection Rate',
-                        0.72,
+                        invoiceCollectionRate,
                         AppTheme.primary,
                       ),
                       const SizedBox(height: 12),
                       _PerformanceRow(
                         'Customer Retention',
-                        0.94,
+                        customerRetention,
                         AppTheme.accent,
                       ),
                       const SizedBox(height: 20),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.success.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: AppTheme.success.withOpacity(0.2),
-                          ),
-                        ),
-                        child: Row(
-                          children: const [
-                            Icon(
-                              Icons.trending_up_rounded,
-                              color: AppTheme.success,
-                              size: 16,
+                      Builder(
+                        builder: (context) {
+                          const benchmark = 0.85;
+                          final aboveBenchmark = onTimeRate >= benchmark;
+                          final color = aboveBenchmark ? AppTheme.success : AppTheme.warning;
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: color.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: color.withOpacity(0.2)),
                             ),
-                            SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Overall performance is above industry average (85% benchmark)',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppTheme.success,
-                                  fontWeight: FontWeight.w500,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  aboveBenchmark
+                                      ? Icons.trending_up_rounded
+                                      : Icons.trending_down_rounded,
+                                  color: color,
+                                  size: 16,
                                 ),
-                              ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    aboveBenchmark
+                                        ? 'On-time delivery is above the 85% benchmark'
+                                        : terminalPackages.isEmpty
+                                        ? 'Not enough delivered/exception packages yet to measure performance'
+                                        : 'On-time delivery is below the 85% benchmark',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: color,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
                     ],
                   ),

@@ -259,7 +259,11 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
       case 'Shipping Addresses':
         return _ShippingAddressesPage(customer: _customer!);
       case 'Pre-Alerts':
-        return _PreAlertsPage(preAlerts: _preAlerts);
+        return _PreAlertsPage(
+          preAlerts: _preAlerts,
+          customer: _customer!,
+          onCreated: _silentLoad,
+        );
       case 'Refer & Earn':
         return _ReferEarnPage(customer: _customer!);
       case 'Rate Calculator':
@@ -450,7 +454,23 @@ class _Sidebar extends StatelessWidget {
           ),
           Divider(height: 1, color: Colors.white.withValues(alpha: 0.1)),
           InkWell(
-            onTap: () {},
+            onTap: () => showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Support'),
+                content: const Text(
+                  'Need help with a shipment or your account?\n\n'
+                  'Phone: 267-844-5155\n'
+                  'Email: shipping@onevillageshipping.com',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+            ),
             child: const Padding(
               padding: EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               child: Row(
@@ -1762,7 +1782,135 @@ class _AddressField extends StatelessWidget {
 
 class _PreAlertsPage extends StatelessWidget {
   final List<Map<String, dynamic>> preAlerts;
-  const _PreAlertsPage({required this.preAlerts});
+  final Map<String, dynamic> customer;
+  final Future<void> Function() onCreated;
+  const _PreAlertsPage({
+    required this.preAlerts,
+    required this.customer,
+    required this.onCreated,
+  });
+
+  Future<void> _showCreateDialog(BuildContext context) async {
+    final db = DatabaseService();
+    final tracking = TextEditingController();
+    final carrier = TextEditingController();
+    final description = TextEditingController();
+    final declaredValue = TextEditingController();
+    bool saving = false;
+    String? error;
+
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Create Pre-Alert'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: tracking,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Tracking Number *',
+                      prefixIcon: Icon(Icons.local_shipping_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: carrier,
+                    decoration: const InputDecoration(
+                      labelText: 'Carrier',
+                      hintText: 'UPS, FedEx, USPS...',
+                      prefixIcon: Icon(Icons.business_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: description,
+                    decoration: const InputDecoration(
+                      labelText: 'Description *',
+                      hintText: 'What is in the package?',
+                      prefixIcon: Icon(Icons.description_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: declaredValue,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Item Value (\$)',
+                      prefixIcon: Icon(Icons.attach_money),
+                    ),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(error!, style: const TextStyle(color: Colors.red, fontSize: 12.5)),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF10B981),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (tracking.text.trim().isEmpty ||
+                          description.text.trim().isEmpty) {
+                        setDialogState(
+                          () => error = 'Tracking number and description are required.',
+                        );
+                        return;
+                      }
+                      setDialogState(() {
+                        saving = true;
+                        error = null;
+                      });
+                      try {
+                        await db.insertPreAlert({
+                          'tracking_number': tracking.text.trim(),
+                          'customer_id': customer['id'],
+                          'customer_name': customer['name'],
+                          'carrier': carrier.text.trim(),
+                          'description': description.text.trim(),
+                          'declared_value': double.tryParse(declaredValue.text.trim()) ?? 0,
+                          'status': 'pending',
+                          if (customer['partner_id'] != null)
+                            'partner_id': customer['partner_id'],
+                        });
+                        if (ctx.mounted) Navigator.pop(ctx, true);
+                      } catch (e) {
+                        setDialogState(() {
+                          saving = false;
+                          error = 'Failed to submit: $e';
+                        });
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Submit'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (created == true) await onCreated();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1793,7 +1941,7 @@ class _PreAlertsPage extends StatelessWidget {
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: () => _showCreateDialog(context),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF10B981),
                   foregroundColor: Colors.white,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/database_service.dart';
+import '../services/export_service.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
@@ -996,41 +997,24 @@ class _InvoiceDetailPanel extends StatelessWidget {
                   ),
 
                   const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () {},
-                          icon: const Icon(Icons.download_outlined, size: 14),
-                          label: const Text(
-                            'Download PDF',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppTheme.textPrimary,
-                            side: const BorderSide(color: AppTheme.border),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _downloadInvoicePdf(invoice),
+                      icon: const Icon(Icons.download_outlined, size: 14),
+                      label: const Text(
+                        'Download PDF',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.textPrimary,
+                        side: const BorderSide(color: AppTheme.border),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () {},
-                          icon: const Icon(Icons.send_outlined, size: 14),
-                          label: const Text(
-                            'Send',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ],
               ),
@@ -1038,6 +1022,32 @@ class _InvoiceDetailPanel extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _downloadInvoicePdf(Invoice invoice) async {
+    final dateFormat = DateFormat('MMM d, yyyy');
+    await ExportService.downloadPdf(
+      filename: '${invoice.invoiceNumber}.pdf',
+      title: 'Invoice ${invoice.invoiceNumber}',
+      subtitle:
+          '${invoice.customerName} · Created ${dateFormat.format(invoice.createdAt)} · Due ${dateFormat.format(invoice.dueAt)}',
+      headers: const ['Item', 'Qty', 'Unit Price', 'Total'],
+      rows: [
+        for (final li in invoice.lineItems)
+          [
+            li.description,
+            li.quantity.toString(),
+            '\$${li.unitPrice.toStringAsFixed(2)}',
+            '\$${(li.quantity * li.unitPrice).toStringAsFixed(2)}',
+          ],
+      ],
+      summary: {
+        'Subtotal': '\$${invoice.subtotal.toStringAsFixed(2)}',
+        'Tax': '\$${invoice.tax.toStringAsFixed(2)}',
+        'Total': '\$${invoice.total.toStringAsFixed(2)}',
+        'Status': invoice.status.label,
+      },
     );
   }
 }

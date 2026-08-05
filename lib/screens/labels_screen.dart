@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
+import '../services/export_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 
@@ -215,24 +216,26 @@ class _LabelsScreenState extends State<LabelsScreen> {
     );
   }
 
-  void _printOne(BuildContext context, Package p) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Printing label for ${p.trackingNumber}...'),
-        backgroundColor: AppTheme.success,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  Map<String, String> _labelData(Package p) => {
+    'trackingNumber': p.trackingNumber,
+    'customerName': p.customerName,
+    'origin': p.origin,
+    'destination': p.destination,
+    'description': p.description,
+    'weight': p.weight.toString(),
+  };
+
+  Future<void> _printOne(BuildContext context, Package p) async {
+    await ExportService.printLabels([_labelData(p)]);
   }
 
-  void _printSelected(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Printing ${_selected.length} label(s)...'),
-        backgroundColor: AppTheme.success,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  Future<void> _printSelected(BuildContext context) async {
+    final labels = _allPackages
+        .where((p) => _selected.contains(p.id))
+        .map(_labelData)
+        .toList();
+    if (labels.isEmpty) return;
+    await ExportService.printLabels(labels);
   }
 }
 
@@ -463,7 +466,16 @@ class _LabelPreview extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () {},
+                      onPressed: () => ExportService.printLabels([
+                        {
+                          'trackingNumber': package.trackingNumber,
+                          'customerName': package.customerName,
+                          'origin': package.origin,
+                          'destination': package.destination,
+                          'description': package.description,
+                          'weight': package.weight.toString(),
+                        },
+                      ]),
                       icon: const Icon(Icons.print, size: 14),
                       label: const Text('Print This Label'),
                     ),
@@ -472,7 +484,19 @@ class _LabelPreview extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: () {},
+                      onPressed: () => ExportService.downloadLabels(
+                        filename: '${package.trackingNumber}-label.pdf',
+                        labels: [
+                          {
+                            'trackingNumber': package.trackingNumber,
+                            'customerName': package.customerName,
+                            'origin': package.origin,
+                            'destination': package.destination,
+                            'description': package.description,
+                            'weight': package.weight.toString(),
+                          },
+                        ],
+                      ),
                       icon: const Icon(Icons.download_outlined, size: 14),
                       label: const Text('Download PDF'),
                     ),
