@@ -37,6 +37,7 @@ flutter:
 
   assets:
     - assets/images/one_village_logo.png
+    - assets/images/hero_port.jpg
     - assets/images/sea_freight.jpg
     - assets/images/air_freight.jpg
     - assets/images/warehousing.jpg

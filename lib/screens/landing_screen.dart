@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 /// Public marketing home page for One Village Shipping & Freight.
@@ -528,17 +529,31 @@ class _Hero extends StatelessWidget {
       ],
     );
 
-    final visual = Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.asset('assets/images/one_village_logo.png', fit: BoxFit.contain),
-      ),
+    final visual = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 30, offset: const Offset(0, 16)),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: AspectRatio(
+              aspectRatio: 1.15,
+              child: Image.asset('assets/images/hero_port.jpg', fit: BoxFit.cover),
+            ),
+          ),
+        ),
+        Positioned(
+          right: wide ? -18 : 8,
+          bottom: wide ? -28 : -18,
+          child: const _KnutsfordCard(),
+        ),
+      ],
     );
 
     return Container(
@@ -565,8 +580,73 @@ class _Hero extends StatelessWidget {
                   copy,
                   const SizedBox(height: 40),
                   visual,
+                  const SizedBox(height: 32),
                 ],
               ),
+      ),
+    );
+  }
+}
+
+class _KnutsfordCard extends StatelessWidget {
+  const _KnutsfordCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 220,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 18, offset: const Offset(0, 8)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RichText(
+            text: const TextSpan(
+              children: [
+                TextSpan(
+                  text: 'Knutsford ',
+                  style: TextStyle(
+                    color: Color(0xFFD6006E),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+                TextSpan(
+                  text: 'Express',
+                  style: TextStyle(
+                    color: LandingScreen.navy,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'EXPRESS SERVICES TO KNUTSFORD EXPRESS LOCATIONS',
+            style: TextStyle(color: LandingScreen.charcoal, fontSize: 10.5, fontWeight: FontWeight.w700, height: 1.4),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(color: LandingScreen.yellow, borderRadius: BorderRadius.circular(6)),
+            alignment: Alignment.center,
+            child: const Text(
+              'ISLANDWIDE',
+              style: TextStyle(color: LandingScreen.navy, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.4),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1114,6 +1194,12 @@ class _Footer extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (wide) const SizedBox(width: 24),
+                if (wide)
+                  const Expanded(
+                    flex: 3,
+                    child: Align(alignment: Alignment.centerRight, child: _FooterRouteMap()),
+                  ),
               ],
             ),
           ),
@@ -1129,6 +1215,80 @@ class _Footer extends StatelessWidget {
       ),
     );
   }
+}
+
+class _FooterRouteMap extends StatelessWidget {
+  const _FooterRouteMap();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 240,
+      height: 150,
+      child: CustomPaint(painter: _RouteMapPainter()),
+    );
+  }
+}
+
+class _RouteMapPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final dotPaint = Paint()..color = Colors.white.withValues(alpha: 0.10);
+    const spacing = 11.0;
+    for (double y = 0; y < size.height; y += spacing) {
+      for (double x = 0; x < size.width; x += spacing) {
+        final n = math.sin(x * 0.19) * math.cos(y * 0.24) + math.sin((x + y) * 0.06);
+        if (n > 0.15) {
+          canvas.drawCircle(Offset(x, y), 1.1, dotPaint);
+        }
+      }
+    }
+
+    final points = [
+      Offset(size.width * 0.10, size.height * 0.30),
+      Offset(size.width * 0.52, size.height * 0.68),
+      Offset(size.width * 0.88, size.height * 0.38),
+    ];
+
+    final path = Path()..moveTo(points[0].dx, points[0].dy);
+    path.quadraticBezierTo(
+      size.width * 0.30, size.height * 0.85,
+      points[1].dx, points[1].dy,
+    );
+    path.quadraticBezierTo(
+      size.width * 0.70, size.height * 0.90,
+      points[2].dx, points[2].dy,
+    );
+
+    final routePaint = Paint()
+      ..color = LandingScreen.gold
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..strokeCap = StrokeCap.round;
+    _drawDashedPath(canvas, path, routePaint);
+
+    for (final p in points) {
+      canvas.drawCircle(p, 5, Paint()..color = LandingScreen.gold.withValues(alpha: 0.22));
+      canvas.drawCircle(p, 3, Paint()..color = LandingScreen.yellow);
+      canvas.drawCircle(p, 1.2, Paint()..color = LandingScreen.navy);
+    }
+  }
+
+  void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
+    const dashWidth = 5.0;
+    const dashGap = 4.0;
+    for (final metric in path.computeMetrics()) {
+      double distance = 0;
+      while (distance < metric.length) {
+        final next = math.min(distance + dashWidth, metric.length);
+        canvas.drawPath(metric.extractPath(distance, next), paint);
+        distance = next + dashGap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RouteMapPainter oldDelegate) => false;
 }
 
 class _FooterContactRow extends StatelessWidget {
