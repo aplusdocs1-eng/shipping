@@ -187,6 +187,10 @@ class _ManifestScreenState extends State<ManifestScreen> {
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<Shipment>(
                     value: _selectedShipment,
+                    hint: const Text(
+                      'All Packages (no shipments yet)',
+                      style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                    ),
                     items: shipments
                         .map(
                           (s) => DropdownMenuItem(

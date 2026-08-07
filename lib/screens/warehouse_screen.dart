@@ -62,15 +62,6 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
           branchName: '',
         );
       }).toList();
-      final occupiedByZone = <String, int>{};
-      for (final r in locationRows) {
-        if (r['is_occupied'] == true) {
-          final zoneId = r['zone_id'] as String?;
-          if (zoneId != null) {
-            occupiedByZone[zoneId] = (occupiedByZone[zoneId] ?? 0) + 1;
-          }
-        }
-      }
       final totalByZone = <String, int>{};
       for (final r in locationRows) {
         final zoneId = r['zone_id'] as String?;
@@ -78,11 +69,37 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
           totalByZone[zoneId] = (totalByZone[zoneId] ?? 0) + 1;
         }
       }
+      final entriesList = (results[0] as List)
+          .cast<Map<String, dynamic>>()
+          .map(WarehouseEntry.fromMap)
+          .toList();
+      // storage_locations.is_occupied is never written by the app (occupancy
+      // is derived live from warehouse_entries instead — see
+      // _availableLocations below), so compute zone occupancy the same way
+      // here rather than reading that always-false column. Zone label is
+      // matched against both code and name since older entries stored the
+      // raw zone code (e.g. "A") while newer ones store the full zone name
+      // (e.g. "Zone A").
+      final zoneIdByLabel = <String, String>{};
+      for (final z in zoneRows) {
+        final id = z['id'] as String?;
+        if (id == null) continue;
+        final code = z['code'] as String?;
+        final name = z['name'] as String?;
+        if (code != null) zoneIdByLabel[code] = id;
+        if (name != null) zoneIdByLabel[name] = id;
+      }
+      final occupiedByZone = <String, int>{};
+      for (final e in entriesList) {
+        if (e.status == WarehouseEntryStatus.pickedUp) continue;
+        final zoneLabel = e.storageLocation?.zoneName;
+        final zoneId = zoneLabel == null ? null : zoneIdByLabel[zoneLabel];
+        if (zoneId != null) {
+          occupiedByZone[zoneId] = (occupiedByZone[zoneId] ?? 0) + 1;
+        }
+      }
       setState(() {
-        _entries = (results[0] as List)
-            .cast<Map<String, dynamic>>()
-            .map(WarehouseEntry.fromMap)
-            .toList();
+        _entries = entriesList;
         _allPackages = (results[1] as List)
             .cast<Map<String, dynamic>>()
             .map(Package.fromMap)

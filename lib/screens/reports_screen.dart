@@ -30,7 +30,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     try {
       final results = await Future.wait([
         _db.getPackages(),
-        _db.getInvoices(),
+        _db.getAllInvoices(),
         _db.getCustomers(),
       ]);
       if (mounted)
@@ -298,17 +298,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       const SectionHeader(title: 'Top Customers'),
                       const SizedBox(height: 16),
                       ...() {
+                        int pkgsFor(Customer c) =>
+                            packagesPerCustomer[c.id] ?? 0;
                         final sorted =
                             customers.where((c) => c.isActive).toList()..sort(
-                              (a, b) =>
-                                  b.totalPackages.compareTo(a.totalPackages),
+                              (a, b) => pkgsFor(b).compareTo(pkgsFor(a)),
                             );
                         final maxPkgs = customers.isEmpty
                             ? 1
                             : customers
-                                  .map((c) => c.totalPackages)
-                                  .reduce((a, b) => a > b ? a : b);
+                                  .map(pkgsFor)
+                                  .fold(1, (a, b) => a > b ? a : b);
                         return sorted.take(5).map((c) {
+                          final pkgs = pkgsFor(c);
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),
                             child: Row(
@@ -342,7 +344,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                         ),
                                       ),
                                       LinearProgressIndicator(
-                                        value: c.totalPackages / maxPkgs,
+                                        value: pkgs / maxPkgs,
                                         backgroundColor: AppTheme.border,
                                         valueColor:
                                             const AlwaysStoppedAnimation<Color>(
@@ -356,7 +358,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                 ),
                                 const SizedBox(width: 10),
                                 Text(
-                                  '${c.totalPackages} pkgs',
+                                  '$pkgs pkgs',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,

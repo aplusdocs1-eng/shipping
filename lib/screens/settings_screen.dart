@@ -175,14 +175,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _IntegrationTile(
                         name: 'Stripe',
                         description: 'Online payment processing',
-                        isConnected: true,
+                        isConnected: false,
                         icon: Icons.credit_card,
                       ),
                       const Divider(height: 1, color: AppTheme.border),
                       _IntegrationTile(
                         name: 'SendGrid',
                         description: 'Email delivery service',
-                        isConnected: true,
+                        isConnected: false,
                         icon: Icons.email_rounded,
                       ),
                       const Divider(height: 1, color: AppTheme.border),

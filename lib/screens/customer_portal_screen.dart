@@ -1995,13 +1995,13 @@ class _PreAlertsPage extends StatelessWidget {
                                 DataCell(
                                   Text(a['tracking_number']?.toString() ?? '—'),
                                 ),
-                                DataCell(Text(a['courier']?.toString() ?? '—')),
+                                DataCell(Text(a['carrier']?.toString() ?? '—')),
                                 DataCell(
                                   Text(a['description']?.toString() ?? '—'),
                                 ),
                                 DataCell(
                                   Text(
-                                    '\$${(a['item_value'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                                    '\$${(a['declared_value'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
                                   ),
                                 ),
                                 DataCell(

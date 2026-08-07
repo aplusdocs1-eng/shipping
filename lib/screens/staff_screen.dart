@@ -111,7 +111,7 @@ class _StaffScreenState extends State<StaffScreen> {
                     ElevatedButton.icon(
                       onPressed: () => _showInviteDialog(context),
                       icon: const Icon(Icons.person_add_outlined, size: 16),
-                      label: const Text('Invite Staff'),
+                      label: const Text('Add Staff'),
                     ),
                   ],
                 ),
