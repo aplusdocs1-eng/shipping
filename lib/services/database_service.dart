@@ -43,6 +43,7 @@ class DatabaseService {
   Future<Map<String, dynamic>> insertWarehouseEntry({
     required String trackingNumber,
     required String customerName,
+    String? customerId,
     required String description,
     required double weight,
     String? storageZone,
@@ -55,6 +56,7 @@ class DatabaseService {
     final row = {
       'tracking_number': trackingNumber,
       'customer_name': customerName,
+      'customer_id': customerId,
       'description': description,
       'weight': weight,
       'storage_zone': storageZone,

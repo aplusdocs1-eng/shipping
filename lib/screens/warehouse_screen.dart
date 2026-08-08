@@ -25,6 +25,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   List<StorageLocation> _storageLocations = [];
   List<StorageZone> _zones = [];
   List<ShippingPartner> _partners = [];
+  List<Customer> _customers = [];
 
   @override
   void initState() {
@@ -42,6 +43,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
         _db.getStorageZones(),
         _db.getStorageLocations(),
         _db.getShippingPartners(),
+        _db.getCustomers(),
       ]);
       if (!mounted) return;
       final zoneRows = (results[2] as List).cast<Map<String, dynamic>>();
@@ -106,6 +108,10 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
             .toList();
         _storageLocations = locations;
         _partners = partners;
+        _customers = (results[5] as List)
+            .cast<Map<String, dynamic>>()
+            .map(Customer.fromMap)
+            .toList();
         _zones = zoneRows
             .map(
               (z) => StorageZone(
@@ -374,7 +380,11 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     final trackingController = TextEditingController();
     StorageLocation? selectedLocation;
     String? errorText;
-    ShippingPartner? detectedPartner;
+    String? customerError;
+    String? partnerError;
+    Customer? selectedCustomer;
+    ShippingPartner? selectedPartner = _ovsPartner();
+    bool partnerManuallySet = false;
     bool syncing = false;
 
     showDialog(
@@ -397,7 +407,8 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Enter or scan the tracking number and select a storage location.',
+                      'Enter the tracking number, then select the customer '
+                      'and courier this package is tied to.',
                       style: TextStyle(
                         color: AppTheme.textSecondary,
                         fontSize: 14,
@@ -407,10 +418,13 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                     TextField(
                       controller: trackingController,
                       onChanged: (v) {
-                        final partner = _matchPartnerByTracking(v.trim());
                         setDialogState(() {
-                          detectedPartner = partner;
                           errorText = null;
+                          if (!partnerManuallySet) {
+                            selectedPartner =
+                                _matchPartnerByTracking(v.trim()) ??
+                                _ovsPartner();
+                          }
                         });
                       },
                       decoration: InputDecoration(
@@ -428,49 +442,114 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                         errorText: errorText,
                       ),
                     ),
-                    // Detected partner badge
-                    if (detectedPartner != null) ...[
-                      const SizedBox(height: 10),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppTheme.accent.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: AppTheme.accent.withValues(alpha: 0.3),
-                          ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<Customer>(
+                      value: selectedCustomer,
+                      isExpanded: true,
+                      hint: const Text('Select customer'),
+                      decoration: InputDecoration(
+                        labelText: 'Customer',
+                        prefixIcon: const Icon(
+                          Icons.person_outline,
+                          size: 20,
                         ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.local_shipping,
-                              size: 18,
-                              color: AppTheme.accent,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Partner detected: ${detectedPartner!.name}',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppTheme.accent,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${detectedPartner!.region} · Code: ${detectedPartner!.code}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppTheme.textSecondary,
-                                    ),
-                                  ),
-                                ],
+                        filled: true,
+                        fillColor: AppTheme.surface,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        errorText: customerError,
+                      ),
+                      items: _customers
+                          .map(
+                            (c) => DropdownMenuItem(
+                              value: c,
+                              child: Text(
+                                c.email.isNotEmpty
+                                    ? '${c.name} · ${c.email}'
+                                    : c.name,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setDialogState(() {
+                        selectedCustomer = v;
+                        customerError = null;
+                      }),
+                    ),
+                    if (_customers.isEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'No customers yet — add one from the Customers tab '
+                        'first.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.warning,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<ShippingPartner>(
+                      value: selectedPartner,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Courier',
+                        prefixIcon: const Icon(
+                          Icons.local_shipping_outlined,
+                          size: 20,
+                        ),
+                        filled: true,
+                        fillColor: AppTheme.surface,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        errorText: partnerError,
+                      ),
+                      items: _partners
+                          .where((p) => p.isActive)
+                          .map(
+                            (p) => DropdownMenuItem(
+                              value: p,
+                              child: Text(
+                                p.code == 'OVS' ? '${p.name} (Direct)' : p.name,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setDialogState(() {
+                        selectedPartner = v;
+                        partnerManuallySet = true;
+                        partnerError = null;
+                      }),
+                    ),
+                    if (selectedPartner != null) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            selectedPartner!.code == 'OVS'
+                                ? Icons.home_work_outlined
+                                : Icons.local_shipping,
+                            size: 14,
+                            color: AppTheme.textSecondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              selectedPartner!.code == 'OVS'
+                                  ? 'In-house package — not tied to an '
+                                        'external courier.'
+                                  : '${selectedPartner!.region} · Code: '
+                                        '${selectedPartner!.code}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                          ),
+                          if (selectedPartner!.code != 'OVS')
                             if (_api.isConnected)
                               Icon(
                                 Icons.sync,
@@ -486,8 +565,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                                   color: AppTheme.textSecondary,
                                 ),
                               ),
-                          ],
-                        ),
+                        ],
                       ),
                     ],
                     const SizedBox(height: 16),
@@ -538,10 +616,24 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                       ? null
                       : () async {
                           final tracking = trackingController.text.trim();
-                          if (tracking.isEmpty) {
-                            setDialogState(
-                              () => errorText = 'Enter a tracking number',
-                            );
+                          final missingTracking = tracking.isEmpty;
+                          final missingCustomer = selectedCustomer == null;
+                          final missingPartner = selectedPartner == null;
+                          if (missingTracking ||
+                              missingCustomer ||
+                              missingPartner) {
+                            setDialogState(() {
+                              errorText = missingTracking
+                                  ? 'Enter a tracking number'
+                                  : null;
+                              customerError = missingCustomer
+                                  ? 'Select a customer'
+                                  : null;
+                              partnerError = missingPartner
+                                  ? 'Select a courier or One Village '
+                                        'Shipping & Freight'
+                                  : null;
+                            });
                             return;
                           }
 
@@ -556,29 +648,34 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                             return;
                           }
 
-                          // Look up the package from DB data
+                          // Look up the package from DB data for
+                          // description/weight only — customer and courier
+                          // always come from the explicit selections above,
+                          // never inferred or defaulted to a placeholder.
                           final pkg = _allPackages.where(
                             (p) => p.trackingNumber == tracking,
                           );
                           final packageMatch = pkg.isNotEmpty
                               ? pkg.first
                               : null;
-                          final partner = _matchPartnerByTracking(tracking);
+                          final customer = selectedCustomer!;
+                          final partner = selectedPartner!;
+                          final isThirdPartyCourier = partner.code != 'OVS';
 
                           setDialogState(() => syncing = true);
 
-                          // Sync to Applizone if connected and partner detected
+                          // Sync to Applizone only for a genuine external
+                          // courier — an in-house OVS package has nothing
+                          // external to sync to.
                           bool synced = false;
-                          if (_api.isConnected && partner != null) {
+                          if (_api.isConnected && isThirdPartyCourier) {
                             final result = await _api.syncPackage(
                               trackingNumber: tracking,
                               description:
                                   packageMatch?.description ??
                                   'Scanned package',
                               weight: packageMatch?.weight ?? 0.0,
-                              customerName:
-                                  packageMatch?.customerName ??
-                                  'Unknown Customer',
+                              customerName: customer.name,
                               storageLocation: selectedLocation?.displayLabel,
                               shippingCompanyCode: partner.code,
                             );
@@ -588,9 +685,8 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                           try {
                             final row = await _db.insertWarehouseEntry(
                               trackingNumber: tracking,
-                              customerName:
-                                  packageMatch?.customerName ??
-                                  'Unknown Customer',
+                              customerName: customer.name,
+                              customerId: customer.id,
                               description:
                                   packageMatch?.description ??
                                   'Scanned package',
@@ -603,7 +699,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                                   ? 'stored'
                                   : 'scanned_in',
                               scannedInBy: 'Admin Staff',
-                              shippingPartnerCode: partner?.code,
+                              shippingPartnerCode: partner.code,
                               syncedToPartner: synced,
                             );
                             if (!mounted) return;
@@ -621,9 +717,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                           Navigator.of(context).pop();
                           unawaited(_load());
 
-                          final partnerMsg = partner != null
-                              ? ' · Partner: ${partner.name}'
-                              : '';
+                          final partnerMsg = ' · ${partner.name}';
                           final syncMsg = synced ? ' · Synced ✓' : '';
 
                           ScaffoldMessenger.of(this.context).showSnackBar(
@@ -846,6 +940,15 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
       if (p.trackingPrefix.isNotEmpty && upper.startsWith(p.trackingPrefix.toUpperCase())) {
         return p;
       }
+    }
+    return null;
+  }
+
+  /// The seeded "One Village Shipping & Freight" partner row — the default
+  /// courier selection for a package that isn't tied to an external courier.
+  ShippingPartner? _ovsPartner() {
+    for (final p in _partners) {
+      if (p.code == 'OVS') return p;
     }
     return null;
   }
