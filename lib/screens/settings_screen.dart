@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -601,17 +603,44 @@ class _ApiAccessSection extends StatefulWidget {
 }
 
 class _ApiAccessSectionState extends State<_ApiAccessSection> {
-  String _apiKey = 'az_live_••••••••••••••••••••••••••••';
+  final _db = DatabaseService();
+  bool _loading = true;
+  String? _keyId;
+  String? _apiKey;
   bool _revealed = false;
   bool _sandbox = false;
 
-  static const String _baseUrl =
-      'https://api.courier.applizonecentralja.com/v1';
+  // Proxied through this same deployment (see .vercel/output/config.json)
+  // to the real vendor-api Edge Function, so vendors never see the raw
+  // supabase.co URL. Derived from whichever alias is currently loaded
+  // rather than hardcoded, since all aliases of this deployment share it.
+  String get _baseUrl => '${Uri.base.origin}/api/v1';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final row = await _db.getVendorApiKey();
+      if (!mounted) return;
+      setState(() {
+        _keyId = row?['id'] as String?;
+        _apiKey = row?['key'] as String?;
+        _sandbox = row?['sandbox'] as bool? ?? false;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   String _generateKey() {
-    final rand = DateTime.now().microsecondsSinceEpoch.toString();
-    final suffix = rand.substring(rand.length - 8);
-    return 'az_live_${base64Url.encode(utf8.encode(rand)).substring(0, 24)}$suffix';
+    final rand = Random.secure();
+    final bytes = List<int>.generate(24, (_) => rand.nextInt(256));
+    return 'az_live_${base64Url.encode(bytes).replaceAll('=', '')}';
   }
 
   Future<void> _copy(String value, String label) async {
@@ -627,9 +656,70 @@ class _ApiAccessSectionState extends State<_ApiAccessSection> {
     );
   }
 
+  Future<void> _generateOrRegenerate() async {
+    if (_keyId != null) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Regenerate API key?'),
+          content: const Text(
+            'Your existing API key will stop working immediately. '
+            'Any vendor using it must be updated.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Regenerate'),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+    }
+    final newKey = _generateKey();
+    try {
+      final row = await _db.regenerateVendorApiKey(
+        existingId: _keyId,
+        newKey: newKey,
+      );
+      if (!mounted) return;
+      setState(() {
+        _keyId = row['id'] as String?;
+        _apiKey = row['key'] as String?;
+        _revealed = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to generate key: $e')),
+      );
+    }
+  }
+
+  Future<void> _setSandbox(bool value) async {
+    setState(() => _sandbox = value);
+    if (_keyId == null) return;
+    try {
+      await _db.setVendorApiKeySandbox(_keyId!, value);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _sandbox = !value);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update sandbox mode: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final displayKey = _revealed ? _apiKey : 'az_live_${'•' * 28}';
+    final hasKey = _apiKey != null;
+    final displayKey = !hasKey
+        ? 'No key generated yet'
+        : (_revealed ? _apiKey! : 'az_live_${'•' * 28}');
 
     return _SettingsSection(
       title: 'API for 3rd Party Vendors',
@@ -642,99 +732,98 @@ class _ApiAccessSectionState extends State<_ApiAccessSection> {
         ),
         const SizedBox(height: 16),
 
-        // Base URL
-        const Text(
-          'Base URL',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textSecondary,
+        if (_loading)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(12),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          )
+        else ...[
+          // Base URL
+          const Text(
+            'Base URL',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSecondary,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        _CodeRow(value: _baseUrl, onCopy: () => _copy(_baseUrl, 'Base URL')),
-        const SizedBox(height: 14),
+          const SizedBox(height: 4),
+          _CodeRow(
+            value: _baseUrl,
+            onCopy: () => _copy(_baseUrl, 'Base URL'),
+          ),
+          const SizedBox(height: 14),
 
-        // API Key
-        const Text(
-          'API Key',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textSecondary,
+          // API Key
+          const Text(
+            'API Key',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSecondary,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            Expanded(
-              child: _CodeRow(
-                value: displayKey,
-                onCopy: _revealed ? () => _copy(_apiKey, 'API key') : null,
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: _CodeRow(
+                  value: displayKey,
+                  onCopy: (hasKey && _revealed)
+                      ? () => _copy(_apiKey!, 'API key')
+                      : null,
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              tooltip: _revealed ? 'Hide' : 'Reveal',
-              icon: Icon(
-                _revealed ? Icons.visibility_off : Icons.visibility,
-                size: 18,
-                color: AppTheme.textSecondary,
-              ),
-              onPressed: () => setState(() => _revealed = !_revealed),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            OutlinedButton.icon(
-              onPressed: () async {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Regenerate API key?'),
-                    content: const Text(
-                      'Your existing API key will stop working immediately. '
-                      'Any vendor using it must be updated.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Cancel'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('Regenerate'),
-                      ),
-                    ],
+              if (hasKey) ...[
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: _revealed ? 'Hide' : 'Reveal',
+                  icon: Icon(
+                    _revealed ? Icons.visibility_off : Icons.visibility,
+                    size: 18,
+                    color: AppTheme.textSecondary,
                   ),
-                );
-                if (confirm == true) {
-                  setState(() {
-                    _apiKey = _generateKey();
-                    _revealed = true;
-                  });
-                }
-              },
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Regenerate', style: TextStyle(fontSize: 12)),
-            ),
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              onPressed: () => _copy(_apiKey, 'API key'),
-              icon: const Icon(Icons.copy, size: 16),
-              label: const Text('Copy', style: TextStyle(fontSize: 12)),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        _ToggleSetting(
-          label: 'Sandbox mode',
-          subtitle: 'Route vendor requests to test data',
-          value: _sandbox,
-          onChanged: (v) => setState(() => _sandbox = v),
-        ),
+                  onPressed: () => setState(() => _revealed = !_revealed),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _generateOrRegenerate,
+                icon: Icon(hasKey ? Icons.refresh : Icons.add, size: 16),
+                label: Text(
+                  hasKey ? 'Regenerate' : 'Generate API Key',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+              if (hasKey) ...[
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () => _copy(_apiKey!, 'API key'),
+                  icon: const Icon(Icons.copy, size: 16),
+                  label: const Text('Copy', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 14),
+          _ToggleSetting(
+            label: 'Sandbox mode',
+            subtitle: 'Route vendor requests to fixed sample data instead '
+                'of live data — nothing sandbox requests do is persisted.',
+            value: _sandbox,
+            onChanged: _setSandbox,
+          ),
+        ],
 
         const Divider(height: 24, color: AppTheme.border),
 
@@ -777,11 +866,11 @@ class _ApiAccessSectionState extends State<_ApiAccessSection> {
             color: const Color(0xFF0F172A),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: const SelectableText(
+          child: SelectableText(
             'curl $_baseUrl/packages \\\n'
             '  -H "Authorization: Bearer YOUR_API_KEY" \\\n'
             '  -H "Content-Type: application/json"',
-            style: TextStyle(
+            style: const TextStyle(
               fontFamily: 'monospace',
               fontSize: 12,
               color: Color(0xFFE2E8F0),
@@ -794,9 +883,59 @@ class _ApiAccessSectionState extends State<_ApiAccessSection> {
         _ActionButton(
           label: 'View full API documentation',
           icon: Icons.menu_book_rounded,
-          onTap: () {},
+          onTap: () => _showDocs(context),
         ),
       ],
+    );
+  }
+
+  void _showDocs(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Vendor API reference'),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Base URL: $_baseUrl',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Authenticate every request with:\n'
+                  'Authorization: Bearer YOUR_API_KEY\n\n'
+                  'GET /packages — list packages\n'
+                  'POST /packages — create a package (tracking_number required)\n'
+                  'GET /packages/{tracking_number} — look up one package\n'
+                  'GET /shipments — list shipments\n'
+                  'POST /shipments — create a shipment (shipment_number required)\n'
+                  'GET /pre-alerts — list pre-alerts\n'
+                  'POST /pre-alerts — create a pre-alert (tracking_number required)\n'
+                  'GET /invoices — list invoices\n'
+                  'POST /webhooks — subscribe a URL to package.created events '
+                  '(url required; fires a real HTTP POST when a package is '
+                  'created)\n\n'
+                  'Turn on Sandbox mode above to get fixed sample data back '
+                  'instead of live data while you build against the API — '
+                  'sandbox requests never write anything real.',
+                  style: TextStyle(fontSize: 13, height: 1.5),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 }

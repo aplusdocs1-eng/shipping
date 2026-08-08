@@ -1,0 +1,1 @@
+{"version":3,"routes":[{"src":"/api/v1/(.*)","dest":"https://biuydcyyqeutfddxtruu.supabase.co/functions/v1/vendor-api/$1"},{"handle":"filesystem"},{"src":"/(.*)","dest":"/index.html"}]}

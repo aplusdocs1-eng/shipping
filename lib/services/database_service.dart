@@ -742,6 +742,46 @@ class DatabaseService {
         .eq('id', accountId);
   }
 
+  // ─── Vendor API (admin Settings "API for 3rd Party Vendors") ─────────
+  // Backs the real vendor-api Edge Function — see supabase/functions/vendor-api.
+
+  Future<Map<String, dynamic>?> getVendorApiKey() async {
+    final data = await _db
+        .from('vendor_api_keys')
+        .select()
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    return data == null ? null : Map<String, dynamic>.from(data);
+  }
+
+  /// Creates the key if [existingId] is null, otherwise rotates the
+  /// existing row's key in place (old value stops working immediately).
+  Future<Map<String, dynamic>> regenerateVendorApiKey({
+    String? existingId,
+    required String newKey,
+  }) async {
+    if (existingId != null) {
+      final data = await _db
+          .from('vendor_api_keys')
+          .update({'key': newKey})
+          .eq('id', existingId)
+          .select()
+          .single();
+      return Map<String, dynamic>.from(data);
+    }
+    final data = await _db
+        .from('vendor_api_keys')
+        .insert({'key': newKey})
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<void> setVendorApiKeySandbox(String id, bool sandbox) async {
+    await _db.from('vendor_api_keys').update({'sandbox': sandbox}).eq('id', id);
+  }
+
   Future<void> approvePartnerAccount(String accountId) async {
     await _db
         .from('partner_accounts')
