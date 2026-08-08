@@ -702,7 +702,9 @@ class _InvoiceRow extends StatelessWidget {
             Expanded(
               flex: 1,
               child: Text(
-                dateFormat.format(invoice.dueAt),
+                invoice.dueAt == null
+                    ? 'No due date'
+                    : dateFormat.format(invoice.dueAt!),
                 style: TextStyle(
                   fontSize: 13,
                   color: isOverdue ? AppTheme.danger : AppTheme.textPrimary,
@@ -841,7 +843,12 @@ class _InvoiceDetailPanel extends StatelessWidget {
                     children: [
                       _KV('Customer', invoice.customerName),
                       _KV('Issue Date', dateFormat.format(invoice.createdAt)),
-                      _KV('Due Date', dateFormat.format(invoice.dueAt)),
+                      _KV(
+                        'Due Date',
+                        invoice.dueAt == null
+                            ? 'No due date'
+                            : dateFormat.format(invoice.dueAt!),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -1031,7 +1038,8 @@ class _InvoiceDetailPanel extends StatelessWidget {
       filename: '${invoice.invoiceNumber}.pdf',
       title: 'Invoice ${invoice.invoiceNumber}',
       subtitle:
-          '${invoice.customerName} · Created ${dateFormat.format(invoice.createdAt)} · Due ${dateFormat.format(invoice.dueAt)}',
+          '${invoice.customerName} · Created ${dateFormat.format(invoice.createdAt)} · '
+          '${invoice.dueAt == null ? 'No due date' : 'Due ${dateFormat.format(invoice.dueAt!)}'}',
       headers: const ['Item', 'Qty', 'Unit Price', 'Total'],
       rows: [
         for (final li in invoice.lineItems)

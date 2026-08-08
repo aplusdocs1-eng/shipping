@@ -251,7 +251,7 @@ class Invoice {
   final List<InvoiceLineItem> lineItems;
   final InvoiceStatus status;
   final DateTime createdAt;
-  final DateTime dueAt;
+  final DateTime? dueAt;
   final double subtotal;
   final double tax;
   final double total;
@@ -265,7 +265,7 @@ class Invoice {
     required this.lineItems,
     required this.status,
     required this.createdAt,
-    required this.dueAt,
+    this.dueAt,
     required this.subtotal,
     required this.tax,
     required this.total,
@@ -298,9 +298,11 @@ class Invoice {
       createdAt:
           DateTime.tryParse(m['created_at']?.toString() ?? '') ??
           DateTime.now(),
-      dueAt:
-          DateTime.tryParse(m['due_date']?.toString() ?? '') ??
-          DateTime.now().add(const Duration(days: 30)),
+      // No fallback: a missing due_date means the invoice genuinely has none
+      // set, not "30 days from whenever this happened to load".
+      dueAt: m['due_date'] == null
+          ? null
+          : DateTime.tryParse(m['due_date'].toString()),
       subtotal: double.tryParse(m['amount']?.toString() ?? '0') ?? 0.0,
       tax: double.tryParse(m['tax']?.toString() ?? '0') ?? 0.0,
       total: double.tryParse(m['total']?.toString() ?? '0') ?? 0.0,

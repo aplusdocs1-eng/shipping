@@ -514,7 +514,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
       case 'Pre-Alerts':
         return _PreAlertsPage(db: _db, partnerId: partnerId);
       case 'Reports':
-        return const _ReportsPage();
+        return _ReportsPage(db: _db, partnerId: partnerId);
       case 'Transactions':
         return _TransactionsPage(db: _db, partnerId: partnerId);
       case 'Settings':
@@ -2972,18 +2972,39 @@ class _UnknownPackagesPage extends StatelessWidget {
   }
 }
 
-class _ReportsPage extends StatelessWidget {
-  const _ReportsPage();
+class _ReportsPage extends StatefulWidget {
+  final DatabaseService db;
+  final String? partnerId;
+  const _ReportsPage({required this.db, required this.partnerId});
+
+  @override
+  State<_ReportsPage> createState() => _ReportsPageState();
+}
+
+class _ReportsPageState extends State<_ReportsPage> {
+  static const _reports = [
+    ('daily_sales', 'Daily Sales', Icons.today, 'Today\'s revenue and package count'),
+    ('customer_activity', 'Customer Activity', Icons.people, 'Top customers by volume'),
+    ('outstanding_invoices', 'Outstanding Invoices', Icons.receipt_long, 'Unpaid balances'),
+    ('package_aging', 'Package Aging', Icons.inventory_2, 'Time in warehouse'),
+    ('manifest_summary', 'Manifest Summary', Icons.local_shipping, 'Shipments by carrier'),
+    ('tax_report', 'Tax Report', Icons.account_balance, 'GCT and duty totals'),
+  ];
+
+  String? _selected;
+
   @override
   Widget build(BuildContext context) {
-    final reports = [
-      ('Daily Sales', Icons.today, 'Today\'s revenue and package count'),
-      ('Customer Activity', Icons.people, 'Top customers by volume'),
-      ('Outstanding Invoices', Icons.receipt_long, 'Unpaid balances'),
-      ('Package Aging', Icons.inventory_2, 'Time in warehouse'),
-      ('Manifest Summary', Icons.local_shipping, 'Shipments by carrier'),
-      ('Tax Report', Icons.account_balance, 'GCT and duty totals'),
-    ];
+    if (_selected != null) {
+      final meta = _reports.firstWhere((r) => r.$1 == _selected);
+      return _ReportDetailPage(
+        db: widget.db,
+        partnerId: widget.partnerId,
+        reportKey: _selected!,
+        title: meta.$2,
+        onBack: () => setState(() => _selected = null),
+      );
+    }
     return _PagePanel(
       title: 'Reports',
       subtitle: 'Generate operational and financial reports.',
@@ -2993,52 +3014,454 @@ class _ReportsPage extends StatelessWidget {
         mainAxisSpacing: 12,
         childAspectRatio: 2.4,
         children: [
-          for (final r in reports)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _border),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(8),
+          for (final r in _reports)
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => setState(() => _selected = r.$1),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _border),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(r.$3, color: AppTheme.primary, size: 20),
                     ),
-                    child: Icon(r.$2, color: AppTheme.primary, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          r.$1,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: _text,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            r.$2,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: _text,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          r.$3,
-                          style: TextStyle(fontSize: 11, color: _muted),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                          const SizedBox(height: 2),
+                          Text(
+                            r.$4,
+                            style: TextStyle(fontSize: 11, color: _muted),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    Icon(Icons.chevron_right, color: _muted, size: 18),
+                  ],
+                ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Loads packages/customers/invoices/shipments for the partner once, then
+/// renders whichever report was tapped from that shared dataset.
+class _ReportDetailPage extends StatefulWidget {
+  final DatabaseService db;
+  final String? partnerId;
+  final String reportKey;
+  final String title;
+  final VoidCallback onBack;
+  const _ReportDetailPage({
+    required this.db,
+    required this.partnerId,
+    required this.reportKey,
+    required this.title,
+    required this.onBack,
+  });
+
+  @override
+  State<_ReportDetailPage> createState() => _ReportDetailPageState();
+}
+
+class _ReportDetailPageState extends State<_ReportDetailPage> {
+  late final Future<List<List<Map<String, dynamic>>>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    final pid = widget.partnerId;
+    _future = Future.wait([
+      pid != null ? widget.db.getPackagesByPartner(pid) : widget.db.getPackages(),
+      pid != null ? widget.db.getCustomersByPartner(pid) : widget.db.getCustomers(),
+      pid != null ? widget.db.getInvoicesByPartner(pid) : widget.db.getAllInvoices(),
+      pid != null ? widget.db.getShipmentsByPartner(pid) : widget.db.getShipments(),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _PagePanel(
+      title: widget.title,
+      subtitle: 'Generate operational and financial reports.',
+      actions: [
+        OutlinedButton.icon(
+          onPressed: widget.onBack,
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(color: _border),
+            foregroundColor: _text,
+          ),
+          icon: const Icon(Icons.arrow_back, size: 16),
+          label: const Text('All Reports'),
+        ),
+      ],
+      child: FutureBuilder<List<List<Map<String, dynamic>>>>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snap.hasError) {
+            return Center(
+              child: Text(
+                'Error loading report: ${snap.error}',
+                style: const TextStyle(color: AppTheme.danger),
+              ),
+            );
+          }
+          final data = snap.data!;
+          final packages = data[0];
+          final customers = data[1];
+          final invoices = data[2];
+          final shipments = data[3];
+          switch (widget.reportKey) {
+            case 'daily_sales':
+              return _DailySalesReport(packages: packages, invoices: invoices);
+            case 'customer_activity':
+              return _CustomerActivityReport(packages: packages, customers: customers);
+            case 'outstanding_invoices':
+              return _OutstandingInvoicesReport(invoices: invoices);
+            case 'package_aging':
+              return _PackageAgingReport(packages: packages);
+            case 'manifest_summary':
+              return _ManifestSummaryReport(shipments: shipments);
+            case 'tax_report':
+              return _TaxReport(packages: packages, invoices: invoices);
+            default:
+              return const SizedBox.shrink();
+          }
+        },
+      ),
+    );
+  }
+}
+
+bool _isToday(dynamic iso) {
+  final d = DateTime.tryParse(iso?.toString() ?? '');
+  if (d == null) return false;
+  final now = DateTime.now();
+  return d.year == now.year && d.month == now.month && d.day == now.day;
+}
+
+double _num(dynamic v) => double.tryParse(v?.toString() ?? '') ?? 0.0;
+
+class _ReportStatRow extends StatelessWidget {
+  final List<Widget> cards;
+  const _ReportStatRow({required this.cards});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (var i = 0; i < cards.length; i++) ...[
+          if (i > 0) const SizedBox(width: 12),
+          Expanded(child: cards[i]),
+        ],
+      ],
+    );
+  }
+}
+
+class _DailySalesReport extends StatelessWidget {
+  final List<Map<String, dynamic>> packages;
+  final List<Map<String, dynamic>> invoices;
+  const _DailySalesReport({required this.packages, required this.invoices});
+
+  @override
+  Widget build(BuildContext context) {
+    final todayInvoices = invoices.where((i) => _isToday(i['created_at'])).toList();
+    final invoicedToday = todayInvoices.fold(0.0, (s, i) => s + _num(i['total']));
+    final collectedToday = todayInvoices
+        .where((i) => i['status']?.toString() == 'paid')
+        .fold(0.0, (s, i) => s + _num(i['total']));
+    final packagesToday = packages.where((p) => _isToday(p['created_at'])).length;
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ReportStatRow(
+            cards: [
+              _StatCard(
+                icon: Icons.receipt_long,
+                tileColor: AppTheme.accent.withValues(alpha: 0.12),
+                iconColor: AppTheme.accent,
+                value: _money(invoicedToday),
+                label: 'Invoiced Today',
+                sub: '${todayInvoices.length} invoice(s)',
+              ),
+              _StatCard(
+                icon: Icons.check_circle_outline,
+                tileColor: AppTheme.success.withValues(alpha: 0.12),
+                iconColor: AppTheme.success,
+                value: _money(collectedToday),
+                label: 'Collected Today',
+                sub: 'Paid invoices only',
+              ),
+              _StatCard(
+                icon: Icons.inventory_2_outlined,
+                tileColor: AppTheme.primary.withValues(alpha: 0.08),
+                iconColor: AppTheme.primary,
+                value: '$packagesToday',
+                label: 'Packages Today',
+                sub: 'Received today',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _DataTableCard(
+            columns: const ['Invoice #', 'Customer', 'Amount', 'Status'],
+            rows: [
+              for (final i in todayInvoices)
+                [
+                  _s(i['invoice_number']),
+                  _s(i['customer_name']),
+                  _money(i['total']),
+                  _s(i['status']),
+                ],
+            ],
+            emptyMessage: 'No invoices created today.',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CustomerActivityReport extends StatelessWidget {
+  final List<Map<String, dynamic>> packages;
+  final List<Map<String, dynamic>> customers;
+  const _CustomerActivityReport({required this.packages, required this.customers});
+
+  @override
+  Widget build(BuildContext context) {
+    final pkgCount = <String, int>{};
+    final pkgValue = <String, double>{};
+    for (final p in packages) {
+      final cid = p['customer_id']?.toString();
+      if (cid == null) continue;
+      pkgCount[cid] = (pkgCount[cid] ?? 0) + 1;
+      pkgValue[cid] = (pkgValue[cid] ?? 0) + _num(p['declared_value']);
+    }
+    final ranked = [...customers]..sort(
+      (a, b) => (pkgCount[b['id']?.toString()] ?? 0).compareTo(
+        pkgCount[a['id']?.toString()] ?? 0,
+      ),
+    );
+    return _DataTableCard(
+      columns: const ['Customer', 'Email', 'Packages', 'Total Value'],
+      rows: [
+        for (final c in ranked)
+          [
+            _s(c['name']),
+            _s(c['email']),
+            '${pkgCount[c['id']?.toString()] ?? 0}',
+            _money(pkgValue[c['id']?.toString()] ?? 0),
+          ],
+      ],
+      emptyMessage: 'No customers yet.',
+    );
+  }
+}
+
+class _OutstandingInvoicesReport extends StatelessWidget {
+  final List<Map<String, dynamic>> invoices;
+  const _OutstandingInvoicesReport({required this.invoices});
+
+  @override
+  Widget build(BuildContext context) {
+    final outstanding = invoices.where((i) => i['status']?.toString() != 'paid').toList();
+    final total = outstanding.fold(0.0, (s, i) => s + _num(i['total']));
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ReportStatRow(
+            cards: [
+              _StatCard(
+                icon: Icons.hourglass_bottom,
+                tileColor: AppTheme.warning.withValues(alpha: 0.12),
+                iconColor: AppTheme.warning,
+                value: _money(total),
+                label: 'Total Outstanding',
+                sub: '${outstanding.length} unpaid invoice(s)',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _DataTableCard(
+            columns: const ['Invoice #', 'Customer', 'Amount', 'Status', 'Due Date'],
+            rows: [
+              for (final i in outstanding)
+                [
+                  _s(i['invoice_number']),
+                  _s(i['customer_name']),
+                  _money(i['total']),
+                  _s(i['status']),
+                  i['due_date'] == null ? 'No due date' : _date(i['due_date']),
+                ],
+            ],
+            emptyMessage: 'No outstanding invoices — everything is paid up.',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PackageAgingReport extends StatelessWidget {
+  final List<Map<String, dynamic>> packages;
+  const _PackageAgingReport({required this.packages});
+
+  // 'picked_up' is the value actually used in this database for a
+  // collected package; 'delivered'/'exception'/'returned' are also handled
+  // in case future data uses those instead.
+  static const _terminalStatuses = {
+    'delivered',
+    'exception',
+    'returned',
+    'picked_up',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final aging = packages
+        .where((p) => !_terminalStatuses.contains(p['status']?.toString()))
+        .map((p) {
+          final created = DateTime.tryParse(p['created_at']?.toString() ?? '');
+          final days = created == null ? 0 : now.difference(created).inDays;
+          return (p, days);
+        })
+        .toList()
+      ..sort((a, b) => b.$2.compareTo(a.$2));
+
+    return _DataTableCard(
+      columns: const ['Tracking #', 'Customer', 'Status', 'Days in Warehouse'],
+      rows: [
+        for (final (p, days) in aging)
+          [_s(p['tracking_number']), _s(p['customer_name']), _s(p['status']), '$days'],
+      ],
+      emptyMessage: 'No packages currently in the warehouse.',
+    );
+  }
+}
+
+class _ManifestSummaryReport extends StatelessWidget {
+  final List<Map<String, dynamic>> shipments;
+  const _ManifestSummaryReport({required this.shipments});
+
+  @override
+  Widget build(BuildContext context) {
+    final byCarrier = <String, List<Map<String, dynamic>>>{};
+    for (final s in shipments) {
+      final carrier = (s['carrier']?.toString().trim().isNotEmpty ?? false)
+          ? s['carrier'].toString()
+          : (s['vessel_name']?.toString() ??
+                s['flight_number']?.toString() ??
+                'Unspecified');
+      byCarrier.putIfAbsent(carrier, () => []).add(s);
+    }
+    return _DataTableCard(
+      columns: const ['Carrier', 'Shipments', 'Total Packages', 'Total Weight'],
+      rows: [
+        for (final entry in byCarrier.entries)
+          [
+            entry.key,
+            '${entry.value.length}',
+            '${entry.value.fold(0, (s, x) => s + (int.tryParse(x['total_packages']?.toString() ?? '0') ?? 0))}',
+            '${entry.value.fold(0.0, (s, x) => s + _num(x['total_weight'])).toStringAsFixed(1)} lb',
+          ],
+      ],
+      emptyMessage: 'No shipments recorded yet.',
+    );
+  }
+}
+
+class _TaxReport extends StatelessWidget {
+  final List<Map<String, dynamic>> packages;
+  final List<Map<String, dynamic>> invoices;
+  const _TaxReport({required this.packages, required this.invoices});
+
+  @override
+  Widget build(BuildContext context) {
+    final totalGct = invoices.fold(0.0, (s, i) => s + _num(i['tax']));
+    final totalDeclaredValue = packages.fold(0.0, (s, p) => s + _num(p['declared_value']));
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ReportStatRow(
+            cards: [
+              _StatCard(
+                icon: Icons.account_balance_outlined,
+                tileColor: AppTheme.primary.withValues(alpha: 0.08),
+                iconColor: AppTheme.primary,
+                value: _money(totalGct),
+                label: 'GCT Collected',
+                sub: 'Sum of tax across all invoices',
+              ),
+              _StatCard(
+                icon: Icons.inventory_2_outlined,
+                tileColor: AppTheme.accent.withValues(alpha: 0.12),
+                iconColor: AppTheme.accent,
+                value: _money(totalDeclaredValue),
+                label: 'Total Declared Value',
+                sub: 'Across all packages',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.warning.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.warning.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, color: AppTheme.warning, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Customs duty isn\'t tracked as its own figure yet, so it isn\'t '
+                    'included above. GCT is the real total collected via invoice tax; '
+                    'declared value is shown as the reference figure duty would be '
+                    'calculated from.',
+                    style: TextStyle(fontSize: 12, color: _textSoft),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
