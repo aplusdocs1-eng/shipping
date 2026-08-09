@@ -406,6 +406,16 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
     );
   }
 
+  /// Settings saves write straight to the database and return the fresh
+  /// row, but nothing previously fed that back into _account — so a saved
+  /// change (e.g. a new rate) looked reverted the moment you navigated
+  /// away and back, even though the database already had it. Every
+  /// settings save now flows back up through here.
+  void _onAccountUpdated(Map<String, dynamic> updated) {
+    if (!mounted) return;
+    setState(() => _account = updated);
+  }
+
   Future<void> _logout() async {
     await _db.signOut();
     if (!mounted) return;
@@ -840,7 +850,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
       case 'Transactions':
         return _TransactionsPage(db: _db, partnerId: partnerId);
       case 'Settings':
-        return _SettingsPage(account: account);
+        return _SettingsPage(account: account, onAccountUpdated: _onAccountUpdated);
       case 'Broadcast':
         return const _BroadcastPage();
       case 'Referrals':
@@ -3981,13 +3991,24 @@ class _TaxReport extends StatelessWidget {
 
 class _SettingsPage extends StatefulWidget {
   final Map<String, dynamic> account;
-  const _SettingsPage({required this.account});
+  final ValueChanged<Map<String, dynamic>>? onAccountUpdated;
+  const _SettingsPage({required this.account, this.onAccountUpdated});
   @override
   State<_SettingsPage> createState() => _SettingsPageState();
 }
 
 class _SettingsPageState extends State<_SettingsPage> {
   String? _openCard;
+  // Local copy so a save inside one section is reflected immediately if
+  // you back out to the grid and reopen it — not just after a full page
+  // reload — while also still forwarding up to the dashboard's own copy
+  // (used elsewhere, e.g. the Quick Quote rates in the top bar).
+  late Map<String, dynamic> _account = widget.account;
+
+  void _handleAccountUpdated(Map<String, dynamic> updated) {
+    setState(() => _account = updated);
+    widget.onAccountUpdated?.call(updated);
+  }
 
   static const _cards = <_SettingsCard>[
     _SettingsCard(
@@ -4082,8 +4103,9 @@ class _SettingsPageState extends State<_SettingsPage> {
     if (_openCard != null) {
       return _SettingsDetailPage(
         title: _openCard!,
-        account: widget.account,
+        account: _account,
         onBack: () => setState(() => _openCard = null),
+        onAccountUpdated: _handleAccountUpdated,
       );
     }
     return _PagePanel(
@@ -4192,10 +4214,12 @@ class _SettingsDetailPage extends StatelessWidget {
   final String title;
   final Map<String, dynamic> account;
   final VoidCallback onBack;
+  final ValueChanged<Map<String, dynamic>>? onAccountUpdated;
   const _SettingsDetailPage({
     required this.title,
     required this.account,
     required this.onBack,
+    this.onAccountUpdated,
   });
 
   @override
@@ -4286,19 +4310,31 @@ class _SettingsDetailPage extends StatelessWidget {
     final partnerId = account['id']?.toString();
     switch (title) {
       case 'Company':
-        return _CompanyProfileTab(account: account);
+        return _CompanyProfileTab(
+          account: account,
+          onAccountUpdated: onAccountUpdated,
+        );
       case 'Customization':
-        return _BrandingTab(account: account);
+        return _BrandingTab(
+          account: account,
+          onAccountUpdated: onAccountUpdated,
+        );
       case 'User Management':
         return _UserManagementTab(account: account);
       case 'Currency':
-        return _TaxCurrencyTab(account: account);
+        return _TaxCurrencyTab(
+          account: account,
+          onAccountUpdated: onAccountUpdated,
+        );
       case 'Online Payment Gateway':
         return const _IntegrationsTab();
       case 'Api Sync':
       case 'Api Sync Legacy':
       case 'Webhooks':
-        return _ApiKeysTab(account: account);
+        return _ApiKeysTab(
+          account: account,
+          onAccountUpdated: onAccountUpdated,
+        );
       case 'Subscription':
         return _SubscriptionBody(account: account);
       case 'Roles and Permissions':
@@ -4310,13 +4346,22 @@ class _SettingsDetailPage extends StatelessWidget {
       case 'Discounts':
         return _DiscountsBody(partnerId: partnerId);
       case 'Storage Fee':
-        return _StorageFeeBody(account: account);
+        return _StorageFeeBody(
+          account: account,
+          onAccountUpdated: onAccountUpdated,
+        );
       case 'Terms and Conditions':
-        return _TermsBody(account: account);
+        return _TermsBody(
+          account: account,
+          onAccountUpdated: onAccountUpdated,
+        );
       case 'Shipping Addresses':
         return _ShippingAddressesBody(partnerId: partnerId);
       case 'Rate Calculator':
-        return _RateCalcBody(account: account);
+        return _RateCalcBody(
+          account: account,
+          onAccountUpdated: onAccountUpdated,
+        );
     }
     return Center(
       child: Text('$title coming soon', style: TextStyle(color: _muted)),
@@ -5362,7 +5407,8 @@ class _DiscountsBodyState extends State<_DiscountsBody> {
 
 class _StorageFeeBody extends StatefulWidget {
   final Map<String, dynamic> account;
-  const _StorageFeeBody({required this.account});
+  final ValueChanged<Map<String, dynamic>>? onAccountUpdated;
+  const _StorageFeeBody({required this.account, this.onAccountUpdated});
   @override
   State<_StorageFeeBody> createState() => _StorageFeeBodyState();
 }
@@ -5388,15 +5434,19 @@ class _StorageFeeBodyState extends State<_StorageFeeBody> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await _db.updatePartnerSettings(widget.account['id'] as String, {
-        'storage_fee_enabled': _enabled,
-        'storage_fee_notify': _notify,
-        'storage_fee_grace_days': int.tryParse(_graceCtl.text) ?? 7,
-        'storage_fee_daily_rate': double.tryParse(_rateCtl.text) ?? 1.00,
-        'storage_fee_max': double.tryParse(_maxCtl.text) ?? 50.00,
-      });
+      final updated = await _db.updatePartnerSettings(
+        widget.account['id'] as String,
+        {
+          'storage_fee_enabled': _enabled,
+          'storage_fee_notify': _notify,
+          'storage_fee_grace_days': int.tryParse(_graceCtl.text) ?? 7,
+          'storage_fee_daily_rate': double.tryParse(_rateCtl.text) ?? 1.00,
+          'storage_fee_max': double.tryParse(_maxCtl.text) ?? 50.00,
+        },
+      );
       if (!mounted) return;
       setState(() => _saving = false);
+      widget.onAccountUpdated?.call(updated);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Storage fee settings saved')));
@@ -5460,7 +5510,8 @@ class _StorageFeeBodyState extends State<_StorageFeeBody> {
 
 class _TermsBody extends StatefulWidget {
   final Map<String, dynamic> account;
-  const _TermsBody({required this.account});
+  final ValueChanged<Map<String, dynamic>>? onAccountUpdated;
+  const _TermsBody({required this.account, this.onAccountUpdated});
   @override
   State<_TermsBody> createState() => _TermsBodyState();
 }
@@ -5488,13 +5539,17 @@ class _TermsBodyState extends State<_TermsBody> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await _db.updatePartnerSettings(widget.account['id'] as String, {
-        'terms_text': _termsCtl.text,
-        'terms_require_accept': _requireAccept,
-        'terms_require_reaccept': _requireReaccept,
-      });
+      final updated = await _db.updatePartnerSettings(
+        widget.account['id'] as String,
+        {
+          'terms_text': _termsCtl.text,
+          'terms_require_accept': _requireAccept,
+          'terms_require_reaccept': _requireReaccept,
+        },
+      );
       if (!mounted) return;
       setState(() => _saving = false);
+      widget.onAccountUpdated?.call(updated);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Terms saved')));
@@ -5733,7 +5788,8 @@ class _ShippingAddressesBodyState extends State<_ShippingAddressesBody> {
 
 class _RateCalcBody extends StatefulWidget {
   final Map<String, dynamic> account;
-  const _RateCalcBody({required this.account});
+  final ValueChanged<Map<String, dynamic>>? onAccountUpdated;
+  const _RateCalcBody({required this.account, this.onAccountUpdated});
   @override
   State<_RateCalcBody> createState() => _RateCalcBodyState();
 }
@@ -5761,16 +5817,20 @@ class _RateCalcBodyState extends State<_RateCalcBody> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await _db.updatePartnerSettings(widget.account['id'] as String, {
-        'rate_air_per_lb': double.tryParse(_airCtl.text) ?? 4.50,
-        'rate_sea_per_lb': double.tryParse(_seaCtl.text) ?? 2.25,
-        'rate_duty_percent': double.tryParse(_dutyCtl.text) ?? 20.0,
-        'rate_use_volumetric': _volumetric,
-        'rate_round_up_half': _roundUp,
-        'rate_fuel_surcharge': _fuelSurcharge,
-      });
+      final updated = await _db.updatePartnerSettings(
+        widget.account['id'] as String,
+        {
+          'rate_air_per_lb': double.tryParse(_airCtl.text) ?? 4.50,
+          'rate_sea_per_lb': double.tryParse(_seaCtl.text) ?? 2.25,
+          'rate_duty_percent': double.tryParse(_dutyCtl.text) ?? 20.0,
+          'rate_use_volumetric': _volumetric,
+          'rate_round_up_half': _roundUp,
+          'rate_fuel_surcharge': _fuelSurcharge,
+        },
+      );
       if (!mounted) return;
       setState(() => _saving = false);
+      widget.onAccountUpdated?.call(updated);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Rate settings saved — used by Quick Quote'),
@@ -5952,7 +6012,8 @@ class _SettingsSaveBar extends StatelessWidget {
 
 class _CompanyProfileTab extends StatefulWidget {
   final Map<String, dynamic> account;
-  const _CompanyProfileTab({required this.account});
+  final ValueChanged<Map<String, dynamic>>? onAccountUpdated;
+  const _CompanyProfileTab({required this.account, this.onAccountUpdated});
   @override
   State<_CompanyProfileTab> createState() => _CompanyProfileTabState();
 }
@@ -6000,15 +6061,17 @@ class _CompanyProfileTabState extends State<_CompanyProfileTab> {
       _error = null;
     });
     try {
-      await _db.updatePartnerAccount(widget.account['id'] as String, {
+      final updates = {
         'company_name': _companyNameCtl.text.trim(),
         'email': _emailCtl.text.trim(),
         'phone': _phoneCtl.text.trim(),
         'address': _addressCtl.text.trim(),
         'tracking_prefix': _prefixCtl.text.trim(),
-      });
+      };
+      await _db.updatePartnerAccount(widget.account['id'] as String, updates);
       if (!mounted) return;
       setState(() => _saving = false);
+      widget.onAccountUpdated?.call({...widget.account, ...updates});
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Settings saved')));
@@ -6040,6 +6103,11 @@ class _CompanyProfileTabState extends State<_CompanyProfileTab> {
       setState(() {
         _provisioning = false;
         _domainStatus = (result['status'] as String?) ?? 'pending_dns';
+      });
+      widget.onAccountUpdated?.call({
+        ...widget.account,
+        'domain': domain,
+        'domain_status': _domainStatus,
       });
       await showDialog(
         context: context,
@@ -6291,7 +6359,8 @@ class _CompanyProfileTabState extends State<_CompanyProfileTab> {
 
 class _BrandingTab extends StatefulWidget {
   final Map<String, dynamic> account;
-  const _BrandingTab({required this.account});
+  final ValueChanged<Map<String, dynamic>>? onAccountUpdated;
+  const _BrandingTab({required this.account, this.onAccountUpdated});
   @override
   State<_BrandingTab> createState() => _BrandingTabState();
 }
@@ -6338,17 +6407,21 @@ class _BrandingTabState extends State<_BrandingTab> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await _db.updatePartnerSettings(widget.account['id'] as String, {
-        'branding_color': _selectedColor,
-        'branding_portal_title': _titleCtl.text.trim(),
-        'branding_email_sender': _senderCtl.text.trim(),
-        'branding_email_footer': _footerCtl.text.trim(),
-        'branding_show_in_emails': _showInEmails,
-        'branding_allow_pdf_download': _allowPdfDownload,
-        'branding_dark_mode': _darkMode,
-      });
+      final updated = await _db.updatePartnerSettings(
+        widget.account['id'] as String,
+        {
+          'branding_color': _selectedColor,
+          'branding_portal_title': _titleCtl.text.trim(),
+          'branding_email_sender': _senderCtl.text.trim(),
+          'branding_email_footer': _footerCtl.text.trim(),
+          'branding_show_in_emails': _showInEmails,
+          'branding_allow_pdf_download': _allowPdfDownload,
+          'branding_dark_mode': _darkMode,
+        },
+      );
       if (!mounted) return;
       setState(() => _saving = false);
+      widget.onAccountUpdated?.call(updated);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Branding saved')));
@@ -6453,7 +6526,8 @@ class _BrandingTabState extends State<_BrandingTab> {
 
 class _TaxCurrencyTab extends StatefulWidget {
   final Map<String, dynamic> account;
-  const _TaxCurrencyTab({required this.account});
+  final ValueChanged<Map<String, dynamic>>? onAccountUpdated;
+  const _TaxCurrencyTab({required this.account, this.onAccountUpdated});
   @override
   State<_TaxCurrencyTab> createState() => _TaxCurrencyTabState();
 }
@@ -6490,18 +6564,22 @@ class _TaxCurrencyTabState extends State<_TaxCurrencyTab> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await _db.updatePartnerSettings(widget.account['id'] as String, {
-        'currency_primary': _primaryCtl.text.trim(),
-        'currency_secondary': _secondaryCtl.text.trim(),
-        'gct_rate': double.tryParse(_gctCtl.text) ?? 15.0,
-        'rate_duty_percent': double.tryParse(_dutyCtl.text) ?? 20.0,
-        'environmental_levy': double.tryParse(_levyCtl.text) ?? 0.5,
-        'rate_sea_per_lb': double.tryParse(_shippingRateCtl.text) ?? 2.25,
-        'apply_gct_to_shipping': _applyGctToShipping,
-        'show_prices_inclusive': _showInclusive,
-      });
+      final updated = await _db.updatePartnerSettings(
+        widget.account['id'] as String,
+        {
+          'currency_primary': _primaryCtl.text.trim(),
+          'currency_secondary': _secondaryCtl.text.trim(),
+          'gct_rate': double.tryParse(_gctCtl.text) ?? 15.0,
+          'rate_duty_percent': double.tryParse(_dutyCtl.text) ?? 20.0,
+          'environmental_levy': double.tryParse(_levyCtl.text) ?? 0.5,
+          'rate_sea_per_lb': double.tryParse(_shippingRateCtl.text) ?? 2.25,
+          'apply_gct_to_shipping': _applyGctToShipping,
+          'show_prices_inclusive': _showInclusive,
+        },
+      );
       if (!mounted) return;
       setState(() => _saving = false);
+      widget.onAccountUpdated?.call(updated);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Currency & tax settings saved')),
       );
@@ -6949,7 +7027,8 @@ class _UserRow extends StatelessWidget {
 
 class _ApiKeysTab extends StatefulWidget {
   final Map<String, dynamic> account;
-  const _ApiKeysTab({required this.account});
+  final ValueChanged<Map<String, dynamic>>? onAccountUpdated;
+  const _ApiKeysTab({required this.account, this.onAccountUpdated});
 
   @override
   State<_ApiKeysTab> createState() => _ApiKeysTabState();
@@ -6985,12 +7064,16 @@ class _ApiKeysTabState extends State<_ApiKeysTab> {
   Future<void> _saveWebhookSettings() async {
     setState(() => _saving = true);
     try {
-      await _db.updatePartnerSettings(widget.account['id'] as String, {
-        'webhook_url': _webhookCtl.text.trim(),
-        'rate_limit': int.tryParse(_rateLimitCtl.text) ?? 120,
-      });
+      final updated = await _db.updatePartnerSettings(
+        widget.account['id'] as String,
+        {
+          'webhook_url': _webhookCtl.text.trim(),
+          'rate_limit': int.tryParse(_rateLimitCtl.text) ?? 120,
+        },
+      );
       if (!mounted) return;
       setState(() => _saving = false);
+      widget.onAccountUpdated?.call(updated);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Webhook settings saved')));
@@ -7047,6 +7130,7 @@ class _ApiKeysTabState extends State<_ApiKeysTab> {
         _apiKey = newKey;
         _regenerating = false;
       });
+      widget.onAccountUpdated?.call({...widget.account, 'api_key': newKey});
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(wasEmpty ? 'API key generated' : 'API key regenerated'),
