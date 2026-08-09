@@ -40,6 +40,23 @@ class DatabaseService {
     return List<Map<String, dynamic>>.from(data);
   }
 
+  /// Warehouse entries whose tracking number starts with [prefix] (e.g.
+  /// "HDS-") — how a partner tenant's own received packages are scoped,
+  /// since warehouse_entries has no partner_id column of its own (it only
+  /// tracks shipping_partner_code, which identifies the external courier
+  /// that delivered a package to our warehouse, not which tenant it
+  /// belongs to).
+  Future<List<Map<String, dynamic>>> getWarehouseEntriesByPrefix(
+    String prefix,
+  ) async {
+    final data = await _db
+        .from('warehouse_entries')
+        .select()
+        .ilike('tracking_number', '$prefix%')
+        .order('scanned_in_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
   Future<Map<String, dynamic>> insertWarehouseEntry({
     required String trackingNumber,
     required String customerName,
@@ -742,6 +759,208 @@ class DatabaseService {
         .from('partner_accounts')
         .update({'api_key': apiKey})
         .eq('id', accountId);
+  }
+
+  // ─── Partner Settings (Settings screen) ───────────────────────────────
+  // Simple scalar preferences (Storage Fee, Terms, Currency, Rate
+  // Calculator, Branding, Api/Webhooks tabs) live in one JSONB bag on the
+  // account row; list-shaped sections get their own small tables below.
+
+  /// Merges [patch] into the account's existing settings JSONB (a plain
+  /// `.update()` would overwrite the whole column, wiping unrelated keys
+  /// set by other tabs) and returns the updated account row.
+  Future<Map<String, dynamic>> updatePartnerSettings(
+    String accountId,
+    Map<String, dynamic> patch,
+  ) async {
+    final current = await _db
+        .from('partner_accounts')
+        .select('settings')
+        .eq('id', accountId)
+        .single();
+    final merged = <String, dynamic>{
+      ...Map<String, dynamic>.from(current['settings'] as Map? ?? {}),
+      ...patch,
+    };
+    final data = await _db
+        .from('partner_accounts')
+        .update({'settings': merged})
+        .eq('id', accountId)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<List<Map<String, dynamic>>> getPartnerLocations(
+    String partnerId,
+  ) async {
+    final data = await _db
+        .from('partner_locations')
+        .select()
+        .eq('partner_id', partnerId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> insertPartnerLocation(
+    Map<String, dynamic> row,
+  ) async {
+    final data = await _db
+        .from('partner_locations')
+        .insert(row)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<void> deletePartnerLocation(String id) async {
+    await _db.from('partner_locations').delete().eq('id', id);
+  }
+
+  Future<List<Map<String, dynamic>>> getPartnerCharges(
+    String partnerId,
+  ) async {
+    final data = await _db
+        .from('partner_charges')
+        .select()
+        .eq('partner_id', partnerId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> insertPartnerCharge(
+    Map<String, dynamic> row,
+  ) async {
+    final data = await _db
+        .from('partner_charges')
+        .insert(row)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<void> updatePartnerCharge(
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
+    await _db.from('partner_charges').update(updates).eq('id', id);
+  }
+
+  Future<void> deletePartnerCharge(String id) async {
+    await _db.from('partner_charges').delete().eq('id', id);
+  }
+
+  Future<List<Map<String, dynamic>>> getPartnerDiscounts(
+    String partnerId,
+  ) async {
+    final data = await _db
+        .from('partner_discounts')
+        .select()
+        .eq('partner_id', partnerId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> insertPartnerDiscount(
+    Map<String, dynamic> row,
+  ) async {
+    final data = await _db
+        .from('partner_discounts')
+        .insert(row)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<void> updatePartnerDiscount(
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
+    await _db.from('partner_discounts').update(updates).eq('id', id);
+  }
+
+  Future<void> deletePartnerDiscount(String id) async {
+    await _db.from('partner_discounts').delete().eq('id', id);
+  }
+
+  Future<List<Map<String, dynamic>>> getPartnerRoles(String partnerId) async {
+    final data = await _db
+        .from('partner_roles')
+        .select()
+        .eq('partner_id', partnerId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> insertPartnerRole(
+    Map<String, dynamic> row,
+  ) async {
+    final data = await _db.from('partner_roles').insert(row).select().single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<void> updatePartnerRole(
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
+    await _db.from('partner_roles').update(updates).eq('id', id);
+  }
+
+  Future<void> deletePartnerRole(String id) async {
+    await _db.from('partner_roles').delete().eq('id', id);
+  }
+
+  Future<List<Map<String, dynamic>>> getPartnerStaff(String partnerId) async {
+    final data = await _db
+        .from('partner_staff')
+        .select()
+        .eq('partner_id', partnerId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> insertPartnerStaff(
+    Map<String, dynamic> row,
+  ) async {
+    final data = await _db.from('partner_staff').insert(row).select().single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<void> deletePartnerStaff(String id) async {
+    await _db.from('partner_staff').delete().eq('id', id);
+  }
+
+  Future<List<Map<String, dynamic>>> getPartnerShippingAddresses(
+    String partnerId,
+  ) async {
+    final data = await _db
+        .from('partner_shipping_addresses')
+        .select()
+        .eq('partner_id', partnerId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> insertPartnerShippingAddress(
+    Map<String, dynamic> row,
+  ) async {
+    final data = await _db
+        .from('partner_shipping_addresses')
+        .insert(row)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<void> updatePartnerShippingAddress(
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
+    await _db.from('partner_shipping_addresses').update(updates).eq('id', id);
+  }
+
+  Future<void> deletePartnerShippingAddress(String id) async {
+    await _db.from('partner_shipping_addresses').delete().eq('id', id);
   }
 
   // ─── Vendor API (admin Settings "API for 3rd Party Vendors") ─────────

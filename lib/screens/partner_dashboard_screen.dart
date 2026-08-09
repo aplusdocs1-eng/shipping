@@ -1,7 +1,10 @@
+import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/database_service.dart';
+import '../services/export_service.dart';
 import '../theme/app_theme.dart';
 
 /// Home screen for approved shipping partners — styled to match
@@ -23,6 +26,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
 
   // Real stats loaded from Supabase (partner-scoped where possible).
   _PartnerStats? _stats;
+  List<Map<String, dynamic>> _branches = [];
 
   @override
   void initState() {
@@ -51,8 +55,9 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
         _account = account;
         _loading = false;
       });
-      // Load stats in the background; don't block the UI.
+      // Load stats and branch list in the background; don't block the UI.
       _loadStats(account);
+      unawaited(_loadBranches());
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -96,6 +101,309 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
       // ignore: avoid_print
       print('[PartnerDashboard] stats load failed: $e');
     }
+  }
+
+  Future<void> _loadBranches() async {
+    try {
+      final branches = await _db.getBranches();
+      if (!mounted) return;
+      setState(() => _branches = branches);
+    } catch (e) {
+      // Leave _branches empty — location button falls back to "Set Location".
+      // ignore: avoid_print
+      print('[PartnerDashboard] branches load failed: $e');
+    }
+  }
+
+  Map<String, dynamic>? get _preferredBranch {
+    final id = _account?['preferred_branch_id']?.toString();
+    if (id == null) return null;
+    for (final b in _branches) {
+      if (b['id']?.toString() == id) return b;
+    }
+    return null;
+  }
+
+  Future<void> _showLocationDialog() async {
+    final accountId = _account?['id']?.toString();
+    if (accountId == null) return;
+    String? selectedId = _account?['preferred_branch_id']?.toString();
+    bool saving = false;
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Receiving Location'),
+              content: SizedBox(
+                width: 420,
+                child: _branches.isEmpty
+                    ? const Text(
+                        'No branch locations have been added yet. Ask your '
+                        'OneVillage account admin to add one from the '
+                        'Branches screen — it will appear here once added.',
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Select the branch your shipments primarily '
+                            'route through.',
+                            style: TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 320),
+                            child: SingleChildScrollView(
+                              child: Column(
+                                children: [
+                                  for (final b in _branches)
+                                    RadioListTile<String>(
+                                      value: b['id'].toString(),
+                                      groupValue: selectedId,
+                                      onChanged: (v) =>
+                                          setDialogState(() => selectedId = v),
+                                      dense: true,
+                                      title: Text(
+                                        b['name']?.toString() ?? 'Branch',
+                                      ),
+                                      subtitle: Text(
+                                        [
+                                          b['city'],
+                                          b['address'],
+                                        ].where((s) => (s?.toString().isNotEmpty ?? false)).join(' · '),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                if (_branches.isNotEmpty)
+                  FilledButton(
+                    onPressed: saving || selectedId == null
+                        ? null
+                        : () async {
+                            setDialogState(() => saving = true);
+                            try {
+                              await _db.updatePartnerAccount(accountId, {
+                                'preferred_branch_id': selectedId,
+                              });
+                              if (!mounted) return;
+                              setState(() {
+                                _account = {
+                                  ..._account!,
+                                  'preferred_branch_id': selectedId,
+                                };
+                              });
+                              if (!context.mounted) return;
+                              Navigator.of(context).pop();
+                            } catch (e) {
+                              setDialogState(() => saving = false);
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Failed to save: $e')),
+                              );
+                            }
+                          },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                    ),
+                    child: saving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('Save'),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showQuickQuoteDialog() async {
+    final weightCtl = TextEditingController();
+    final valueCtl = TextEditingController();
+    String mode = 'Sea Freight';
+    String? estimate;
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            void calculate() {
+              final w = double.tryParse(weightCtl.text) ?? 0;
+              final v = double.tryParse(valueCtl.text) ?? 0;
+              if (w <= 0 || v <= 0) {
+                setDialogState(
+                  () => estimate = 'Enter a valid weight and value.',
+                );
+                return;
+              }
+              final settings = Map<String, dynamic>.from(
+                _account?['settings'] as Map? ?? {},
+              );
+              final airRate =
+                  (settings['rate_air_per_lb'] as num?)?.toDouble() ?? 4.5;
+              final seaRate =
+                  (settings['rate_sea_per_lb'] as num?)?.toDouble() ?? 2.25;
+              final dutyPercent =
+                  (settings['rate_duty_percent'] as num?)?.toDouble() ?? 20.0;
+              final perLb = mode == 'Air Freight' ? airRate : seaRate;
+              final shipping = w * perLb;
+              final duty = v * (dutyPercent / 100);
+              final total = shipping + duty;
+              setDialogState(
+                () => estimate =
+                    'Estimated ${mode.toLowerCase()} cost: '
+                    '\$${total.toStringAsFixed(2)} '
+                    '(\$${shipping.toStringAsFixed(2)} shipping + '
+                    '\$${duty.toStringAsFixed(2)} duty)',
+              );
+            }
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.bolt_outlined, color: AppTheme.primary),
+                  const SizedBox(width: 8),
+                  const Text('Quick Quote'),
+                ],
+              ),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Instant shipping estimate — for reference only, '
+                      'final charges may vary.',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: weightCtl,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'Weight (lbs)',
+                              filled: true,
+                              fillColor: AppTheme.surface,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: valueCtl,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'Declared Value (\$)',
+                              filled: true,
+                              fillColor: AppTheme.surface,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: mode,
+                      decoration: InputDecoration(
+                        labelText: 'Shipping Mode',
+                        filled: true,
+                        fillColor: AppTheme.surface,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'Sea Freight',
+                          child: Text('Sea Freight'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Air Freight',
+                          child: Text('Air Freight'),
+                        ),
+                      ],
+                      onChanged: (v) =>
+                          setDialogState(() => mode = v ?? 'Sea Freight'),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: calculate,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                        ),
+                        icon: const Icon(Icons.calculate_outlined, size: 18),
+                        label: const Text('Calculate'),
+                      ),
+                    ),
+                    if (estimate != null) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          estimate!,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _logout() async {
@@ -463,9 +771,19 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
             ),
           ),
           const Spacer(),
-          _topButton(Icons.location_on_outlined, 'kingston'),
+          _topButton(
+            Icons.location_on_outlined,
+            _preferredBranch?['city']?.toString().isNotEmpty == true
+                ? _preferredBranch!['city'].toString()
+                : (_preferredBranch?['name']?.toString() ?? 'Set Location'),
+            onPressed: _showLocationDialog,
+          ),
           const SizedBox(width: 8),
-          _topButton(Icons.bolt_outlined, 'Quick Quote'),
+          _topButton(
+            Icons.bolt_outlined,
+            'Quick Quote',
+            onPressed: _showQuickQuoteDialog,
+          ),
           const SizedBox(width: 8),
           IconButton(
             tooltip: 'Toggle theme',
@@ -477,9 +795,13 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
     );
   }
 
-  Widget _topButton(IconData icon, String label) {
+  Widget _topButton(
+    IconData icon,
+    String label, {
+    required VoidCallback onPressed,
+  }) {
     return OutlinedButton.icon(
-      onPressed: () {},
+      onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         side: BorderSide(color: _border),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1741,6 +2063,157 @@ String _date(dynamic v) {
   return '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
 }
 
+// ─── Shared Settings Form Dialog ─────────────────────────────────────────
+// Used by every list-based Settings section (Locations, Charges,
+// Discounts, Roles, Staff, Shipping Addresses) to add/edit a record
+// without each section hand-rolling its own dialog.
+
+class _FormField {
+  final String key;
+  final String label;
+  final String? hint;
+  final List<String>? options;
+  final int maxLines;
+  const _FormField(
+    this.key,
+    this.label, {
+    this.hint,
+    this.options,
+    this.maxLines = 1,
+  });
+}
+
+Future<Map<String, String>?> _showFormDialog(
+  BuildContext context, {
+  required String title,
+  required List<_FormField> fields,
+  Map<String, String>? initialValues,
+  String confirmLabel = 'Save',
+}) {
+  final controllers = <String, TextEditingController>{};
+  final dropdowns = <String, String>{};
+  for (final f in fields) {
+    if (f.options != null) {
+      final iv = initialValues?[f.key];
+      dropdowns[f.key] = (iv != null && f.options!.contains(iv))
+          ? iv
+          : f.options!.first;
+    } else {
+      controllers[f.key] = TextEditingController(
+        text: initialValues?[f.key] ?? '',
+      );
+    }
+  }
+  return showDialog<Map<String, String>>(
+    context: context,
+    builder: (dctx) {
+      return StatefulBuilder(
+        builder: (dctx, setDialogState) {
+          return AlertDialog(
+            title: Text(title),
+            content: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final f in fields) ...[
+                      if (f.options != null) ...[
+                        Text(
+                          f.label,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _textSoft,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          initialValue: dropdowns[f.key],
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(color: _border),
+                            ),
+                          ),
+                          items: [
+                            for (final o in f.options!)
+                              DropdownMenuItem(value: o, child: Text(o)),
+                          ],
+                          onChanged: (v) => setDialogState(
+                            () => dropdowns[f.key] = v ?? dropdowns[f.key]!,
+                          ),
+                        ),
+                      ] else
+                        _SettingsField(
+                          label: f.label,
+                          hint: f.hint,
+                          controller: controllers[f.key],
+                          maxLines: f.maxLines,
+                        ),
+                      const SizedBox(height: 12),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                ),
+                onPressed: () {
+                  final result = <String, String>{};
+                  for (final f in fields) {
+                    result[f.key] = f.options != null
+                        ? dropdowns[f.key]!
+                        : controllers[f.key]!.text.trim();
+                  }
+                  Navigator.of(dctx).pop(result);
+                },
+                child: Text(confirmLabel),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+Future<bool> _confirmDelete(BuildContext context, String what) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (dctx) => AlertDialog(
+      title: Text('Delete $what?'),
+      content: const Text('This cannot be undone.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dctx).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
+          onPressed: () => Navigator.of(dctx).pop(true),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+  return result == true;
+}
+
 // ─── Customers Page ──────────────────────────────────────────────────────
 class _CustomersPage extends StatefulWidget {
   final DatabaseService db;
@@ -2775,43 +3248,81 @@ class _ReceivalsPage extends StatelessWidget {
     required this.partnerId,
   });
 
+  static String _statusLabel(dynamic status) {
+    switch (status?.toString()) {
+      case 'stored':
+        return 'Stored';
+      case 'ready_for_pickup':
+        return 'Ready for Pickup';
+      case 'picked_up':
+        return 'Picked Up';
+      case 'scanned_in':
+        return 'Scanned In';
+      default:
+        return _s(status);
+    }
+  }
+
+  static String _location(Map<String, dynamic> e) {
+    final zone = e['storage_zone']?.toString();
+    final loc = e['storage_location']?.toString();
+    if (zone == null || zone.isEmpty) return 'Not assigned';
+    return loc == null || loc.isEmpty ? zone : '$zone / $loc';
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (prefix.isEmpty) {
+      return _PagePanel(
+        title: 'Receivals',
+        subtitle: 'Packages received into the warehouse for your account.',
+        child: _DataTableCard(
+          columns: const [
+            'Tracking #',
+            'Customer',
+            'Description',
+            'Weight',
+            'Location',
+            'Status',
+            'Received',
+          ],
+          rows: const [],
+          emptyMessage:
+              'No tracking prefix is configured for this account yet — '
+              'contact support to have one assigned before packages can be '
+              'matched to you.',
+        ),
+      );
+    }
     return _PagePanel(
       title: 'Receivals',
-      subtitle: 'Packages received into the warehouse.',
+      subtitle: 'Packages received into the warehouse for your account.',
       child: _futureList<Map<String, dynamic>>(
-        future: partnerId != null
-            ? db.getPackagesByPartner(partnerId!)
-            : (prefix.isEmpty
-                  ? db.getPackages()
-                  : db.getPackagesByPrefix(prefix)),
+        future: db.getWarehouseEntriesByPrefix(prefix),
         builder: (data) {
-          final received = data
-              .where(
-                (p) =>
-                    (p['status']?.toString().toLowerCase() ?? '') == 'received',
-              )
-              .toList();
           return _DataTableCard(
             columns: const [
               'Tracking #',
               'Customer',
               'Description',
               'Weight',
+              'Location',
+              'Status',
               'Received',
             ],
             rows: [
-              for (final p in received)
+              for (final e in data)
                 [
-                  _s(p['tracking_number']),
-                  _s(p['customer_name']),
-                  _s(p['description']),
-                  p['weight'] == null ? '—' : '${p['weight']} lb',
-                  _date(p['created_at']),
+                  _s(e['tracking_number']),
+                  _s(e['customer_name']),
+                  _s(e['description']),
+                  e['weight'] == null ? '—' : '${e['weight']} lb',
+                  _location(e),
+                  _statusLabel(e['status']),
+                  _date(e['scanned_in_at']),
                 ],
             ],
-            emptyMessage: 'No received packages yet.',
+            emptyMessage: 'No packages received into the warehouse yet.',
           );
         },
       ),
@@ -3772,15 +4283,16 @@ class _SettingsDetailPage extends StatelessWidget {
   }
 
   Widget _body(BuildContext context) {
+    final partnerId = account['id']?.toString();
     switch (title) {
       case 'Company':
         return _CompanyProfileTab(account: account);
       case 'Customization':
-        return const _BrandingTab();
+        return _BrandingTab(account: account);
       case 'User Management':
-        return const _UserManagementTab();
+        return _UserManagementTab(account: account);
       case 'Currency':
-        return const _TaxCurrencyTab();
+        return _TaxCurrencyTab(account: account);
       case 'Online Payment Gateway':
         return const _IntegrationsTab();
       case 'Api Sync':
@@ -3788,23 +4300,23 @@ class _SettingsDetailPage extends StatelessWidget {
       case 'Webhooks':
         return _ApiKeysTab(account: account);
       case 'Subscription':
-        return const _SubscriptionBody();
+        return _SubscriptionBody(account: account);
       case 'Roles and Permissions':
-        return const _RolesBody();
+        return _RolesBody(partnerId: partnerId);
       case 'Locations':
-        return const _LocationsBody();
+        return _LocationsBody(partnerId: partnerId);
       case 'Charges':
-        return const _ChargesBody();
+        return _ChargesBody(partnerId: partnerId);
       case 'Discounts':
-        return const _DiscountsBody();
+        return _DiscountsBody(partnerId: partnerId);
       case 'Storage Fee':
-        return const _StorageFeeBody();
+        return _StorageFeeBody(account: account);
       case 'Terms and Conditions':
-        return const _TermsBody();
+        return _TermsBody(account: account);
       case 'Shipping Addresses':
-        return const _ShippingAddressesBody();
+        return _ShippingAddressesBody(partnerId: partnerId);
       case 'Rate Calculator':
-        return const _RateCalcBody();
+        return _RateCalcBody(account: account);
     }
     return Center(
       child: Text('$title coming soon', style: TextStyle(color: _muted)),
@@ -3812,8 +4324,98 @@ class _SettingsDetailPage extends StatelessWidget {
   }
 }
 
-class _SubscriptionBody extends StatelessWidget {
-  const _SubscriptionBody();
+class _SubscriptionBody extends StatefulWidget {
+  final Map<String, dynamic> account;
+  const _SubscriptionBody({required this.account});
+  @override
+  State<_SubscriptionBody> createState() => _SubscriptionBodyState();
+}
+
+class _SubscriptionBodyState extends State<_SubscriptionBody> {
+  final _db = DatabaseService();
+  bool _busy = false;
+
+  String get _planLabel {
+    switch (widget.account['plan'] as String?) {
+      case 'courier':
+        return 'Courier Platform';
+      case 'warehouse':
+        return 'Warehouse Platform';
+      case 'direct':
+        return 'Direct Account';
+      default:
+        return 'No plan set';
+    }
+  }
+
+  void _showPlanInfo() {
+    showDialog(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Your Plan'),
+        content: const Text(
+          'Every partner account includes the full platform — customer '
+          'portal, apps, tracking, invoicing, POS, and more. There are no '
+          'other tiers to switch between today. No billing is set up on '
+          'this account, so nothing here is being charged.',
+        ),
+        actions: [
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+            onPressed: () => Navigator.of(dctx).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _downloadInvoices() async {
+    final partnerId = widget.account['id']?.toString();
+    if (partnerId == null) return;
+    setState(() => _busy = true);
+    try {
+      final invoices = await _db.getInvoicesByPartner(partnerId);
+      if (!mounted) return;
+      ExportService.downloadCsv(
+        filename: 'invoices.csv',
+        headers: const [
+          'Invoice #',
+          'Customer',
+          'Amount',
+          'Status',
+          'Created',
+          'Paid',
+        ],
+        rows: [
+          for (final i in invoices)
+            [
+              _s(i['invoice_number'] ?? i['id']),
+              _s(i['customer_name'] ?? i['customer']),
+              _money(i['total'] ?? i['amount']),
+              _s(i['status']),
+              _date(i['created_at']),
+              _date(i['paid_at']),
+            ],
+        ],
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Downloaded ${invoices.length} invoice${invoices.length == 1 ? '' : 's'}',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to export: $e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -3831,45 +4433,26 @@ class _SubscriptionBody extends StatelessWidget {
             ),
             child: Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Professional Plan',
-                        style: TextStyle(
+                        _planLabel,
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Unlimited users · Multi-branch · Full feature set',
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Full feature set included — no tiers to upgrade '
+                        'between.',
                         style: TextStyle(color: Colors.white70, fontSize: 13),
                       ),
                     ],
                   ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const Text(
-                      '\$299',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    Text(
-                      'per month',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
@@ -3879,8 +4462,8 @@ class _SubscriptionBody extends StatelessWidget {
             children: [
               Expanded(
                 child: _MetricTile(
-                  label: 'Next billing',
-                  value: 'May 01, 2026',
+                  label: 'Billing',
+                  value: 'Not set up',
                   icon: Icons.calendar_today,
                 ),
               ),
@@ -3888,7 +4471,7 @@ class _SubscriptionBody extends StatelessWidget {
               Expanded(
                 child: _MetricTile(
                   label: 'Payment method',
-                  value: 'Visa •••• 4242',
+                  value: 'None on file',
                   icon: Icons.credit_card,
                 ),
               ),
@@ -3906,21 +4489,27 @@ class _SubscriptionBody extends StatelessWidget {
           Row(
             children: [
               ElevatedButton(
-                onPressed: () {},
+                onPressed: _showPlanInfo,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primary,
                   foregroundColor: Colors.white,
                 ),
-                child: const Text('Change Plan'),
+                child: const Text('Plan Details'),
               ),
               const SizedBox(width: 8),
               OutlinedButton(
-                onPressed: () {},
+                onPressed: _busy ? null : _downloadInvoices,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _text,
                   side: const BorderSide(color: _border),
                 ),
-                child: const Text('Download Invoices'),
+                child: _busy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Download Invoices'),
               ),
             ],
           ),
@@ -3930,21 +4519,136 @@ class _SubscriptionBody extends StatelessWidget {
   }
 }
 
-class _RolesBody extends StatelessWidget {
-  const _RolesBody();
+class _RolesBody extends StatefulWidget {
+  final String? partnerId;
+  const _RolesBody({required this.partnerId});
+  @override
+  State<_RolesBody> createState() => _RolesBodyState();
+}
+
+class _RolesBodyState extends State<_RolesBody> {
+  final _db = DatabaseService();
+  List<Map<String, dynamic>> _roles = [];
+  bool _loading = true;
+
+  static const _permissionOptions = [
+    'Manage operations',
+    'Manage staff',
+    'View reports',
+    'Manage customers',
+    'Process sales',
+    'Process receivals',
+    'View-only dashboard access',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.partnerId == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    final roles = await _db.getPartnerRoles(widget.partnerId!);
+    if (!mounted) return;
+    setState(() {
+      _roles = roles;
+      _loading = false;
+    });
+  }
+
+  Future<void> _addRole() async {
+    final result = await _showFormDialog(
+      context,
+      title: 'New Role',
+      fields: const [
+        _FormField('name', 'Role Name', hint: 'e.g. Supervisor'),
+        _FormField(
+          'description',
+          'Description',
+          hint: 'What this role can do',
+          maxLines: 2,
+        ),
+      ],
+      confirmLabel: 'Add',
+    );
+    if (result == null || result['name']!.isEmpty || widget.partnerId == null) {
+      return;
+    }
+    await _db.insertPartnerRole({
+      'partner_id': widget.partnerId,
+      'name': result['name'],
+      'description': result['description'],
+    });
+    _load();
+  }
+
+  Future<void> _editPermissions(Map<String, dynamic> role) async {
+    final current =
+        (role['permissions'] as List?)?.cast<String>().toSet() ?? <String>{};
+    final result = await showDialog<Set<String>>(
+      context: context,
+      builder: (dctx) {
+        return StatefulBuilder(
+          builder: (dctx, setDialogState) {
+            return AlertDialog(
+              title: Text('Permissions — ${role['name']}'),
+              content: SizedBox(
+                width: 380,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final p in _permissionOptions)
+                      CheckboxListTile(
+                        dense: true,
+                        value: current.contains(p),
+                        title: Text(p, style: const TextStyle(fontSize: 13)),
+                        onChanged: (v) => setDialogState(() {
+                          if (v == true) {
+                            current.add(p);
+                          } else {
+                            current.remove(p);
+                          }
+                        }),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dctx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                  ),
+                  onPressed: () => Navigator.of(dctx).pop(current),
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (result == null) return;
+    await _db.updatePartnerRole(role['id'] as String, {
+      'permissions': result.toList(),
+    });
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final roles = [
-      ('Owner', 'Full access to all features', true),
-      ('Admin', 'Manage operations and staff', true),
-      ('Manager', 'View reports and manage customers', true),
-      ('Cashier', 'Process sales and receivals only', true),
-      ('Read-only', 'View-only access to dashboard', true),
-    ];
+    if (_loading) return const Center(child: CircularProgressIndicator());
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Row(
             children: [
               const Expanded(
@@ -3958,7 +4662,7 @@ class _RolesBody extends StatelessWidget {
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: _addRole,
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('New Role'),
                 style: ElevatedButton.styleFrom(
@@ -3969,52 +4673,94 @@ class _RolesBody extends StatelessWidget {
             ],
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'Permissions are saved for reference. Your team logs in with '
+            'one shared account today, so these aren\'t enforced per-login '
+            'yet.',
+            style: TextStyle(fontSize: 11, color: _muted),
+          ),
+        ),
+        const SizedBox(height: 8),
         Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: roles.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) {
-              final r = roles[i];
-              return Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _border),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.shield, color: _muted),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+          child: _roles.isEmpty
+              ? Center(
+                  child: Text(
+                    'No custom roles yet.',
+                    style: TextStyle(color: _muted, fontSize: 13),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _roles.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, i) {
+                    final r = _roles[i];
+                    final perms =
+                        (r['permissions'] as List?)?.cast<String>() ??
+                        const [];
+                    return Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _border),
+                      ),
+                      child: Row(
                         children: [
-                          Text(
-                            r.$1,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: _text,
+                          const Icon(Icons.shield, color: _muted),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _s(r['name']),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: _text,
+                                  ),
+                                ),
+                                Text(
+                                  perms.isEmpty
+                                      ? _s(r['description'])
+                                      : '${_s(r['description'])} · ${perms.length} permission${perms.length == 1 ? '' : 's'}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: _muted,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          Text(
-                            r.$2,
-                            style: TextStyle(fontSize: 12, color: _muted),
+                          TextButton(
+                            onPressed: () => _editPermissions(r),
+                            child: const Text('Edit Permissions'),
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: 18,
+                              color: _muted,
+                            ),
+                            onPressed: () async {
+                              if (!await _confirmDelete(
+                                context,
+                                'role "${r['name']}"',
+                              )) {
+                                return;
+                              }
+                              await _db.deletePartnerRole(r['id'] as String);
+                              _load();
+                            },
                           ),
                         ],
                       ),
-                    ),
-                    TextButton(
-                      onPressed: () {},
-                      child: const Text('Edit Permissions'),
-                    ),
-                  ],
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
         const SizedBox(height: 16),
       ],
@@ -4022,15 +4768,64 @@ class _RolesBody extends StatelessWidget {
   }
 }
 
-class _LocationsBody extends StatelessWidget {
-  const _LocationsBody();
+class _LocationsBody extends StatefulWidget {
+  final String? partnerId;
+  const _LocationsBody({required this.partnerId});
+  @override
+  State<_LocationsBody> createState() => _LocationsBodyState();
+}
+
+class _LocationsBodyState extends State<_LocationsBody> {
+  final _db = DatabaseService();
+  List<Map<String, dynamic>> _locs = [];
+  bool _loading = true;
+  static const _types = ['Warehouse', 'Store', 'Pickup'];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.partnerId == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    final locs = await _db.getPartnerLocations(widget.partnerId!);
+    if (!mounted) return;
+    setState(() {
+      _locs = locs;
+      _loading = false;
+    });
+  }
+
+  Future<void> _add() async {
+    final result = await _showFormDialog(
+      context,
+      title: 'Add Location',
+      fields: const [
+        _FormField('name', 'Name', hint: 'e.g. Kingston HQ'),
+        _FormField('address', 'Address', hint: 'Street, city'),
+        _FormField('type', 'Type', options: _types),
+      ],
+      confirmLabel: 'Add',
+    );
+    if (result == null || result['name']!.isEmpty || widget.partnerId == null) {
+      return;
+    }
+    await _db.insertPartnerLocation({
+      'partner_id': widget.partnerId,
+      'name': result['name'],
+      'address': result['address'],
+      'type': result['type'],
+    });
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final locs = [
-      ('Kingston HQ', '10 Knutsford Blvd, Kingston', 'Warehouse'),
-      ('Montego Bay', 'Sam Sharpe Square, Montego Bay', 'Store'),
-      ('Ocho Rios', 'Main Street, Ocho Rios', 'Pickup'),
-    ];
+    if (_loading) return const Center(child: CircularProgressIndicator());
     return Column(
       children: [
         Padding(
@@ -4048,7 +4843,7 @@ class _LocationsBody extends StatelessWidget {
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: _add,
                 icon: const Icon(Icons.add_location, size: 16),
                 label: const Text('Add Location'),
                 style: ElevatedButton.styleFrom(
@@ -4060,65 +4855,95 @@ class _LocationsBody extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: locs.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) {
-              final l = locs[i];
-              return Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _border),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.location_on, color: AppTheme.primary),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+          child: _locs.isEmpty
+              ? Center(
+                  child: Text(
+                    'No locations added yet.',
+                    style: TextStyle(color: _muted, fontSize: 13),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _locs.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, i) {
+                    final l = _locs[i];
+                    return Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _border),
+                      ),
+                      child: Row(
                         children: [
-                          Text(
-                            l.$1,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: _text,
+                          const Icon(
+                            Icons.location_on,
+                            color: AppTheme.primary,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _s(l['name']),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: _text,
+                                  ),
+                                ),
+                                Text(
+                                  _s(l['address']),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: _muted,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          Text(
-                            l.$2,
-                            style: TextStyle(fontSize: 12, color: _muted),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              _s(l['type']),
+                              style: const TextStyle(
+                                color: AppTheme.primary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: 18,
+                              color: _muted,
+                            ),
+                            onPressed: () async {
+                              if (!await _confirmDelete(
+                                context,
+                                'location "${l['name']}"',
+                              )) {
+                                return;
+                              }
+                              await _db.deletePartnerLocation(l['id'] as String);
+                              _load();
+                            },
                           ),
                         ],
                       ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        l.$3,
-                        style: const TextStyle(
-                          color: AppTheme.primary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
         const SizedBox(height: 16),
       ],
@@ -4126,16 +4951,88 @@ class _LocationsBody extends StatelessWidget {
   }
 }
 
-class _ChargesBody extends StatelessWidget {
-  const _ChargesBody();
+class _ChargesBody extends StatefulWidget {
+  final String? partnerId;
+  const _ChargesBody({required this.partnerId});
+  @override
+  State<_ChargesBody> createState() => _ChargesBodyState();
+}
+
+class _ChargesBodyState extends State<_ChargesBody> {
+  final _db = DatabaseService();
+  List<Map<String, dynamic>> _charges = [];
+  bool _loading = true;
+  static const _amountTypes = ['fixed', 'percent'];
+  static const _units = ['Per package', 'Per shipment', 'Per request'];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.partnerId == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    final charges = await _db.getPartnerCharges(widget.partnerId!);
+    if (!mounted) return;
+    setState(() {
+      _charges = charges;
+      _loading = false;
+    });
+  }
+
+  String _label(Map<String, dynamic> c) {
+    final amount = double.tryParse(c['amount']?.toString() ?? '') ?? 0;
+    return c['amount_type'] == 'percent'
+        ? '${amount.toStringAsFixed(1)}% of value'
+        : '\$${amount.toStringAsFixed(2)} USD';
+  }
+
+  Future<void> _addOrEdit({Map<String, dynamic>? existing}) async {
+    final result = await _showFormDialog(
+      context,
+      title: existing == null ? 'Add Charge' : 'Edit Charge',
+      fields: const [
+        _FormField('name', 'Name', hint: 'e.g. Customs Handling'),
+        _FormField('amount', 'Amount', hint: 'e.g. 5.00'),
+        _FormField('amount_type', 'Type', options: _amountTypes),
+        _FormField('unit', 'Applies', options: _units),
+      ],
+      initialValues: existing == null
+          ? null
+          : {
+              'name': _s(existing['name']),
+              'amount': existing['amount']?.toString() ?? '0',
+              'amount_type': _s(existing['amount_type']),
+              'unit': _s(existing['unit']),
+            },
+      confirmLabel: existing == null ? 'Add' : 'Save',
+    );
+    if (result == null || result['name']!.isEmpty) return;
+    final row = {
+      'name': result['name'],
+      'amount': double.tryParse(result['amount'] ?? '') ?? 0,
+      'amount_type': result['amount_type'],
+      'unit': result['unit'],
+    };
+    if (existing == null) {
+      if (widget.partnerId == null) return;
+      await _db.insertPartnerCharge({
+        ...row,
+        'partner_id': widget.partnerId,
+      });
+    } else {
+      await _db.updatePartnerCharge(existing['id'] as String, row);
+    }
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final charges = [
-      ('Customs Handling', '\$5.00 USD', 'Per package'),
-      ('Fuel Surcharge', '\$2.50 USD', 'Per shipment'),
-      ('Insurance', '2% of value', 'Per package'),
-      ('After-Hours Pickup', '\$15.00 USD', 'Per request'),
-    ];
+    if (_loading) return const Center(child: CircularProgressIndicator());
     return Column(
       children: [
         Padding(
@@ -4153,7 +5050,7 @@ class _ChargesBody extends StatelessWidget {
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: () => _addOrEdit(),
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('Add Charge'),
                 style: ElevatedButton.styleFrom(
@@ -4165,55 +5062,89 @@ class _ChargesBody extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: charges.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) {
-              final c = charges[i];
-              return Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _border),
+          child: _charges.isEmpty
+              ? Center(
+                  child: Text(
+                    'No custom charges yet.',
+                    style: TextStyle(color: _muted, fontSize: 13),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _charges.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, i) {
+                    final c = _charges[i];
+                    return Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _border),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: Text(
+                              _s(c['name']),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: _text,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            flex: 2,
+                            child: Text(
+                              _label(c),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: _text,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            flex: 2,
+                            child: Text(
+                              _s(c['unit']),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _muted,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => _addOrEdit(existing: c),
+                            icon: const Icon(
+                              Icons.edit,
+                              size: 16,
+                              color: _muted,
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () async {
+                              if (!await _confirmDelete(
+                                context,
+                                'charge "${c['name']}"',
+                              )) {
+                                return;
+                              }
+                              await _db.deletePartnerCharge(c['id'] as String);
+                              _load();
+                            },
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: 16,
+                              color: _muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Text(
-                        c.$1,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: _text,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        c.$2,
-                        style: const TextStyle(fontSize: 13, color: _text),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        c.$3,
-                        style: TextStyle(fontSize: 12, color: _muted),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () {},
-                      icon: const Icon(Icons.edit, size: 16, color: _muted),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
         ),
         const SizedBox(height: 16),
       ],
@@ -4221,15 +5152,72 @@ class _ChargesBody extends StatelessWidget {
   }
 }
 
-class _DiscountsBody extends StatelessWidget {
-  const _DiscountsBody();
+class _DiscountsBody extends StatefulWidget {
+  final String? partnerId;
+  const _DiscountsBody({required this.partnerId});
+  @override
+  State<_DiscountsBody> createState() => _DiscountsBodyState();
+}
+
+class _DiscountsBodyState extends State<_DiscountsBody> {
+  final _db = DatabaseService();
+  List<Map<String, dynamic>> _codes = [];
+  bool _loading = true;
+  static const _statuses = ['active', 'paused'];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.partnerId == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    final codes = await _db.getPartnerDiscounts(widget.partnerId!);
+    if (!mounted) return;
+    setState(() {
+      _codes = codes;
+      _loading = false;
+    });
+  }
+
+  Future<void> _add() async {
+    final result = await _showFormDialog(
+      context,
+      title: 'New Promo Code',
+      fields: const [
+        _FormField('code', 'Code', hint: 'e.g. SPRING20'),
+        _FormField('description', 'Description', hint: 'e.g. 20% off'),
+        _FormField('status', 'Status', options: _statuses),
+        _FormField(
+          'expires_at',
+          'Expires (YYYY-MM-DD)',
+          hint: 'Leave blank for no expiry',
+        ),
+      ],
+      confirmLabel: 'Add',
+    );
+    if (result == null || result['code']!.isEmpty || widget.partnerId == null) {
+      return;
+    }
+    await _db.insertPartnerDiscount({
+      'partner_id': widget.partnerId,
+      'code': result['code']!.toUpperCase(),
+      'description': result['description'],
+      'status': result['status'],
+      'expires_at': (result['expires_at']?.isEmpty ?? true)
+          ? null
+          : result['expires_at'],
+    });
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final codes = [
-      ('SPRING20', '20% off', 'Active', 'Expires May 31'),
-      ('NEWCUSTOMER', '10% off first order', 'Active', 'No expiry'),
-      ('VIP50', '\$50 off', 'Paused', 'Expires Dec 31'),
-    ];
+    if (_loading) return const Center(child: CircularProgressIndicator());
     return Column(
       children: [
         Padding(
@@ -4247,7 +5235,7 @@ class _DiscountsBody extends StatelessWidget {
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: _add,
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('New Code'),
                 style: ElevatedButton.styleFrom(
@@ -4259,78 +5247,112 @@ class _DiscountsBody extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: codes.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) {
-              final d = codes[i];
-              return Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _border),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
+          child: _codes.isEmpty
+              ? Center(
+                  child: Text(
+                    'No promo codes yet.',
+                    style: TextStyle(color: _muted, fontSize: 13),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _codes.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, i) {
+                    final d = _codes[i];
+                    final active = d['status'] == 'active';
+                    return Container(
+                      padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: _panelBg,
-                        borderRadius: BorderRadius.circular(4),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: _border),
                       ),
-                      child: Text(
-                        d.$1,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        d.$2,
-                        style: const TextStyle(fontSize: 13, color: _text),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            (d.$3 == 'Active'
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _panelBg,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: _border),
+                            ),
+                            child: Text(
+                              _s(d['code']),
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _s(d['description']),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: _text,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: (active
+                                      ? AppTheme.success
+                                      : AppTheme.warning)
+                                  .withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              active ? 'Active' : 'Paused',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: active
                                     ? AppTheme.success
-                                    : AppTheme.warning)
-                                .withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(20),
+                                    : AppTheme.warning,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            d['expires_at'] == null
+                                ? 'No expiry'
+                                : 'Expires ${_date(d['expires_at'])}',
+                            style: TextStyle(fontSize: 12, color: _muted),
+                          ),
+                          IconButton(
+                            onPressed: () async {
+                              if (!await _confirmDelete(
+                                context,
+                                'code "${d['code']}"',
+                              )) {
+                                return;
+                              }
+                              await _db.deletePartnerDiscount(
+                                d['id'] as String,
+                              );
+                              _load();
+                            },
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: 16,
+                              color: _muted,
+                            ),
+                          ),
+                        ],
                       ),
-                      child: Text(
-                        d.$3,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: d.$3 == 'Active'
-                              ? AppTheme.success
-                              : AppTheme.warning,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(d.$4, style: TextStyle(fontSize: 12, color: _muted)),
-                  ],
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
         const SizedBox(height: 16),
       ],
@@ -4338,8 +5360,55 @@ class _DiscountsBody extends StatelessWidget {
   }
 }
 
-class _StorageFeeBody extends StatelessWidget {
-  const _StorageFeeBody();
+class _StorageFeeBody extends StatefulWidget {
+  final Map<String, dynamic> account;
+  const _StorageFeeBody({required this.account});
+  @override
+  State<_StorageFeeBody> createState() => _StorageFeeBodyState();
+}
+
+class _StorageFeeBodyState extends State<_StorageFeeBody> {
+  final _db = DatabaseService();
+  late final Map<String, dynamic> _settings = Map<String, dynamic>.from(
+    widget.account['settings'] as Map? ?? {},
+  );
+  late bool _enabled = _settings['storage_fee_enabled'] as bool? ?? true;
+  late bool _notify = _settings['storage_fee_notify'] as bool? ?? true;
+  late final _graceCtl = TextEditingController(
+    text: (_settings['storage_fee_grace_days'] ?? 7).toString(),
+  );
+  late final _rateCtl = TextEditingController(
+    text: (_settings['storage_fee_daily_rate'] ?? 1.00).toString(),
+  );
+  late final _maxCtl = TextEditingController(
+    text: (_settings['storage_fee_max'] ?? 50.00).toString(),
+  );
+  bool _saving = false;
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _db.updatePartnerSettings(widget.account['id'] as String, {
+        'storage_fee_enabled': _enabled,
+        'storage_fee_notify': _notify,
+        'storage_fee_grace_days': int.tryParse(_graceCtl.text) ?? 7,
+        'storage_fee_daily_rate': double.tryParse(_rateCtl.text) ?? 1.00,
+        'storage_fee_max': double.tryParse(_maxCtl.text) ?? 50.00,
+      });
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Storage fee settings saved')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -4349,43 +5418,95 @@ class _StorageFeeBody extends StatelessWidget {
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                _ToggleRow(title: 'Enable automatic storage fees', value: true),
-                SizedBox(height: 12),
+              children: [
+                _ToggleRow(
+                  title: 'Enable automatic storage fees',
+                  value: _enabled,
+                  onChanged: (v) => setState(() => _enabled = v),
+                ),
+                const SizedBox(height: 12),
                 _SettingsField(
                   label: 'Grace Period (days)',
-                  initial: '7',
+                  controller: _graceCtl,
                   icon: Icons.hourglass_top,
                 ),
-                SizedBox(height: 12),
+                const SizedBox(height: 12),
                 _SettingsField(
                   label: 'Daily Storage Rate (USD)',
-                  initial: '1.00',
+                  controller: _rateCtl,
                   icon: Icons.attach_money,
                 ),
-                SizedBox(height: 12),
+                const SizedBox(height: 12),
                 _SettingsField(
                   label: 'Maximum Storage Fee (USD)',
-                  initial: '50.00',
+                  controller: _maxCtl,
                   icon: Icons.money_off,
                 ),
-                SizedBox(height: 12),
+                const SizedBox(height: 12),
                 _ToggleRow(
                   title: 'Notify customer when fees begin accruing',
-                  value: true,
+                  value: _notify,
+                  onChanged: (v) => setState(() => _notify = v),
                 ),
               ],
             ),
           ),
         ),
-        const _SettingsSaveBar(),
+        _SettingsSaveBar(onSave: _save, saving: _saving),
       ],
     );
   }
 }
 
-class _TermsBody extends StatelessWidget {
-  const _TermsBody();
+class _TermsBody extends StatefulWidget {
+  final Map<String, dynamic> account;
+  const _TermsBody({required this.account});
+  @override
+  State<_TermsBody> createState() => _TermsBodyState();
+}
+
+class _TermsBodyState extends State<_TermsBody> {
+  final _db = DatabaseService();
+  static const _defaultTerms =
+      '1. Acceptance of Terms\n\nBy registering for an account, you agree '
+      'to be bound by these terms.\n\n2. Services\n\nWe provide courier and '
+      'warehousing services subject to availability.\n\n3. Liability\n\nOur '
+      'liability is limited to the declared value of the package.\n\n'
+      '4. Privacy\n\nYour personal information is handled per our privacy '
+      'policy.';
+  late final Map<String, dynamic> _settings = Map<String, dynamic>.from(
+    widget.account['settings'] as Map? ?? {},
+  );
+  late final _termsCtl = TextEditingController(
+    text: (_settings['terms_text'] as String?) ?? _defaultTerms,
+  );
+  late bool _requireAccept = _settings['terms_require_accept'] as bool? ?? true;
+  late bool _requireReaccept =
+      _settings['terms_require_reaccept'] as bool? ?? true;
+  bool _saving = false;
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _db.updatePartnerSettings(widget.account['id'] as String, {
+        'terms_text': _termsCtl.text,
+        'terms_require_accept': _requireAccept,
+        'terms_require_reaccept': _requireReaccept,
+      });
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Terms saved')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -4395,42 +5516,104 @@ class _TermsBody extends StatelessWidget {
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 _SettingsField(
                   label: 'Terms & Conditions',
-                  initial:
-                      '1. Acceptance of Terms\n\nBy registering for an account, you agree to be bound by these terms.\n\n2. Services\n\nWe provide courier and warehousing services subject to availability.\n\n3. Liability\n\nOur liability is limited to the declared value of the package.\n\n4. Privacy\n\nYour personal information is handled per our privacy policy.',
+                  controller: _termsCtl,
                   maxLines: 14,
                 ),
-                SizedBox(height: 12),
+                const SizedBox(height: 12),
                 _ToggleRow(
                   title: 'Require customer to accept on sign up',
-                  value: true,
+                  value: _requireAccept,
+                  onChanged: (v) => setState(() => _requireAccept = v),
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 _ToggleRow(
                   title: 'Require re-acceptance when terms change',
-                  value: true,
+                  value: _requireReaccept,
+                  onChanged: (v) => setState(() => _requireReaccept = v),
                 ),
               ],
             ),
           ),
         ),
-        const _SettingsSaveBar(),
+        _SettingsSaveBar(onSave: _save, saving: _saving),
       ],
     );
   }
 }
 
-class _ShippingAddressesBody extends StatelessWidget {
-  const _ShippingAddressesBody();
+class _ShippingAddressesBody extends StatefulWidget {
+  final String? partnerId;
+  const _ShippingAddressesBody({required this.partnerId});
+  @override
+  State<_ShippingAddressesBody> createState() =>
+      _ShippingAddressesBodyState();
+}
+
+class _ShippingAddressesBodyState extends State<_ShippingAddressesBody> {
+  final _db = DatabaseService();
+  List<Map<String, dynamic>> _addresses = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.partnerId == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    final addresses = await _db.getPartnerShippingAddresses(
+      widget.partnerId!,
+    );
+    if (!mounted) return;
+    setState(() {
+      _addresses = addresses;
+      _loading = false;
+    });
+  }
+
+  Future<void> _addOrEdit({Map<String, dynamic>? existing}) async {
+    final result = await _showFormDialog(
+      context,
+      title: existing == null ? 'Add Address' : 'Edit Address',
+      fields: const [
+        _FormField('label', 'Label', hint: 'e.g. Miami Hub — US'),
+        _FormField('address', 'Address', hint: 'Street, city, postal, country', maxLines: 2),
+      ],
+      initialValues: existing == null
+          ? null
+          : {
+              'label': _s(existing['label']),
+              'address': _s(existing['address']),
+            },
+      confirmLabel: existing == null ? 'Add' : 'Save',
+    );
+    if (result == null || result['label']!.isEmpty) return;
+    if (existing == null) {
+      if (widget.partnerId == null) return;
+      await _db.insertPartnerShippingAddress({
+        'partner_id': widget.partnerId,
+        'label': result['label'],
+        'address': result['address'],
+      });
+    } else {
+      await _db.updatePartnerShippingAddress(existing['id'] as String, {
+        'label': result['label'],
+        'address': result['address'],
+      });
+    }
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final addresses = [
-      ('Miami Hub — US', '8200 NW 27th St, Miami, FL 33122, USA'),
-      ('Buffalo Hub — US', '1200 Niagara St, Buffalo, NY 14213, USA'),
-      ('London Hub — UK', '45 Wembley Park Dr, London HA9 8HA, UK'),
-    ];
+    if (_loading) return const Center(child: CircularProgressIndicator());
     return Column(
       children: [
         Padding(
@@ -4448,7 +5631,7 @@ class _ShippingAddressesBody extends StatelessWidget {
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: () => _addOrEdit(),
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('Add Address'),
                 style: ElevatedButton.styleFrom(
@@ -4460,51 +5643,87 @@ class _ShippingAddressesBody extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: addresses.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) {
-              final a = addresses[i];
-              return Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _border),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.location_on, color: AppTheme.primary),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+          child: _addresses.isEmpty
+              ? Center(
+                  child: Text(
+                    'No shipping addresses added yet.',
+                    style: TextStyle(color: _muted, fontSize: 13),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _addresses.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, i) {
+                    final a = _addresses[i];
+                    return Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _border),
+                      ),
+                      child: Row(
                         children: [
-                          Text(
-                            a.$1,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: _text,
+                          const Icon(
+                            Icons.location_on,
+                            color: AppTheme.primary,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _s(a['label']),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: _text,
+                                  ),
+                                ),
+                                Text(
+                                  _s(a['address']),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: _muted,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          Text(
-                            a.$2,
-                            style: TextStyle(fontSize: 12, color: _muted),
+                          IconButton(
+                            onPressed: () => _addOrEdit(existing: a),
+                            icon: const Icon(
+                              Icons.edit,
+                              size: 16,
+                              color: _muted,
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () async {
+                              if (!await _confirmDelete(
+                                context,
+                                'address "${a['label']}"',
+                              )) {
+                                return;
+                              }
+                              await _db.deletePartnerShippingAddress(
+                                a['id'] as String,
+                              );
+                              _load();
+                            },
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: 16,
+                              color: _muted,
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                    IconButton(
-                      onPressed: () {},
-                      icon: const Icon(Icons.edit, size: 16, color: _muted),
-                    ),
-                  ],
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
         const SizedBox(height: 16),
       ],
@@ -4512,8 +5731,60 @@ class _ShippingAddressesBody extends StatelessWidget {
   }
 }
 
-class _RateCalcBody extends StatelessWidget {
-  const _RateCalcBody();
+class _RateCalcBody extends StatefulWidget {
+  final Map<String, dynamic> account;
+  const _RateCalcBody({required this.account});
+  @override
+  State<_RateCalcBody> createState() => _RateCalcBodyState();
+}
+
+class _RateCalcBodyState extends State<_RateCalcBody> {
+  final _db = DatabaseService();
+  late final Map<String, dynamic> _settings = Map<String, dynamic>.from(
+    widget.account['settings'] as Map? ?? {},
+  );
+  late final _airCtl = TextEditingController(
+    text: (_settings['rate_air_per_lb'] ?? 4.50).toString(),
+  );
+  late final _seaCtl = TextEditingController(
+    text: (_settings['rate_sea_per_lb'] ?? 2.25).toString(),
+  );
+  late final _dutyCtl = TextEditingController(
+    text: (_settings['rate_duty_percent'] ?? 20.0).toString(),
+  );
+  late bool _volumetric = _settings['rate_use_volumetric'] as bool? ?? true;
+  late bool _roundUp = _settings['rate_round_up_half'] as bool? ?? true;
+  late bool _fuelSurcharge =
+      _settings['rate_fuel_surcharge'] as bool? ?? false;
+  bool _saving = false;
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _db.updatePartnerSettings(widget.account['id'] as String, {
+        'rate_air_per_lb': double.tryParse(_airCtl.text) ?? 4.50,
+        'rate_sea_per_lb': double.tryParse(_seaCtl.text) ?? 2.25,
+        'rate_duty_percent': double.tryParse(_dutyCtl.text) ?? 20.0,
+        'rate_use_volumetric': _volumetric,
+        'rate_round_up_half': _roundUp,
+        'rate_fuel_surcharge': _fuelSurcharge,
+      });
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Rate settings saved — used by Quick Quote'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -4523,67 +5794,59 @@ class _RateCalcBody extends StatelessWidget {
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text(
-                  'Weight-based Rate Table',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: _text,
-                  ),
+              children: [
+                const Text(
+                  'These rates power the "Quick Quote" tool in the top bar.',
+                  style: TextStyle(fontSize: 12, color: _muted),
                 ),
-                SizedBox(height: 8),
-                _RateRow(range: '0 – 1 lb', rate: '\$8.00'),
-                _RateRow(range: '1 – 5 lb', rate: '\$3.50 / lb'),
-                _RateRow(range: '5 – 20 lb', rate: '\$3.00 / lb'),
-                _RateRow(range: '20 – 50 lb', rate: '\$2.50 / lb'),
-                _RateRow(range: '50 lb +', rate: '\$2.00 / lb'),
-                SizedBox(height: 16),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _SettingsField(
+                        label: 'Air Freight (\$ / lb)',
+                        controller: _airCtl,
+                        icon: Icons.flight_outlined,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _SettingsField(
+                        label: 'Sea Freight (\$ / lb)',
+                        controller: _seaCtl,
+                        icon: Icons.directions_boat_filled_outlined,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _SettingsField(
+                  label: 'Customs Duty (% of declared value)',
+                  controller: _dutyCtl,
+                  icon: Icons.percent,
+                ),
+                const SizedBox(height: 16),
                 _ToggleRow(
                   title: 'Use volumetric weight when higher',
-                  value: true,
+                  value: _volumetric,
+                  onChanged: (v) => setState(() => _volumetric = v),
                 ),
-                _ToggleRow(title: 'Round up to nearest 0.5 lb', value: true),
+                _ToggleRow(
+                  title: 'Round up to nearest 0.5 lb',
+                  value: _roundUp,
+                  onChanged: (v) => setState(() => _roundUp = v),
+                ),
                 _ToggleRow(
                   title: 'Apply fuel surcharge automatically',
-                  value: false,
+                  value: _fuelSurcharge,
+                  onChanged: (v) => setState(() => _fuelSurcharge = v),
                 ),
               ],
             ),
           ),
         ),
-        const _SettingsSaveBar(),
+        _SettingsSaveBar(onSave: _save, saving: _saving),
       ],
-    );
-  }
-}
-
-class _RateRow extends StatelessWidget {
-  final String range;
-  final String rate;
-  const _RateRow({required this.range, required this.rate});
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: _panelBg,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        children: [
-          Expanded(child: Text(range, style: const TextStyle(fontSize: 13))),
-          Text(
-            rate,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: _text,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -4650,9 +5913,9 @@ class _SettingsField extends StatelessWidget {
 }
 
 class _SettingsSaveBar extends StatelessWidget {
-  final VoidCallback? onSave;
+  final VoidCallback onSave;
   final bool saving;
-  const _SettingsSaveBar({this.onSave, this.saving = false});
+  const _SettingsSaveBar({required this.onSave, this.saving = false});
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -4663,21 +5926,8 @@ class _SettingsSaveBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          TextButton(
-            onPressed: () {},
-            style: TextButton.styleFrom(foregroundColor: _muted),
-            child: const Text('Cancel'),
-          ),
-          const SizedBox(width: 8),
           ElevatedButton(
-            onPressed: saving
-                ? null
-                : (onSave ??
-                      () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Settings saved')),
-                        );
-                      }),
+            onPressed: saving ? null : onSave,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.primary,
               foregroundColor: Colors.white,
@@ -5039,19 +6289,80 @@ class _CompanyProfileTabState extends State<_CompanyProfileTab> {
   }
 }
 
-class _BrandingTab extends StatelessWidget {
-  const _BrandingTab();
+class _BrandingTab extends StatefulWidget {
+  final Map<String, dynamic> account;
+  const _BrandingTab({required this.account});
+  @override
+  State<_BrandingTab> createState() => _BrandingTabState();
+}
+
+class _BrandingTabState extends State<_BrandingTab> {
+  final _db = DatabaseService();
+  static const _swatches = [
+    0xFF071B33,
+    0xFFCC0000,
+    0xFF6366F1,
+    0xFF10B981,
+    0xFFF59E0B,
+    0xFFEC4899,
+    0xFF0EA5E9,
+    0xFF111827,
+  ];
+  late final Map<String, dynamic> _settings = Map<String, dynamic>.from(
+    widget.account['settings'] as Map? ?? {},
+  );
+  late int _selectedColor =
+      (_settings['branding_color'] as num?)?.toInt() ?? 0xFF071B33;
+  late final _titleCtl = TextEditingController(
+    text:
+        (_settings['branding_portal_title'] as String?) ??
+        'Welcome to your courier portal',
+  );
+  late final _senderCtl = TextEditingController(
+    text:
+        (_settings['branding_email_sender'] as String?) ??
+        'One Village Shipping & Freight',
+  );
+  late final _footerCtl = TextEditingController(
+    text:
+        (_settings['branding_email_footer'] as String?) ??
+        'Thank you for choosing us.',
+  );
+  late bool _showInEmails =
+      _settings['branding_show_in_emails'] as bool? ?? true;
+  late bool _allowPdfDownload =
+      _settings['branding_allow_pdf_download'] as bool? ?? true;
+  late bool _darkMode = _settings['branding_dark_mode'] as bool? ?? false;
+  bool _saving = false;
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _db.updatePartnerSettings(widget.account['id'] as String, {
+        'branding_color': _selectedColor,
+        'branding_portal_title': _titleCtl.text.trim(),
+        'branding_email_sender': _senderCtl.text.trim(),
+        'branding_email_footer': _footerCtl.text.trim(),
+        'branding_show_in_emails': _showInEmails,
+        'branding_allow_pdf_download': _allowPdfDownload,
+        'branding_dark_mode': _darkMode,
+      });
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Branding saved')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final swatches = [
-      const Color(0xFFCC0000),
-      const Color(0xFF6366F1),
-      const Color(0xFF10B981),
-      const Color(0xFFF59E0B),
-      const Color(0xFFEC4899),
-      const Color(0xFF0EA5E9),
-      const Color(0xFF111827),
-    ];
     return Column(
       children: [
         Expanded(
@@ -5072,14 +6383,28 @@ class _BrandingTab extends StatelessWidget {
                 Wrap(
                   spacing: 10,
                   children: [
-                    for (final c in swatches)
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: c,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: _border),
+                    for (final c in _swatches)
+                      InkWell(
+                        onTap: () => setState(() => _selectedColor = c),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: Color(c),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: _selectedColor == c ? _text : _border,
+                              width: _selectedColor == c ? 2 : 1,
+                            ),
+                          ),
+                          child: _selectedColor == c
+                              ? const Icon(
+                                  Icons.check,
+                                  color: Colors.white,
+                                  size: 18,
+                                )
+                              : null,
                         ),
                       ),
                   ],
@@ -5087,44 +6412,108 @@ class _BrandingTab extends StatelessWidget {
                 const SizedBox(height: 24),
                 _SettingsField(
                   label: 'Customer Portal Title',
-                  initial: 'Welcome to your courier portal',
+                  controller: _titleCtl,
                 ),
                 const SizedBox(height: 16),
                 _SettingsField(
                   label: 'Email Sender Name',
-                  initial: 'One Village Shipping & Freight',
+                  controller: _senderCtl,
                 ),
                 const SizedBox(height: 16),
                 _SettingsField(
                   label: 'Email Footer',
-                  initial: 'Thank you for choosing us.',
+                  controller: _footerCtl,
                   maxLines: 3,
                 ),
                 const SizedBox(height: 16),
                 _ToggleRow(
                   title: 'Show partner branding in customer emails',
-                  value: true,
+                  value: _showInEmails,
+                  onChanged: (v) => setState(() => _showInEmails = v),
                 ),
                 _ToggleRow(
                   title: 'Allow customers to download invoice PDFs',
-                  value: true,
+                  value: _allowPdfDownload,
+                  onChanged: (v) => setState(() => _allowPdfDownload = v),
                 ),
                 _ToggleRow(
                   title: 'Use dark mode in customer portal',
-                  value: false,
+                  value: _darkMode,
+                  onChanged: (v) => setState(() => _darkMode = v),
                 ),
               ],
             ),
           ),
         ),
-        const _SettingsSaveBar(),
+        _SettingsSaveBar(onSave: _save, saving: _saving),
       ],
     );
   }
 }
 
-class _TaxCurrencyTab extends StatelessWidget {
-  const _TaxCurrencyTab();
+class _TaxCurrencyTab extends StatefulWidget {
+  final Map<String, dynamic> account;
+  const _TaxCurrencyTab({required this.account});
+  @override
+  State<_TaxCurrencyTab> createState() => _TaxCurrencyTabState();
+}
+
+class _TaxCurrencyTabState extends State<_TaxCurrencyTab> {
+  final _db = DatabaseService();
+  late final Map<String, dynamic> _settings = Map<String, dynamic>.from(
+    widget.account['settings'] as Map? ?? {},
+  );
+  late final _primaryCtl = TextEditingController(
+    text:
+        (_settings['currency_primary'] as String?) ?? 'JMD — Jamaican Dollar',
+  );
+  late final _secondaryCtl = TextEditingController(
+    text: (_settings['currency_secondary'] as String?) ?? 'USD — US Dollar',
+  );
+  late final _gctCtl = TextEditingController(
+    text: (_settings['gct_rate'] ?? 15.0).toString(),
+  );
+  late final _dutyCtl = TextEditingController(
+    text: (_settings['rate_duty_percent'] ?? 20.0).toString(),
+  );
+  late final _levyCtl = TextEditingController(
+    text: (_settings['environmental_levy'] ?? 0.5).toString(),
+  );
+  late final _shippingRateCtl = TextEditingController(
+    text: (_settings['rate_sea_per_lb'] ?? 2.25).toString(),
+  );
+  late bool _applyGctToShipping =
+      _settings['apply_gct_to_shipping'] as bool? ?? true;
+  late bool _showInclusive = _settings['show_prices_inclusive'] as bool? ?? false;
+  bool _saving = false;
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _db.updatePartnerSettings(widget.account['id'] as String, {
+        'currency_primary': _primaryCtl.text.trim(),
+        'currency_secondary': _secondaryCtl.text.trim(),
+        'gct_rate': double.tryParse(_gctCtl.text) ?? 15.0,
+        'rate_duty_percent': double.tryParse(_dutyCtl.text) ?? 20.0,
+        'environmental_levy': double.tryParse(_levyCtl.text) ?? 0.5,
+        'rate_sea_per_lb': double.tryParse(_shippingRateCtl.text) ?? 2.25,
+        'apply_gct_to_shipping': _applyGctToShipping,
+        'show_prices_inclusive': _showInclusive,
+      });
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Currency & tax settings saved')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -5136,19 +6525,19 @@ class _TaxCurrencyTab extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  children: const [
+                  children: [
                     Expanded(
                       child: _SettingsField(
                         label: 'Default Currency',
-                        initial: 'JMD — Jamaican Dollar',
+                        controller: _primaryCtl,
                         icon: Icons.attach_money,
                       ),
                     ),
-                    SizedBox(width: 12),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: _SettingsField(
                         label: 'Secondary Currency',
-                        initial: 'USD — US Dollar',
+                        controller: _secondaryCtl,
                         icon: Icons.attach_money,
                       ),
                     ),
@@ -5156,42 +6545,50 @@ class _TaxCurrencyTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Row(
-                  children: const [
+                  children: [
                     Expanded(
                       child: _SettingsField(
                         label: 'GCT Rate (%)',
-                        initial: '15.0',
+                        controller: _gctCtl,
                       ),
                     ),
-                    SizedBox(width: 12),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: _SettingsField(
                         label: 'Customs Duty Rate (%)',
-                        initial: '20.0',
+                        controller: _dutyCtl,
                       ),
                     ),
-                    SizedBox(width: 12),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: _SettingsField(
                         label: 'Environmental Levy (%)',
-                        initial: '0.5',
+                        controller: _levyCtl,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
                 _SettingsField(
-                  label: 'Default Shipping Rate (per lb)',
-                  initial: '\$3.50 USD',
+                  label: 'Default Shipping Rate (\$ / lb)',
+                  controller: _shippingRateCtl,
                 ),
                 const SizedBox(height: 16),
-                _ToggleRow(title: 'Apply GCT to shipping fees', value: true),
-                _ToggleRow(title: 'Show prices inclusive of tax', value: false),
+                _ToggleRow(
+                  title: 'Apply GCT to shipping fees',
+                  value: _applyGctToShipping,
+                  onChanged: (v) => setState(() => _applyGctToShipping = v),
+                ),
+                _ToggleRow(
+                  title: 'Show prices inclusive of tax',
+                  value: _showInclusive,
+                  onChanged: (v) => setState(() => _showInclusive = v),
+                ),
               ],
             ),
           ),
         ),
-        const _SettingsSaveBar(),
+        _SettingsSaveBar(onSave: _save, saving: _saving),
       ],
     );
   }
@@ -5199,24 +6596,70 @@ class _TaxCurrencyTab extends StatelessWidget {
 
 class _IntegrationsTab extends StatelessWidget {
   const _IntegrationsTab();
+
+  static const _items = [
+    ('Stripe', 'Payment processing', Icons.credit_card),
+    ('PayPal', 'Alternate payments', Icons.account_balance_wallet),
+    ('DHL', 'Shipping carrier', Icons.local_shipping),
+    ('FedEx', 'Shipping carrier', Icons.local_shipping),
+    ('Twilio', 'SMS notifications', Icons.sms),
+    ('SendGrid', 'Transactional email', Icons.mail),
+    ('QuickBooks', 'Accounting sync', Icons.account_balance),
+    ('Zapier', 'Workflow automations', Icons.bolt),
+  ];
+
+  void _showNotAvailable(BuildContext context, String name) {
+    showDialog(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: Text('$name — not connected'),
+        content: Text(
+          'This integration isn\'t available yet — it needs real $name API '
+          'credentials to connect, which haven\'t been set up for this '
+          'account. No live connection exists today, so nothing here is '
+          'processing real payments, carriers, messages, or data.',
+        ),
+        actions: [
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+            onPressed: () => Navigator.of(dctx).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final items = [
-      ('Stripe', 'Payment processing', Icons.credit_card, true),
-      ('PayPal', 'Alternate payments', Icons.account_balance_wallet, false),
-      ('DHL', 'Shipping carrier', Icons.local_shipping, true),
-      ('FedEx', 'Shipping carrier', Icons.local_shipping, false),
-      ('Twilio', 'SMS notifications', Icons.sms, true),
-      ('SendGrid', 'Transactional email', Icons.mail, true),
-      ('QuickBooks', 'Accounting sync', Icons.account_balance, false),
-      ('Zapier', 'Workflow automations', Icons.bolt, false),
-    ];
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final i in items)
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: AppTheme.warning.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.warning.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: AppTheme.warning, size: 16),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'None of these are connected yet. Adding one requires '
+                    'real credentials from that provider.',
+                    style: TextStyle(fontSize: 12, color: _textSoft),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          for (final i in _items)
             Container(
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(14),
@@ -5256,34 +6699,14 @@ class _IntegrationsTab extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (i.$4)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.success.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text(
-                        'Connected',
-                        style: TextStyle(
-                          color: AppTheme.success,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    )
-                  else
-                    OutlinedButton(
-                      onPressed: () {},
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _text,
-                        side: const BorderSide(color: _border),
-                      ),
-                      child: const Text('Connect'),
+                  OutlinedButton(
+                    onPressed: () => _showNotAvailable(context, i.$1),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _text,
+                      side: const BorderSide(color: _border),
                     ),
+                    child: const Text('Connect'),
+                  ),
                 ],
               ),
             ),
@@ -5293,15 +6716,93 @@ class _IntegrationsTab extends StatelessWidget {
   }
 }
 
-class _UserManagementTab extends StatelessWidget {
-  const _UserManagementTab();
+class _UserManagementTab extends StatefulWidget {
+  final Map<String, dynamic> account;
+  const _UserManagementTab({required this.account});
+  @override
+  State<_UserManagementTab> createState() => _UserManagementTabState();
+}
+
+class _UserManagementTabState extends State<_UserManagementTab> {
+  final _db = DatabaseService();
+  List<Map<String, dynamic>> _staff = [];
+  bool _loading = true;
+  static const _roleOptions = ['Admin', 'Manager', 'Cashier', 'Read-only'];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final partnerId = widget.account['id']?.toString();
+    if (partnerId == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    final staff = await _db.getPartnerStaff(partnerId);
+    if (!mounted) return;
+    setState(() {
+      _staff = staff;
+      _loading = false;
+    });
+  }
+
+  Future<void> _invite() async {
+    final result = await _showFormDialog(
+      context,
+      title: 'Invite User',
+      fields: const [
+        _FormField('name', 'Name', hint: 'Full name'),
+        _FormField('email', 'Email', hint: 'name@example.com'),
+        _FormField('role', 'Role', options: _roleOptions),
+      ],
+      confirmLabel: 'Invite',
+    );
+    if (result == null ||
+        result['name']!.isEmpty ||
+        result['email']!.isEmpty) {
+      return;
+    }
+    final partnerId = widget.account['id']?.toString();
+    if (partnerId == null) return;
+    await _db.insertPartnerStaff({
+      'partner_id': partnerId,
+      'name': result['name'],
+      'email': result['email'],
+      'role': result['role'],
+      'status': 'invited',
+    });
+    _load();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${result['name']} added as a pending team member. Separate '
+          'staff logins aren\'t wired up yet — share your account login '
+          'directly for now.',
+        ),
+      ),
+    );
+  }
+
+  Color _roleColor(String? role) {
+    switch (role) {
+      case 'Admin':
+        return AppTheme.success;
+      case 'Manager':
+        return AppTheme.accent;
+      default:
+        return _muted;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final users = [
-      ('Owner Account', 'owner@example.com', 'Owner', AppTheme.primary),
-      ('Operations Manager', 'ops@example.com', 'Admin', AppTheme.success),
-      ('Front Desk', 'desk@example.com', 'Cashier', _muted),
-    ];
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    final ownerName = (widget.account['contact_name'] as String?)?.trim();
+    final ownerEmail = (widget.account['email'] as String?) ?? '';
     return Column(
       children: [
         Padding(
@@ -5319,7 +6820,7 @@ class _UserManagementTab extends StatelessWidget {
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: _invite,
                 icon: const Icon(Icons.person_add, size: 16),
                 label: const Text('Invite User'),
                 style: ElevatedButton.styleFrom(
@@ -5331,85 +6832,117 @@ class _UserManagementTab extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: ListView.separated(
+          child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: users.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) {
-              final u = users[i];
-              return Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _border),
+            children: [
+              _UserRow(
+                name: (ownerName?.isNotEmpty ?? false)
+                    ? ownerName!
+                    : 'Owner Account',
+                email: ownerEmail,
+                role: 'Owner',
+                color: AppTheme.primary,
+              ),
+              const SizedBox(height: 8),
+              for (final u in _staff) ...[
+                _UserRow(
+                  name: _s(u['name']),
+                  email: _s(u['email']),
+                  role:
+                      '${_s(u['role'])} · ${u['status'] == 'active' ? 'Active' : 'Invited'}',
+                  color: _roleColor(u['role'] as String?),
+                  onRemove: () async {
+                    if (!await _confirmDelete(
+                      context,
+                      'team member "${u['name']}"',
+                    )) {
+                      return;
+                    }
+                    await _db.deletePartnerStaff(u['id'] as String);
+                    _load();
+                  },
                 ),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      backgroundColor: u.$4.withValues(alpha: 0.15),
-                      child: Text(
-                        u.$1.substring(0, 1),
-                        style: TextStyle(
-                          color: u.$4,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            u.$1,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: _text,
-                            ),
-                          ),
-                          Text(
-                            u.$2,
-                            style: TextStyle(fontSize: 12, color: _muted),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: u.$4.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        u.$3,
-                        style: TextStyle(
-                          color: u.$4,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () {},
-                      icon: const Icon(
-                        Icons.more_vert,
-                        size: 18,
-                        color: _muted,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
+                const SizedBox(height: 8),
+              ],
+            ],
           ),
         ),
         const SizedBox(height: 16),
       ],
+    );
+  }
+}
+
+class _UserRow extends StatelessWidget {
+  final String name;
+  final String email;
+  final String role;
+  final Color color;
+  final VoidCallback? onRemove;
+  const _UserRow({
+    required this.name,
+    required this.email,
+    required this.role,
+    required this.color,
+    this.onRemove,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _border),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: color.withValues(alpha: 0.15),
+            child: Text(
+              name.isEmpty ? '?' : name.substring(0, 1),
+              style: TextStyle(color: color, fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: _text,
+                  ),
+                ),
+                Text(email, style: TextStyle(fontSize: 12, color: _muted)),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              role,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          if (onRemove != null)
+            IconButton(
+              onPressed: onRemove,
+              icon: const Icon(Icons.delete_outline, size: 18, color: _muted),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -5424,52 +6957,87 @@ class _ApiKeysTab extends StatefulWidget {
 
 class _ApiKeysTabState extends State<_ApiKeysTab> {
   final _db = DatabaseService();
-  late String _apiKey =
-      (widget.account['api_key'] as String?) ??
-      'sk_live_${(widget.account['id']?.toString() ?? 'XXXXXXXX').substring(0, 8)}';
+  late String? _apiKey = widget.account['api_key'] as String?;
   bool _regenerating = false;
+  bool _saving = false;
+  late final Map<String, dynamic> _settings = Map<String, dynamic>.from(
+    widget.account['settings'] as Map? ?? {},
+  );
+  late final _webhookCtl = TextEditingController(
+    text: (_settings['webhook_url'] as String?) ?? '',
+  );
+  late final _rateLimitCtl = TextEditingController(
+    text: (_settings['rate_limit'] ?? 120).toString(),
+  );
 
+  /// Cryptographically-secure key — Random() (the non-`.secure()` default)
+  /// is a predictable PRNG, not safe for anything used as a credential.
   String _generateApiKey() {
-    final rand = DateTime.now().microsecondsSinceEpoch;
-    final chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    final rand = Random.secure();
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     final buf = StringBuffer('sk_live_');
-    var seed = rand;
     for (var i = 0; i < 32; i++) {
-      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-      buf.write(chars[seed % chars.length]);
+      buf.write(chars[rand.nextInt(chars.length)]);
     }
     return buf.toString();
   }
 
+  Future<void> _saveWebhookSettings() async {
+    setState(() => _saving = true);
+    try {
+      await _db.updatePartnerSettings(widget.account['id'] as String, {
+        'webhook_url': _webhookCtl.text.trim(),
+        'rate_limit': int.tryParse(_rateLimitCtl.text) ?? 120,
+      });
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Webhook settings saved')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+    }
+  }
+
   Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: _apiKey));
+    final key = _apiKey;
+    if (key == null) return;
+    await Clipboard.setData(ClipboardData(text: key));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('API key copied to clipboard')),
     );
   }
 
-  Future<void> _regenerate() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Regenerate API key?'),
-        content: const Text(
-          'The existing key will stop working immediately. Any integration using it must be updated.',
+  Future<void> _generateOrRegenerate() async {
+    if (_apiKey != null) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Regenerate API key?'),
+          content: const Text(
+            'The existing key will stop working immediately. Any '
+            'integration using it must be updated.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Regenerate'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Regenerate'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
+      );
+      if (confirm != true) return;
+    }
+    final wasEmpty = _apiKey == null;
     setState(() => _regenerating = true);
     final newKey = _generateApiKey();
     try {
@@ -5480,13 +7048,15 @@ class _ApiKeysTabState extends State<_ApiKeysTab> {
         _regenerating = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('API key regenerated')),
+        SnackBar(
+          content: Text(wasEmpty ? 'API key generated' : 'API key regenerated'),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
       setState(() => _regenerating = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to regenerate key: $e')),
+        SnackBar(content: Text('Failed to generate key: $e')),
       );
     }
   }
@@ -5494,127 +7064,181 @@ class _ApiKeysTabState extends State<_ApiKeysTab> {
   @override
   Widget build(BuildContext context) {
     final apiKey = _apiKey;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTheme.warning.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: AppTheme.warning.withValues(alpha: 0.3),
-              ),
-            ),
-            child: Row(
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(Icons.warning_amber, color: AppTheme.warning, size: 18),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Treat your API keys like passwords. Never commit them to source control.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _textSoft,
-                      fontWeight: FontWeight.w600,
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.warning.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppTheme.warning.withValues(alpha: 0.3),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: _border),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Live API Key',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _text,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _panelBg,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: _border),
-                        ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.warning_amber,
+                        color: AppTheme.warning,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
                         child: Text(
-                          apiKey,
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 13,
-                            color: _text,
+                          'Treat your API keys like passwords. Never commit '
+                          'them to source control.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _textSoft,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: _copy,
-                      icon: const Icon(Icons.copy, size: 14),
-                      label: const Text('Copy'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _text,
-                        side: const BorderSide(color: _border),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: _regenerating ? null : _regenerate,
-                      icon: _regenerating
-                          ? const SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.refresh, size: 14),
-                      label: const Text('Regenerate'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.danger,
-                        side: BorderSide(
-                          color: AppTheme.danger.withValues(alpha: 0.5),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: _border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Live API Key',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: _text,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      if (apiKey == null)
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'No key generated yet.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: _muted,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                            FilledButton.icon(
+                              onPressed: _regenerating
+                                  ? null
+                                  : _generateOrRegenerate,
+                              icon: _regenerating
+                                  ? const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(Icons.key, size: 14),
+                              label: const Text('Generate API Key'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppTheme.primary,
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _panelBg,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: _border),
+                                ),
+                                child: Text(
+                                  apiKey,
+                                  style: const TextStyle(
+                                    fontFamily: 'monospace',
+                                    fontSize: 13,
+                                    color: _text,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: _copy,
+                              icon: const Icon(Icons.copy, size: 14),
+                              label: const Text('Copy'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _text,
+                                side: const BorderSide(color: _border),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: _regenerating
+                                  ? null
+                                  : _generateOrRegenerate,
+                              icon: _regenerating
+                                  ? const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.refresh, size: 14),
+                              label: const Text('Regenerate'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppTheme.danger,
+                                side: BorderSide(
+                                  color: AppTheme.danger.withValues(
+                                    alpha: 0.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _SettingsField(
+                  label: 'Webhook Endpoint URL',
+                  hint: 'https://yourdomain.com/webhooks/applizone',
+                  controller: _webhookCtl,
+                  icon: Icons.webhook,
+                ),
+                const SizedBox(height: 12),
+                _SettingsField(
+                  label: 'Rate Limit (requests / minute)',
+                  controller: _rateLimitCtl,
+                  icon: Icons.speed,
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          const _SettingsField(
-            label: 'Webhook Endpoint URL',
-            hint: 'https://yourdomain.com/webhooks/applizone',
-            icon: Icons.webhook,
-          ),
-          const SizedBox(height: 12),
-          const _SettingsField(
-            label: 'Rate Limit (requests / minute)',
-            initial: '120',
-            icon: Icons.speed,
-          ),
-        ],
-      ),
+        ),
+        _SettingsSaveBar(onSave: _saveWebhookSettings, saving: _saving),
+      ],
     );
   }
 }
@@ -5622,13 +7246,20 @@ class _ApiKeysTabState extends State<_ApiKeysTab> {
 class _ToggleRow extends StatefulWidget {
   final String title;
   final bool value;
-  const _ToggleRow({required this.title, required this.value});
+  final ValueChanged<bool>? onChanged;
+  const _ToggleRow({required this.title, required this.value, this.onChanged});
   @override
   State<_ToggleRow> createState() => _ToggleRowState();
 }
 
 class _ToggleRowState extends State<_ToggleRow> {
   late bool _val = widget.value;
+  @override
+  void didUpdateWidget(_ToggleRow old) {
+    super.didUpdateWidget(old);
+    if (old.value != widget.value) _val = widget.value;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -5643,7 +7274,10 @@ class _ToggleRowState extends State<_ToggleRow> {
           ),
           Switch(
             value: _val,
-            onChanged: (v) => setState(() => _val = v),
+            onChanged: (v) {
+              setState(() => _val = v);
+              widget.onChanged?.call(v);
+            },
             activeThumbColor: AppTheme.primary,
           ),
         ],
