@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'services/database_service.dart';
 import 'services/supabase_config.dart';
 import 'services/live_data_service.dart';
 import 'services/tenant_service.dart';
@@ -68,8 +69,48 @@ class _TeamPortalRoot extends StatefulWidget {
 }
 
 class _TeamPortalRootState extends State<_TeamPortalRoot> {
+  final _db = DatabaseService();
   bool _loggedIn = false;
-  bool _loadingData = false;
+  // Starts true: a page refresh reruns main() and rebuilds this widget
+  // from scratch, but Supabase's own auth session persists in the
+  // browser regardless — without checking for it first, we'd flash (or
+  // outright show) the login screen for an admin who is still validly
+  // signed in. Stays true until _restoreSession decides one way or the
+  // other, so nothing is shown until that's settled.
+  bool _loadingData = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreSession();
+  }
+
+  Future<void> _restoreSession() async {
+    try {
+      if (_db.isAuthenticated) {
+        final admin = await _db.getAdminUser(_db.currentUser!.id);
+        if (admin != null && admin['is_active'] != false) {
+          await LiveDataService().load();
+          if (!mounted) return;
+          setState(() {
+            _loggedIn = true;
+            _loadingData = false;
+          });
+          return;
+        }
+        // A session exists but isn't a valid, active admin — e.g. a
+        // partner/customer session from the same browser, or a
+        // deactivated admin account. Don't trust it here; make sure it's
+        // actually cleared rather than leaving a half-authenticated state.
+        await _db.signOut();
+      }
+    } catch (e) {
+      // ignore: avoid_print
+      print('[TeamPortal] session restore failed: $e');
+    }
+    if (!mounted) return;
+    setState(() => _loadingData = false);
+  }
 
   Future<void> _handleLogin() async {
     setState(() => _loadingData = true);
@@ -86,6 +127,12 @@ class _TeamPortalRootState extends State<_TeamPortalRoot> {
     });
   }
 
+  Future<void> _handleLogout() async {
+    await _db.signOut();
+    if (!mounted) return;
+    setState(() => _loggedIn = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loadingData) {
@@ -94,7 +141,7 @@ class _TeamPortalRootState extends State<_TeamPortalRoot> {
     if (!_loggedIn) {
       return LoginScreen(onLogin: _handleLogin);
     }
-    return MainShell(onLogout: () => setState(() => _loggedIn = false));
+    return MainShell(onLogout: _handleLogout);
   }
 }
 
