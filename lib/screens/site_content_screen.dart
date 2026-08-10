@@ -27,6 +27,7 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
   late List<Key> _serviceKeys;
   late List<Key> _whyKeys;
   late List<Key> _statKeys;
+  late List<Key> _socialKeys;
   int _formVersion = 0;
 
   @override
@@ -45,6 +46,7 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
     _serviceKeys = List.generate(_servicesItems.length, (_) => UniqueKey());
     _whyKeys = List.generate(_whyItems.length, (_) => UniqueKey());
     _statKeys = List.generate(_statsItems.length, (_) => UniqueKey());
+    _socialKeys = List.generate(_socialItems.length, (_) => UniqueKey());
   }
 
   Map<String, dynamic> _sec(String key) =>
@@ -55,6 +57,8 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
       (_sec('whyChooseUs')['items'] as List).cast<Map<String, dynamic>>();
   List<Map<String, dynamic>> get _statsItems =>
       (_sec('stats')['items'] as List).cast<Map<String, dynamic>>();
+  List<Map<String, dynamic>> get _socialItems =>
+      (_sec('social')['items'] as List).cast<Map<String, dynamic>>();
 
   Future<void> _load() async {
     setState(() => _loading = true);
@@ -190,6 +194,8 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
                     _ctaSection(),
                     const SizedBox(height: 20),
                     _footerContactSection(),
+                    const SizedBox(height: 20),
+                    _socialSection(),
                     const SizedBox(height: 20),
                     _dialogsSection(),
                     const SizedBox(height: 40),
@@ -510,6 +516,55 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
             _Field(label: 'Email', initial: contact['email'], onChanged: (v) => contact['email'] = v),
           ),
           _Field(label: 'Address', initial: contact['address'], onChanged: (v) => contact['address'] = v),
+        ],
+      ),
+    );
+  }
+
+  // ─── Social media ──────────────────────────────────────────────────────
+
+  Widget _socialSection() {
+    final items = _socialItems;
+    return _Section(
+      title: 'Social media',
+      subtitle:
+          'The icon row in the footer. Leave a link blank to show a "coming soon" message instead of opening it — add a link once the page is live.',
+      child: Column(
+        children: [
+          for (var i = 0; i < items.length; i++)
+            KeyedSubtree(
+              key: _socialKeys[i],
+              child: _ItemCard(
+                title: 'Social link ${i + 1}',
+                onRemove: () => _removeItem(items, _socialKeys, i),
+                child: Column(
+                  children: [
+                    _fieldRow(
+                      _IconPicker(label: 'Icon', initial: items[i]['icon'] as String? ?? '', onChanged: (v) => items[i]['icon'] = v),
+                      _Field(label: 'Platform / handle', initial: items[i]['label'], hint: 'e.g. Instagram or @onevillageshipping', onChanged: (v) => items[i]['label'] = v),
+                    ),
+                    _Field(
+                      label: 'Profile URL (blank = "coming soon" instead of a link)',
+                      initial: items[i]['url'],
+                      hint: 'https://…',
+                      onChanged: (v) => items[i]['url'] = v,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _addItem(items, _socialKeys, {
+                'icon': 'language',
+                'label': 'New Platform',
+                'url': '',
+              }),
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add social link'),
+            ),
+          ),
         ],
       ),
     );

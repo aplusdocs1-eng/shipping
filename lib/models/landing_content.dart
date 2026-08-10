@@ -92,6 +92,15 @@ class LandingContent {
     'track_changes': Icons.track_changes_outlined,
     'payments': Icons.payments_outlined,
     'person': Icons.person_outline,
+    // Social platforms — Material has no literal brand marks, these are
+    // the closest built-in approximations.
+    'camera_alt': Icons.camera_alt_outlined,
+    'music_note': Icons.music_note_outlined,
+    'facebook': Icons.facebook,
+    'alternate_email': Icons.alternate_email,
+    'chat': Icons.chat_bubble_outline,
+    'play_circle': Icons.play_circle_outline,
+    'language': Icons.language,
   };
 
   static IconData iconFor(String key, IconData fallback) =>
@@ -126,6 +135,13 @@ class LandingContent {
     'track_changes',
     'payments',
     'person',
+    'camera_alt',
+    'music_note',
+    'facebook',
+    'alternate_email',
+    'chat',
+    'play_circle',
+    'language',
   ];
 
   // ─── Defaults ──────────────────────────────────────────────────────────
@@ -265,6 +281,14 @@ class LandingContent {
       'tagline':
           'Your trusted partner for shipping, freight, and delivery solutions worldwide.',
       'copyrightName': 'One Village Shipping & Freight LLC',
+    },
+    // A social icon with a blank url shows the existing "coming soon"
+    // popup instead of opening nothing — see LandingScreen._handleSocialTap.
+    'social': {
+      'items': [
+        {'icon': 'camera_alt', 'label': 'Instagram', 'url': ''},
+        {'icon': 'music_note', 'label': 'TikTok', 'url': ''},
+      ],
     },
     'about': {
       'body':

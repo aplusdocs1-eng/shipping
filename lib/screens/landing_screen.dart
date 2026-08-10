@@ -1,3 +1,4 @@
+import 'dart:html' as html;
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/landing_content.dart';
@@ -140,6 +141,17 @@ class _LandingScreenState extends State<LandingScreen> {
     );
   }
 
+  /// A social icon with a real URL set opens it in a new tab; one left
+  /// blank (the default, until an admin fills it in on the Site Content
+  /// page) falls back to the "coming soon" popup instead of a dead link.
+  void _handleSocialTap(String label, String url) {
+    if (url.trim().isEmpty) {
+      _showSocialComingSoon(label.isEmpty ? 'Social' : label);
+      return;
+    }
+    html.window.open(url, '_blank');
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
@@ -188,7 +200,7 @@ class _LandingScreenState extends State<LandingScreen> {
               onServices: () => _scrollToKey(_servicesKey),
               onContact: () => _showInfoDialog('Contact Us', _contactBody()),
               onServiceTap: _showServiceDialog,
-              onSocialTap: _showSocialComingSoon,
+              onSocialTap: _handleSocialTap,
             ),
           ],
         ),
@@ -1225,7 +1237,7 @@ class _Footer extends StatelessWidget {
   final VoidCallback onServices;
   final VoidCallback onContact;
   final ValueChanged<String> onServiceTap;
-  final ValueChanged<String> onSocialTap;
+  final void Function(String label, String url) onSocialTap;
   const _Footer({
     required this.content,
     required this.onHome,
@@ -1304,11 +1316,19 @@ class _Footer extends StatelessWidget {
                       const SizedBox(height: 10),
                       _FooterContactRow(Icons.email_outlined, content.str('contact', 'email')),
                       const SizedBox(height: 16),
-                      Row(
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 8,
                         children: [
-                          _SocialIcon(Icons.camera_alt_outlined, onTap: () => onSocialTap('Instagram')),
-                          const SizedBox(width: 10),
-                          _SocialIcon(Icons.music_note_outlined, onTap: () => onSocialTap('TikTok')),
+                          for (final s in content.list('social', 'items'))
+                            _SocialIcon(
+                              LandingContent.iconFor((s['icon'] as String?) ?? '', Icons.public),
+                              label: (s['label'] as String?) ?? '',
+                              onTap: () => onSocialTap(
+                                (s['label'] as String?) ?? '',
+                                (s['url'] as String?) ?? '',
+                              ),
+                            ),
                         ],
                       ),
                     ],
@@ -1433,12 +1453,15 @@ class _FooterContactRow extends StatelessWidget {
 
 class _SocialIcon extends StatelessWidget {
   final IconData icon;
+  final String label;
   final VoidCallback onTap;
-  const _SocialIcon(this.icon, {required this.onTap});
+  const _SocialIcon(this.icon, {this.label = '', required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Material(
+    return Tooltip(
+      message: label,
+      child: Material(
       color: LandingScreen.yellow,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
@@ -1450,6 +1473,7 @@ class _SocialIcon extends StatelessWidget {
           alignment: Alignment.center,
           child: Icon(icon, size: 16, color: LandingScreen.navy),
         ),
+      ),
       ),
     );
   }
