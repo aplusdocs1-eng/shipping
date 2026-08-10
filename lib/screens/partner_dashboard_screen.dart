@@ -923,6 +923,8 @@ class _DashboardPage extends StatelessWidget {
         children: [
           _MobileAppBanner(onNavigate: onNavigate),
           const SizedBox(height: 16),
+          _ShareLinkCard(account: account),
+          const SizedBox(height: 16),
           _StatRow(stats: stats),
           const SizedBox(height: 16),
           _GrowthChartCard(stats: stats),
@@ -976,6 +978,188 @@ class _MobileAppBanner extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ShareLinkCard extends StatelessWidget {
+  final Map<String, dynamic> account;
+  const _ShareLinkCard({required this.account});
+
+  String get _code => ((account['tracking_prefix'] as String?) ?? '')
+      .replaceAll('-', '')
+      .toUpperCase();
+
+  String get _quickLink => '${Uri.base.origin}/?partner=$_code#/customer-login';
+
+  String? get _customDomainLink {
+    final domain = (account['domain'] as String?)?.trim();
+    if (domain == null || domain.isEmpty) return null;
+    return 'https://$domain/#/customer-login';
+  }
+
+  String get _domainStatus => (account['domain_status'] as String?) ?? 'unset';
+
+  Future<void> _copy(BuildContext context, String url, String label) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$label link copied')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_code.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _border),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, size: 16, color: AppTheme.warning),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Set a tracking prefix in Settings → Company to get a '
+                'shareable customer portal link.',
+                style: TextStyle(fontSize: 12, color: _muted),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    final customLink = _customDomainLink;
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.share, size: 18, color: AppTheme.primary),
+              const SizedBox(width: 8),
+              const Text(
+                'Share With Your Customers',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: _text,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Send this link to your customers so they can sign up, submit '
+            'pre-alerts, and track their own packages.',
+            style: TextStyle(fontSize: 12, color: _muted),
+          ),
+          const SizedBox(height: 14),
+          _LinkRow(
+            label: 'Quick Share Link',
+            sublabel: 'Works right now — no setup needed',
+            url: _quickLink,
+            onCopy: () => _copy(context, _quickLink, 'Quick share'),
+          ),
+          if (customLink != null) ...[
+            const SizedBox(height: 12),
+            _LinkRow(
+              label: 'Your Domain',
+              sublabel: _domainStatus == 'verified'
+                  ? 'Verified — this is your branded link'
+                  : 'DNS setup pending — see Settings → Company',
+              url: customLink,
+              onCopy: () => _copy(context, customLink, 'Custom domain'),
+            ),
+          ] else ...[
+            const SizedBox(height: 10),
+            Text(
+              'Want your own domain instead of the link above? Add one in '
+              'Settings → Company.',
+              style: TextStyle(fontSize: 11, color: _muted),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LinkRow extends StatelessWidget {
+  final String label;
+  final String sublabel;
+  final String url;
+  final VoidCallback onCopy;
+  const _LinkRow({
+    required this.label,
+    required this.sublabel,
+    required this.url,
+    required this.onCopy,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: _textSoft,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: _panelBg,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: _border),
+                ),
+                child: Text(
+                  url,
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    color: _text,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: onCopy,
+              icon: const Icon(Icons.copy, size: 14),
+              label: const Text('Copy'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _text,
+                side: const BorderSide(color: _border),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(sublabel, style: TextStyle(fontSize: 11, color: _muted)),
+      ],
     );
   }
 }

@@ -71,19 +71,35 @@ class TenantService {
     } catch (_) {
       _host = '';
     }
-    if (_host.isEmpty || _adminHosts.contains(_host)) {
-      return;
+    if (_host.isNotEmpty && !_adminHosts.contains(_host)) {
+      try {
+        final res = await Supabase.instance.client.rpc(
+          'get_partner_by_domain',
+          params: {'p_domain': _host},
+        );
+        if (res is List && res.isNotEmpty) {
+          _partner = Map<String, dynamic>.from(res.first as Map);
+          return;
+        }
+      } catch (_) {
+        // Fall through to the code-based lookup below.
+      }
     }
+    // Fallback: a `?partner=CODE` query param scopes the app to a partner
+    // on the shared/admin domain — lets a partner share a working
+    // customer-facing link immediately, before (or instead of) setting up
+    // a custom domain, which needs DNS access they may not have yet.
+    final code = Uri.base.queryParameters['partner'];
+    if (code == null || code.trim().isEmpty) return;
     try {
       final res = await Supabase.instance.client.rpc(
-        'get_partner_by_domain',
-        params: {'p_domain': _host},
+        'get_partner_by_code',
+        params: {'p_code': code.trim()},
       );
       if (res is List && res.isNotEmpty) {
         _partner = Map<String, dynamic>.from(res.first as Map);
       }
     } catch (_) {
-      // If the RPC is unavailable, behave as admin host.
       _partner = null;
     }
   }
