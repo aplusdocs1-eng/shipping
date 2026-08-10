@@ -1263,10 +1263,10 @@ class _ZoneOverview extends StatelessWidget {
             children: zones.map((zone) {
               final pct = zone.usedSlots / zone.totalSlots;
               final barColor = pct >= 0.9
-                  ? const Color(0xFFEF4444)
+                  ? AppTheme.danger
                   : pct >= 0.6
-                  ? const Color(0xFFF59E0B)
-                  : const Color(0xFF10B981);
+                  ? AppTheme.warning
+                  : AppTheme.success;
 
               return Expanded(
                 child: Container(

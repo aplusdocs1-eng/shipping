@@ -445,7 +445,7 @@ class _ApplizoneConnectionCard extends StatelessWidget {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: const Color(0xFF1e293b),
+              color: AppTheme.primary,
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Center(
@@ -523,7 +523,7 @@ class _ApplizoneConnectionCard extends StatelessWidget {
               icon: const Icon(Icons.link, size: 18),
               label: const Text('Connect'),
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF1e293b),
+                backgroundColor: AppTheme.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
@@ -563,7 +563,7 @@ class _ApplizoneConnectionCard extends StatelessWidget {
                       width: 64,
                       height: 64,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1e293b),
+                        color: AppTheme.primary,
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: const Center(
@@ -752,7 +752,7 @@ class _ApplizoneConnectionCard extends StatelessWidget {
                                 }
                               },
                         style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF1e293b),
+                          backgroundColor: AppTheme.primary,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
