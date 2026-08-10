@@ -85,16 +85,21 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
         partnerId != null
             ? _db.getInvoicesByPartner(partnerId)
             : _db.getInvoices(),
+        prefix.isNotEmpty
+            ? _db.getWarehouseEntriesByPrefix(prefix)
+            : Future.value(<Map<String, dynamic>>[]),
       ]);
       final customers = results[0];
       final packages = results[1];
       final invoices = results[2];
+      final warehouseEntries = results[3];
       if (!mounted) return;
       setState(() {
         _stats = _PartnerStats.from(
           customers: customers,
           packages: packages,
           invoices: invoices,
+          warehouseEntries: warehouseEntries,
         );
       });
     } catch (e) {
@@ -959,6 +964,8 @@ class _DashboardPage extends StatelessWidget {
         children: [
           _MobileAppBanner(onNavigate: onNavigate),
           const SizedBox(height: 16),
+          _CourierChargesCard(stats: stats, onNavigate: onNavigate),
+          const SizedBox(height: 16),
           _ShareLinkCard(account: account),
           const SizedBox(height: 16),
           _StatRow(stats: stats),
@@ -1012,6 +1019,82 @@ class _MobileAppBanner extends StatelessWidget {
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CourierChargesCard extends StatelessWidget {
+  final _PartnerStats? stats;
+  final ValueChanged<String>? onNavigate;
+  const _CourierChargesCard({required this.stats, this.onNavigate});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = stats;
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppTheme.warning.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.receipt_long, color: AppTheme.warning),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Owed to One Village',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: _muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  s == null
+                      ? '—'
+                      : '\$${s.amountOwedToOneVillage.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: _text,
+                  ),
+                ),
+                Text(
+                  s == null
+                      ? 'Warehouse processing charges for your packages'
+                      : (s.unpaidChargeCount == 0
+                            ? 'No outstanding charges'
+                            : '${s.unpaidChargeCount} package${s.unpaidChargeCount == 1 ? '' : 's'} billed, not yet paid'),
+                  style: TextStyle(fontSize: 12, color: _muted),
+                ),
+              ],
+            ),
+          ),
+          if (s != null && s.unpaidChargeCount > 0)
+            OutlinedButton(
+              onPressed: () => onNavigate?.call('Receivals'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.primary,
+                side: const BorderSide(color: AppTheme.primary),
+              ),
+              child: const Text('Review & Pay'),
+            ),
         ],
       ),
     );
@@ -2065,6 +2148,13 @@ class _PartnerStats {
   // being able to show a single hardcoded 7-day window.
   final List<DateTime> packageDates;
   final List<DateTime> customerDates;
+  // What One Village has billed this courier for warehouse-processed
+  // packages (see warehouse_entries.partner_charge_*) — separate from
+  // totalRevenue/invoices above, which is this courier billing *their*
+  // own customers.
+  final double amountOwedToOneVillage;
+  final double amountPaidToOneVillage;
+  final int unpaidChargeCount;
 
   _PartnerStats({
     required this.totalCustomers,
@@ -2085,12 +2175,16 @@ class _PartnerStats {
     required this.inactiveCustomers,
     required this.packageDates,
     required this.customerDates,
+    required this.amountOwedToOneVillage,
+    required this.amountPaidToOneVillage,
+    required this.unpaidChargeCount,
   });
 
   factory _PartnerStats.from({
     required List<Map<String, dynamic>> customers,
     required List<Map<String, dynamic>> packages,
     required List<Map<String, dynamic>> invoices,
+    List<Map<String, dynamic>> warehouseEntries = const [],
   }) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -2178,6 +2272,21 @@ class _PartnerStats {
     }
 
     final pkg7Total = pkg7.fold<int>(0, (a, b) => a + b);
+
+    var owed = 0.0;
+    var paidToOv = 0.0;
+    var unpaidCount = 0;
+    for (final e in warehouseEntries) {
+      final chargeStatus = e['partner_charge_status']?.toString() ?? 'unbilled';
+      final amt = (e['partner_charge_amount'] as num?)?.toDouble() ?? 0;
+      if (chargeStatus == 'billed') {
+        owed += amt;
+        unpaidCount++;
+      } else if (chargeStatus == 'paid') {
+        paidToOv += amt;
+      }
+    }
+
     return _PartnerStats(
       totalCustomers: customers.length,
       newCustomers7d: newCust7Total,
@@ -2197,6 +2306,9 @@ class _PartnerStats {
       inactiveCustomers: inactive,
       packageDates: packages.map((p) => parse(p['created_at'])).whereType<DateTime>().toList(),
       customerDates: customers.map((c) => parse(c['created_at'])).whereType<DateTime>().toList(),
+      amountOwedToOneVillage: owed,
+      amountPaidToOneVillage: paidToOv,
+      unpaidChargeCount: unpaidCount,
     );
   }
 
@@ -3650,7 +3762,7 @@ class _ShipmentsPageState extends State<_ShipmentsPage> {
 }
 
 // ─── Receivals Page ──────────────────────────────────────────────────────
-class _ReceivalsPage extends StatelessWidget {
+class _ReceivalsPage extends StatefulWidget {
   final DatabaseService db;
   final String prefix;
   final String? partnerId;
@@ -3659,6 +3771,25 @@ class _ReceivalsPage extends StatelessWidget {
     required this.prefix,
     required this.partnerId,
   });
+
+  @override
+  State<_ReceivalsPage> createState() => _ReceivalsPageState();
+}
+
+class _ReceivalsPageState extends State<_ReceivalsPage> {
+  late Future<List<Map<String, dynamic>>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.db.getWarehouseEntriesByPrefix(widget.prefix);
+  }
+
+  void _refresh() {
+    setState(() {
+      _future = widget.db.getWarehouseEntriesByPrefix(widget.prefix);
+    });
+  }
 
   static String _statusLabel(dynamic status) {
     switch (status?.toString()) {
@@ -3682,9 +3813,62 @@ class _ReceivalsPage extends StatelessWidget {
     return loc == null || loc.isEmpty ? zone : '$zone / $loc';
   }
 
+  static String _chargeLabel(Map<String, dynamic> e) {
+    final status = e['partner_charge_status']?.toString() ?? 'unbilled';
+    if (status == 'unbilled') return 'Not billed';
+    final amount = (e['partner_charge_amount'] as num?)?.toDouble() ?? 0;
+    return '\$${amount.toStringAsFixed(2)} · ${status == 'paid' ? 'Paid' : 'Due'}';
+  }
+
+  Future<void> _pay(Map<String, dynamic> entry) async {
+    final amount = (entry['partner_charge_amount'] as num?)?.toDouble() ?? 0;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Mark this charge as paid?'),
+        content: Text(
+          'This records \$${amount.toStringAsFixed(2)} for '
+          '${entry['tracking_number']} as settled with One Village. '
+          'No online payment is processed here — only confirm this once '
+          'you\'ve actually paid outside the app.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+            onPressed: () => Navigator.of(dctx).pop(true),
+            child: const Text('Mark Paid'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.db.updateWarehouseEntry(entry['id'] as String, {
+        'partner_charge_status': 'paid',
+        'partner_paid_at': DateTime.now().toIso8601String(),
+      });
+      _refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${entry['tracking_number']} marked paid'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (prefix.isEmpty) {
+    if (widget.prefix.isEmpty) {
       return _PagePanel(
         title: 'Receivals',
         subtitle: 'Packages received into the warehouse for your account.',
@@ -3697,6 +3881,7 @@ class _ReceivalsPage extends StatelessWidget {
             'Location',
             'Status',
             'Received',
+            'Courier Charge',
           ],
           rows: const [],
           emptyMessage:
@@ -3710,7 +3895,7 @@ class _ReceivalsPage extends StatelessWidget {
       title: 'Receivals',
       subtitle: 'Packages received into the warehouse for your account.',
       child: _futureList<Map<String, dynamic>>(
-        future: db.getWarehouseEntriesByPrefix(prefix),
+        future: _future,
         builder: (data) {
           return _DataTableCard(
             columns: const [
@@ -3721,6 +3906,7 @@ class _ReceivalsPage extends StatelessWidget {
               'Location',
               'Status',
               'Received',
+              'Courier Charge',
             ],
             rows: [
               for (final e in data)
@@ -3732,8 +3918,30 @@ class _ReceivalsPage extends StatelessWidget {
                   _location(e),
                   _statusLabel(e['status']),
                   _date(e['scanned_in_at']),
+                  _chargeLabel(e),
                 ],
             ],
+            rowActions: (i) {
+              final status =
+                  data[i]['partner_charge_status']?.toString() ?? 'unbilled';
+              if (status == 'billed') {
+                return FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                  ),
+                  onPressed: () => _pay(data[i]),
+                  child: const Text('Pay'),
+                );
+              }
+              if (status == 'paid') {
+                return const Tooltip(
+                  message: 'Paid',
+                  child: Icon(Icons.check_circle, size: 18, color: AppTheme.success),
+                );
+              }
+              return const SizedBox.shrink();
+            },
             emptyMessage: 'No packages received into the warehouse yet.',
           );
         },

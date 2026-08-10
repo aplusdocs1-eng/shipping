@@ -880,6 +880,11 @@ class WarehouseEntry {
   final String? notes;
   final String? shippingPartnerCode;
   final bool syncedToPartner;
+  final double? partnerChargeAmount;
+  final String partnerChargeStatus;
+  final String? partnerChargeNote;
+  final DateTime? partnerChargedAt;
+  final DateTime? partnerPaidAt;
 
   WarehouseEntry({
     required this.id,
@@ -897,6 +902,11 @@ class WarehouseEntry {
     this.notes,
     this.shippingPartnerCode,
     this.syncedToPartner = false,
+    this.partnerChargeAmount,
+    this.partnerChargeStatus = 'unbilled',
+    this.partnerChargeNote,
+    this.partnerChargedAt,
+    this.partnerPaidAt,
   });
 
   factory WarehouseEntry.fromMap(Map<String, dynamic> m) {
@@ -947,6 +957,15 @@ class WarehouseEntry {
       pickedUpBy: m['picked_up_by'] as String?,
       shippingPartnerCode: m['shipping_partner_code'] as String?,
       syncedToPartner: m['synced_to_partner'] as bool? ?? false,
+      partnerChargeAmount: (m['partner_charge_amount'] as num?)?.toDouble(),
+      partnerChargeStatus: m['partner_charge_status'] as String? ?? 'unbilled',
+      partnerChargeNote: m['partner_charge_note'] as String?,
+      partnerChargedAt: m['partner_charged_at'] != null
+          ? DateTime.tryParse(m['partner_charged_at'] as String)
+          : null,
+      partnerPaidAt: m['partner_paid_at'] != null
+          ? DateTime.tryParse(m['partner_paid_at'] as String)
+          : null,
     );
   }
 

@@ -26,6 +26,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   List<StorageZone> _zones = [];
   List<ShippingPartner> _partners = [];
   List<Customer> _customers = [];
+  List<Map<String, dynamic>> _partnerAccounts = [];
 
   @override
   void initState() {
@@ -44,6 +45,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
         _db.getStorageLocations(),
         _db.getShippingPartners(),
         _db.getCustomers(),
+        _db.getAllPartnerAccounts(),
       ]);
       if (!mounted) return;
       final zoneRows = (results[2] as List).cast<Map<String, dynamic>>();
@@ -111,6 +113,10 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
         _customers = (results[5] as List)
             .cast<Map<String, dynamic>>()
             .map(Customer.fromMap)
+            .toList();
+        _partnerAccounts = (results[6] as List)
+            .cast<Map<String, dynamic>>()
+            .where((p) => p['status'] == 'approved')
             .toList();
         _zones = zoneRows
             .map(
@@ -365,6 +371,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                   onAssignLocation: _assignLocation,
                   onMarkReady: _markReadyForPickup,
                   onMarkPickedUp: _markPickedUp,
+                  onBillCourier: _billCourier,
                 ),
               ],
             ),
@@ -756,6 +763,200 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
 
   // ─── Actions ─────────────────────────────────────────────────────────────
 
+  void _billCourier(WarehouseEntry entry) {
+    final courier = _matchPartnerAccountByTracking(entry.trackingNumber);
+    final amountCtl = TextEditingController(
+      text: entry.partnerChargeAmount?.toStringAsFixed(2) ?? '',
+    );
+    final noteCtl = TextEditingController(text: entry.partnerChargeNote ?? '');
+    String? error;
+    bool saving = false;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Bill Courier'),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Package: ${entry.trackingNumber}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      '${entry.description} · ${entry.customerName}',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (courier == null)
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.warning.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'This tracking number doesn\'t match any courier '
+                          'tenant\'s prefix — nobody to bill.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accent.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.local_shipping,
+                              size: 16,
+                              color: AppTheme.accent,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Courier: ${courier['company_name']}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: amountCtl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Amount (USD)',
+                        prefixText: '\$ ',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        errorText: error,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: noteCtl,
+                      decoration: InputDecoration(
+                        labelText: 'Note (optional)',
+                        hintText: 'e.g. Storage + handling',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                    if (entry.partnerChargeStatus == 'paid') ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Already marked paid'
+                        '${entry.partnerPaidAt != null ? ' on ${DateFormat('MMM d, y').format(entry.partnerPaidAt!)}' : ''}. '
+                        'Saving a new amount will not undo that.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: courier == null || saving
+                      ? null
+                      : () async {
+                          final amount = double.tryParse(
+                            amountCtl.text.trim(),
+                          );
+                          if (amount == null || amount <= 0) {
+                            setDialogState(
+                              () => error = 'Enter a valid amount',
+                            );
+                            return;
+                          }
+                          setDialogState(() => saving = true);
+                          try {
+                            await _db.updateWarehouseEntry(entry.id, {
+                              'partner_charge_amount': amount,
+                              'partner_charge_status': 'billed',
+                              'partner_charge_note': noteCtl.text.trim().isEmpty
+                                  ? null
+                                  : noteCtl.text.trim(),
+                              'partner_charged_at': DateTime.now()
+                                  .toIso8601String(),
+                            });
+                            if (!context.mounted) return;
+                            Navigator.of(context).pop();
+                            unawaited(_load());
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Billed ${courier['company_name']} '
+                                  '\$${amount.toStringAsFixed(2)} for '
+                                  '${entry.trackingNumber}',
+                                ),
+                                backgroundColor: AppTheme.primary,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          } catch (e) {
+                            setDialogState(() {
+                              saving = false;
+                              error = 'Failed to save: $e';
+                            });
+                          }
+                        },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                  ),
+                  child: saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          entry.partnerChargeStatus == 'unbilled'
+                              ? 'Bill Courier'
+                              : 'Update Charge',
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _assignLocation(WarehouseEntry entry) {
     StorageLocation? selectedLocation = entry.storageLocation;
 
@@ -952,6 +1153,23 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     }
     return null;
   }
+
+  /// Which courier tenant (partner_accounts — e.g. Howdidship) a package
+  /// belongs to, by tracking-number prefix. Distinct from _matchPartnerByTracking
+  /// above, which matches the delivery carrier (shipping_partners — e.g.
+  /// Applizone Shipping); a tenant's own customers' packages carry the
+  /// tenant's prefix regardless of which carrier physically delivered them.
+  Map<String, dynamic>? _matchPartnerAccountByTracking(String tracking) {
+    if (tracking.isEmpty) return null;
+    final upper = tracking.toUpperCase();
+    for (final p in _partnerAccounts) {
+      final prefix = (p['tracking_prefix'] as String?) ?? '';
+      if (prefix.isNotEmpty && upper.startsWith(prefix.toUpperCase())) {
+        return p;
+      }
+    }
+    return null;
+  }
 }
 
 // ─── Status Summary Row ──────────────────────────────────────────────────────
@@ -1118,12 +1336,14 @@ class _InventoryTable extends StatelessWidget {
   final ValueChanged<WarehouseEntry> onAssignLocation;
   final ValueChanged<WarehouseEntry> onMarkReady;
   final ValueChanged<WarehouseEntry> onMarkPickedUp;
+  final ValueChanged<WarehouseEntry> onBillCourier;
 
   const _InventoryTable({
     required this.entries,
     required this.onAssignLocation,
     required this.onMarkReady,
     required this.onMarkPickedUp,
+    required this.onBillCourier,
   });
 
   @override
@@ -1148,9 +1368,10 @@ class _InventoryTable extends StatelessWidget {
         1: FlexColumnWidth(1.5),
         2: FlexColumnWidth(1.5),
         3: FlexColumnWidth(1.2),
-        4: FlexColumnWidth(1),
-        5: FlexColumnWidth(1.2),
-        6: FlexColumnWidth(1.5),
+        4: FlexColumnWidth(1.5),
+        5: FlexColumnWidth(1),
+        6: FlexColumnWidth(1.2),
+        7: FlexColumnWidth(1.5),
       },
       children: [
         TableRow(
@@ -1164,6 +1385,7 @@ class _InventoryTable extends StatelessWidget {
             _HeaderCell('Customer'),
             _HeaderCell('Location'),
             _HeaderCell('Partner'),
+            _HeaderCell('Courier Charge'),
             _HeaderCell('Scanned In'),
             _HeaderCell('Status'),
             _HeaderCell('Actions'),
@@ -1285,6 +1507,57 @@ class _InventoryTable extends StatelessWidget {
                         ),
                       ),
               ),
+              // ── Courier Charge column ──
+              _BodyCell(
+                child: entry.partnerChargeStatus == 'unbilled'
+                    ? Text(
+                        'Not billed',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '\$${entry.partnerChargeAmount?.toStringAsFixed(2) ?? '0.00'}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color:
+                                  (entry.partnerChargeStatus == 'paid'
+                                          ? AppTheme.success
+                                          : AppTheme.warning)
+                                      .withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              entry.partnerChargeStatus == 'paid'
+                                  ? 'Paid'
+                                  : 'Billed',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: entry.partnerChargeStatus == 'paid'
+                                    ? AppTheme.success
+                                    : AppTheme.warning,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
               _BodyCell(
                 child: Text(
                   dateFmt.format(entry.scannedInAt),
@@ -1317,6 +1590,7 @@ class _InventoryTable extends StatelessWidget {
                   onAssignLocation: onAssignLocation,
                   onMarkReady: onMarkReady,
                   onMarkPickedUp: onMarkPickedUp,
+                  onBillCourier: onBillCourier,
                 ),
               ),
             ],
@@ -1365,12 +1639,14 @@ class _ActionsMenu extends StatelessWidget {
   final ValueChanged<WarehouseEntry> onAssignLocation;
   final ValueChanged<WarehouseEntry> onMarkReady;
   final ValueChanged<WarehouseEntry> onMarkPickedUp;
+  final ValueChanged<WarehouseEntry> onBillCourier;
 
   const _ActionsMenu({
     required this.entry,
     required this.onAssignLocation,
     required this.onMarkReady,
     required this.onMarkPickedUp,
+    required this.onBillCourier,
   });
 
   @override
@@ -1429,6 +1705,24 @@ class _ActionsMenu extends StatelessWidget {
           );
         }
 
+        // Bill (or update the charge on) the courier this package belongs to
+        items.add(
+          PopupMenuItem(
+            value: 'bill',
+            child: ListTile(
+              leading: const Icon(Icons.receipt_long_outlined, size: 18),
+              title: Text(
+                entry.partnerChargeStatus == 'unbilled'
+                    ? 'Bill Courier'
+                    : 'Update Courier Charge',
+                style: const TextStyle(fontSize: 13),
+              ),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+        );
+
         return items;
       },
       onSelected: (value) {
@@ -1439,6 +1733,8 @@ class _ActionsMenu extends StatelessWidget {
             onMarkReady(entry);
           case 'pickup':
             onMarkPickedUp(entry);
+          case 'bill':
+            onBillCourier(entry);
         }
       },
     );
