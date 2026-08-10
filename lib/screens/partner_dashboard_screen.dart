@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:html' as html;
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -416,6 +417,14 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
     setState(() => _account = updated);
   }
 
+  /// Lets a page (e.g. the Dashboard's "Get the app" banner) jump to
+  /// another section by its sidebar label instead of doing nothing.
+  void _navigateToNavLabel(String label) {
+    final idx = _flat.indexWhere((n) => n.label == label);
+    if (idx == -1) return;
+    setState(() => _selectedIndex = idx);
+  }
+
   Future<void> _logout() async {
     await _db.signOut();
     if (!mounted) return;
@@ -794,12 +803,6 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
             'Quick Quote',
             onPressed: _showQuickQuoteDialog,
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            tooltip: 'Toggle theme',
-            onPressed: () {},
-            icon: const Icon(Icons.dark_mode_outlined, size: 18),
-          ),
         ],
       ),
     );
@@ -830,19 +833,28 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
     final partnerId = account['id']?.toString();
     switch (current.label) {
       case 'Dashboard':
-        return _DashboardPage(account: account, stats: _stats);
+        return _DashboardPage(
+          account: account,
+          stats: _stats,
+          onNavigate: _navigateToNavLabel,
+        );
       case 'Point of Sale':
-        return const _PointOfSalePage();
+        return _PointOfSalePage(db: _db, prefix: prefix, partnerId: partnerId);
       case 'Customers':
         return _CustomersPage(db: _db, prefix: prefix, partnerId: partnerId);
       case 'Packages':
-        return _PackagesPage(db: _db, prefix: prefix, partnerId: partnerId);
+        return _PackagesPage(
+          db: _db,
+          prefix: prefix,
+          partnerId: partnerId,
+          account: account,
+        );
       case 'Shipments':
         return _ShipmentsPage(db: _db, partnerId: partnerId);
       case 'Receivals':
         return _ReceivalsPage(db: _db, prefix: prefix, partnerId: partnerId);
       case 'Unk Packages':
-        return const _UnknownPackagesPage();
+        return _UnknownPackagesPage(db: _db, prefix: prefix, partnerId: partnerId);
       case 'Pre-Alerts':
         return _PreAlertsPage(db: _db, partnerId: partnerId);
       case 'Reports':
@@ -852,17 +864,20 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
       case 'Settings':
         return _SettingsPage(account: account, onAccountUpdated: _onAccountUpdated);
       case 'Broadcast':
-        return const _BroadcastPage();
+        return _BroadcastPage(db: _db, partnerId: partnerId);
       case 'Referrals':
-        return _ReferralsPage(account: account);
+        return _ReferralsPage(db: _db, account: account);
       case 'Mobile App':
         return _MobileAppPage(account: account);
       case 'Support':
-        return const _SupportPage();
+        return _SupportPage(db: _db, partnerId: partnerId);
       case 'Instructions':
         return const _InstructionsPage();
       default:
-        return _FeaturePage(title: current.label, icon: current.icon);
+        // Unreachable — every _NavItem above has an explicit case.
+        return Center(
+          child: Text('${current.label} not found', style: TextStyle(color: _muted)),
+        );
     }
   }
 }
@@ -892,7 +907,12 @@ class _NavItem {
 class _DashboardPage extends StatelessWidget {
   final Map<String, dynamic> account;
   final _PartnerStats? stats;
-  const _DashboardPage({required this.account, required this.stats});
+  final ValueChanged<String>? onNavigate;
+  const _DashboardPage({
+    required this.account,
+    required this.stats,
+    this.onNavigate,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -901,7 +921,7 @@ class _DashboardPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _MobileAppBanner(),
+          _MobileAppBanner(onNavigate: onNavigate),
           const SizedBox(height: 16),
           _StatRow(stats: stats),
           const SizedBox(height: 16),
@@ -910,7 +930,7 @@ class _DashboardPage extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: _CustomersByLocationCard(stats: stats)),
+              Expanded(child: _CustomerStatusCard(stats: stats)),
               const SizedBox(width: 16),
               Expanded(child: _RevenueTrendsCard(stats: stats)),
             ],
@@ -924,6 +944,9 @@ class _DashboardPage extends StatelessWidget {
 }
 
 class _MobileAppBanner extends StatelessWidget {
+  final ValueChanged<String>? onNavigate;
+  const _MobileAppBanner({this.onNavigate});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -939,15 +962,15 @@ class _MobileAppBanner extends StatelessWidget {
           const SizedBox(width: 10),
           const Expanded(
             child: Text(
-              'Partner Portal is now on Android! Available on Google Play & App Store.',
+              'A white-label mobile app for your customers is in the works.',
               style: TextStyle(fontSize: 12, color: _text),
             ),
           ),
           TextButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.download, size: 14),
+            onPressed: () => onNavigate?.call('Mobile App'),
+            icon: const Icon(Icons.arrow_forward, size: 14),
             label: const Text(
-              'Get the app',
+              'See details',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ),
@@ -1137,12 +1160,113 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _GrowthChartCard extends StatelessWidget {
+class _GrowthChartCard extends StatefulWidget {
   final _PartnerStats? stats;
   const _GrowthChartCard({required this.stats});
 
   @override
+  State<_GrowthChartCard> createState() => _GrowthChartCardState();
+}
+
+enum _GrowthRange { sevenDay, thirtyDay, threeMonth, custom }
+
+class _GrowthChartCardState extends State<_GrowthChartCard> {
+  _GrowthRange _range = _GrowthRange.sevenDay;
+  DateTimeRange? _customRange;
+
+  Future<void> _pickCustomRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 2),
+      lastDate: now,
+      initialDateRange:
+          _customRange ??
+          DateTimeRange(start: now.subtract(const Duration(days: 13)), end: now),
+    );
+    if (picked == null) return;
+    setState(() {
+      _range = _GrowthRange.custom;
+      _customRange = picked;
+    });
+  }
+
+  /// Buckets the real package/customer creation timestamps into a list of
+  /// day-or-week buckets covering [start]..[end] — used for every range
+  /// (7d/30d/3m/custom) instead of the chart only ever being able to show
+  /// one hardcoded 7-day window with decorative, non-functional pills.
+  (List<int>, List<int>, List<String>) _bucket(
+    List<DateTime> packageDates,
+    List<DateTime> customerDates,
+    DateTime start,
+    DateTime end,
+  ) {
+    final startDay = DateTime(start.year, start.month, start.day);
+    final endDay = DateTime(end.year, end.month, end.day);
+    final totalDays = endDay.difference(startDay).inDays + 1;
+    final weekly = totalDays > 45;
+    final bucketDays = weekly ? 7 : 1;
+    final bucketCount = (totalDays / bucketDays).ceil().clamp(1, 400);
+    final pkg = List<int>.filled(bucketCount, 0);
+    final cust = List<int>.filled(bucketCount, 0);
+    final labels = List<String>.generate(bucketCount, (i) {
+      final d = startDay.add(Duration(days: i * bucketDays));
+      return '${_PartnerStats._monthAbbr(d.month)} ${d.day.toString().padLeft(2, '0')}';
+    });
+    void addTo(List<int> bucket, DateTime t) {
+      final day = DateTime(t.year, t.month, t.day);
+      if (day.isBefore(startDay) || day.isAfter(endDay)) return;
+      final idx = (day.difference(startDay).inDays / bucketDays)
+          .floor()
+          .clamp(0, bucketCount - 1);
+      bucket[idx]++;
+    }
+
+    for (final t in packageDates) {
+      addTo(pkg, t);
+    }
+    for (final t in customerDates) {
+      addTo(cust, t);
+    }
+    return (pkg, cust, labels);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final stats = widget.stats;
+    final now = DateTime.now();
+    late DateTime start;
+    late DateTime end;
+    late String subtitle;
+    switch (_range) {
+      case _GrowthRange.sevenDay:
+        end = now;
+        start = now.subtract(const Duration(days: 6));
+        subtitle = 'Total for the last 7 days';
+        break;
+      case _GrowthRange.thirtyDay:
+        end = now;
+        start = now.subtract(const Duration(days: 29));
+        subtitle = 'Total for the last 30 days';
+        break;
+      case _GrowthRange.threeMonth:
+        end = now;
+        start = DateTime(now.year, now.month - 3, now.day);
+        subtitle = 'Total for the last 3 months';
+        break;
+      case _GrowthRange.custom:
+        final r = _customRange!;
+        start = r.start;
+        end = r.end;
+        subtitle =
+            '${_PartnerStats._monthAbbr(start.month)} ${start.day} – '
+            '${_PartnerStats._monthAbbr(end.month)} ${end.day}, ${end.year}';
+        break;
+    }
+    final (pkg, cust, labels) = stats == null
+        ? (<int>[], <int>[], <String>[])
+        : _bucket(stats.packageDates, stats.customerDates, start, end);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1153,34 +1277,54 @@ class _GrowthChartCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            runSpacing: 8,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text(
-                    'Package & Customer Growth',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: _text,
+              SizedBox(
+                width: 260,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Package & Customer Growth',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: _text,
+                      ),
                     ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Total for the last 7 days',
-                    style: TextStyle(fontSize: 11, color: _muted),
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(fontSize: 11, color: _muted),
+                    ),
+                  ],
+                ),
               ),
-              const Spacer(),
-              _RangePill(label: 'Last 3 months'),
+              _RangePill(
+                label: 'Last 3 months',
+                selected: _range == _GrowthRange.threeMonth,
+                onTap: () => setState(() => _range = _GrowthRange.threeMonth),
+              ),
               const SizedBox(width: 4),
-              _RangePill(label: 'Last 30 days'),
+              _RangePill(
+                label: 'Last 30 days',
+                selected: _range == _GrowthRange.thirtyDay,
+                onTap: () => setState(() => _range = _GrowthRange.thirtyDay),
+              ),
               const SizedBox(width: 4),
-              _RangePill(label: 'Last 7 days', selected: true),
+              _RangePill(
+                label: 'Last 7 days',
+                selected: _range == _GrowthRange.sevenDay,
+                onTap: () => setState(() => _range = _GrowthRange.sevenDay),
+              ),
               const SizedBox(width: 4),
-              _RangePill(label: 'Custom'),
+              _RangePill(
+                label: 'Custom',
+                selected: _range == _GrowthRange.custom,
+                onTap: _pickCustomRange,
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -1188,9 +1332,9 @@ class _GrowthChartCard extends StatelessWidget {
             height: 180,
             child: CustomPaint(
               painter: _AreaChartPainter(
-                packages7d: stats?.packages7d,
-                customers7d: stats?.customers7d,
-                labels: stats?.labels7d,
+                packages7d: pkg,
+                customers7d: cust,
+                labels: labels,
               ),
               size: Size.infinite,
             ),
@@ -1204,23 +1348,28 @@ class _GrowthChartCard extends StatelessWidget {
 class _RangePill extends StatelessWidget {
   final String label;
   final bool selected;
-  const _RangePill({required this.label, this.selected = false});
+  final VoidCallback? onTap;
+  const _RangePill({required this.label, this.selected = false, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: selected ? Colors.white : _panelBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _border),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-          color: selected ? _text : _muted,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : _panelBg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: selected ? _text : _border),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            color: selected ? _text : _muted,
+          ),
         ),
       ),
     );
@@ -1304,12 +1453,15 @@ class _AreaChartPainter extends CustomPainter {
       oldDelegate.customers7d != customers7d;
 }
 
-class _CustomersByLocationCard extends StatelessWidget {
+class _CustomerStatusCard extends StatelessWidget {
   final _PartnerStats? stats;
-  const _CustomersByLocationCard({required this.stats});
+  const _CustomerStatusCard({required this.stats});
 
   @override
   Widget build(BuildContext context) {
+    final s = stats;
+    final total = s == null ? 0 : s.activeCustomers + s.inactiveCustomers;
+    final percentActive = (s == null || total == 0) ? 0.0 : s.activeCustomers / total;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1321,7 +1473,7 @@ class _CustomersByLocationCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Customers by Location',
+            'Customer Status',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
@@ -1330,7 +1482,7 @@ class _CustomersByLocationCard extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            'Distribution across major cities',
+            'Active vs. inactive accounts',
             style: TextStyle(fontSize: 11, color: _muted),
           ),
           const SizedBox(height: 16),
@@ -1339,13 +1491,13 @@ class _CustomersByLocationCard extends StatelessWidget {
               width: 160,
               height: 160,
               child: CustomPaint(
-                painter: _DonutPainter(percent: 1.0),
+                painter: _DonutPainter(percent: percentActive),
                 child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        stats == null ? '—' : '${stats!.totalCustomers}',
+                        s == null ? '—' : '${s.activeCustomers}',
                         style: const TextStyle(
                           fontSize: 26,
                           fontWeight: FontWeight.w800,
@@ -1353,7 +1505,7 @@ class _CustomersByLocationCard extends StatelessWidget {
                         ),
                       ),
                       const Text(
-                        'Customers',
+                        'Active',
                         style: TextStyle(fontSize: 10, color: _muted),
                       ),
                     ],
@@ -1365,11 +1517,17 @@ class _CustomersByLocationCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              const Icon(Icons.trending_up, size: 14, color: AppTheme.success),
+              Icon(
+                Icons.people_outline,
+                size: 14,
+                color: AppTheme.accent,
+              ),
               const SizedBox(width: 6),
-              const Text(
-                'Growing customer base across regions',
-                style: TextStyle(
+              Text(
+                s == null
+                    ? 'No customer data yet'
+                    : '${s.activeCustomers} active · ${s.inactiveCustomers} inactive',
+                style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: _text,
@@ -1379,7 +1537,9 @@ class _CustomersByLocationCard extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            'Showing customer distribution by location',
+            total == 0
+                ? 'Add customers to see this breakdown.'
+                : '${(percentActive * 100).toStringAsFixed(0)}% of your customers are active.',
             style: TextStyle(fontSize: 11, color: _muted),
           ),
         ],
@@ -1475,8 +1635,18 @@ class _RevenueTrendsCard extends StatelessWidget {
                   color: _text,
                 ),
               ),
-              const SizedBox(width: 6),
-              const Icon(Icons.trending_up, size: 14, color: AppTheme.success),
+              if (stats != null && stats!.revenuePrevMonth > 0) ...[
+                const SizedBox(width: 6),
+                Icon(
+                  stats!.revenueThisMonth >= stats!.revenuePrevMonth
+                      ? Icons.trending_up
+                      : Icons.trending_down,
+                  size: 14,
+                  color: stats!.revenueThisMonth >= stats!.revenuePrevMonth
+                      ? AppTheme.success
+                      : AppTheme.danger,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 2),
@@ -1652,147 +1822,6 @@ class _FeaturesIncludedCard extends StatelessWidget {
 }
 
 // ─── Feature placeholder page (used for every non-Dashboard nav item) ────
-class _FeaturePage extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  const _FeaturePage({required this.title, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(icon, color: AppTheme.primary, size: 22),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: _text,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'Included',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.primary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Text(
-              _descriptionFor(title),
-              style: const TextStyle(
-                fontSize: 13,
-                color: _textSoft,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: _panelBg,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: _border),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.info_outline,
-                    size: 16,
-                    color: AppTheme.primary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Full $title functionality is being rolled out to your portal. '
-                      'Contact support to enable early access.',
-                      style: const TextStyle(fontSize: 12, color: _textSoft),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  static String _descriptionFor(String title) {
-    switch (title) {
-      case 'Point of Sale':
-        return 'Built-in POS for in-store package pickups, payments, and walk-in sales. Accept cash, card, and mobile wallets with receipt printing.';
-      case 'Customers':
-        return 'Manage your customer database — registrations, addresses, contact preferences, and lifetime stats.';
-      case 'Packages':
-        return 'End-to-end package management with scan history, location updates, and automated customer notifications.';
-      case 'Shipments':
-        return 'Outbound & inbound shipment management — track consolidations, manifests, and delivery status.';
-      case 'Receivals':
-        return 'Warehouse intake: scan incoming packages, match to pre-alerts, and assign storage zones.';
-      case 'Unk Packages':
-        return 'Unknown / unidentified packages — attach tracking info and match them to customers.';
-      case 'Pre-Alerts':
-        return 'Customers can pre-register inbound packages with supplier tracking numbers and invoices before they arrive.';
-      case 'Broadcast':
-        return 'Send targeted email campaigns to your customers — promotions, statements, and newsletters.';
-      case 'Referrals':
-        return 'Reward customers for bringing new users to your service.';
-      case 'Mobile App':
-        return 'Native iOS & Android apps for your customers, published under your brand.';
-      case 'Reports':
-        return 'Revenue, volume, customer cohort, and operational KPIs — exportable to CSV / Excel.';
-      case 'Transactions':
-        return 'Full transaction ledger — payments, refunds, adjustments, and fees across all branches.';
-      case 'Settings':
-        return 'Configure your company profile, branch locations, tax rates, rate cards, and branding.';
-      case 'Support':
-        return 'Get help from the One Village support team 24/7.';
-      case 'Instructions':
-        return 'Onboarding guides, API docs, and best practices for getting the most out of your portal.';
-      default:
-        return 'Manage $title directly from your partner portal.';
-    }
-  }
-}
-
 // ─── Real stats model (loaded from Supabase) ─────────────────────────────
 class _PartnerStats {
   final int totalCustomers;
@@ -1807,6 +1836,15 @@ class _PartnerStats {
   final double totalRevenue;
   final double avgMonthlyRevenue;
   final List<double> revenueByMonth; // 12 entries, Jan..Dec of current year
+  final double revenueThisMonth;
+  final double revenuePrevMonth;
+  final int activeCustomers;
+  final int inactiveCustomers;
+  // Raw creation timestamps so the growth chart can bucket any date range
+  // (7d / 30d / 3m / a custom picked range) on demand instead of only ever
+  // being able to show a single hardcoded 7-day window.
+  final List<DateTime> packageDates;
+  final List<DateTime> customerDates;
 
   _PartnerStats({
     required this.totalCustomers,
@@ -1821,6 +1859,12 @@ class _PartnerStats {
     required this.totalRevenue,
     required this.avgMonthlyRevenue,
     required this.revenueByMonth,
+    required this.revenueThisMonth,
+    required this.revenuePrevMonth,
+    required this.activeCustomers,
+    required this.inactiveCustomers,
+    required this.packageDates,
+    required this.customerDates,
   });
 
   factory _PartnerStats.from({
@@ -1873,7 +1917,10 @@ class _PartnerStats {
 
     // Revenue by month of current year
     final revByMonth = List<double>.filled(12, 0);
-    var totalRev = 0.0;
+    var totalRev = 0.0; // all-time, all years
+    var revThisMonth = 0.0;
+    var revPrevMonth = 0.0;
+    final prevMonthDate = DateTime(now.year, now.month - 1, 1);
     for (final inv in invoices) {
       final paid = (inv['status']?.toString() ?? '').toLowerCase() == 'paid';
       if (!paid) continue;
@@ -1886,10 +1933,29 @@ class _PartnerStats {
       totalRev += amt;
       if (t.year == now.year) {
         revByMonth[t.month - 1] += amt;
+        if (t.month == now.month) revThisMonth += amt;
+      }
+      if (t.year == prevMonthDate.year && t.month == prevMonthDate.month) {
+        revPrevMonth += amt;
       }
     }
+    // Average monthly revenue for *this* year, matching what the chart next
+    // to it actually shows — previously this divided the all-time total
+    // (every year combined) by only this year's elapsed months, inflating
+    // the average for any account with revenue from a prior year.
     final monthsSoFar = now.month;
-    final avgMonth = monthsSoFar == 0 ? 0.0 : totalRev / monthsSoFar;
+    final revThisYear = revByMonth.fold<double>(0, (a, b) => a + b);
+    final avgMonth = monthsSoFar == 0 ? 0.0 : revThisYear / monthsSoFar;
+
+    var active = 0;
+    var inactive = 0;
+    for (final c in customers) {
+      if ((c['status']?.toString() ?? 'active') == 'inactive') {
+        inactive++;
+      } else {
+        active++;
+      }
+    }
 
     final pkg7Total = pkg7.fold<int>(0, (a, b) => a + b);
     return _PartnerStats(
@@ -1905,6 +1971,12 @@ class _PartnerStats {
       totalRevenue: totalRev,
       avgMonthlyRevenue: avgMonth,
       revenueByMonth: revByMonth,
+      revenueThisMonth: revThisMonth,
+      revenuePrevMonth: revPrevMonth,
+      activeCustomers: active,
+      inactiveCustomers: inactive,
+      packageDates: packages.map((p) => parse(p['created_at'])).whereType<DateTime>().toList(),
+      customerDates: customers.map((c) => parse(c['created_at'])).whereType<DateTime>().toList(),
     );
   }
 
@@ -1987,10 +2059,14 @@ class _DataTableCard extends StatelessWidget {
   final List<String> columns;
   final List<List<String>> rows;
   final String emptyMessage;
+  // Optional per-row trailing widget (e.g. Edit/Delete icon buttons),
+  // appended as an extra unlabeled "Actions" column when provided.
+  final Widget Function(int index)? rowActions;
   const _DataTableCard({
     required this.columns,
     required this.rows,
     this.emptyMessage = 'No records found.',
+    this.rowActions,
   });
 
   @override
@@ -2023,11 +2099,15 @@ class _DataTableCard extends StatelessWidget {
                   dataTextStyle: const TextStyle(fontSize: 13, color: _text),
                   columns: [
                     for (final c in columns) DataColumn(label: Text(c)),
+                    if (rowActions != null) const DataColumn(label: Text('')),
                   ],
                   rows: [
-                    for (final r in rows)
+                    for (var i = 0; i < rows.length; i++)
                       DataRow(
-                        cells: [for (final cell in r) DataCell(Text(cell))],
+                        cells: [
+                          for (final cell in rows[i]) DataCell(Text(cell)),
+                          if (rowActions != null) DataCell(rowActions!(i)),
+                        ],
                       ),
                   ],
                 ),
@@ -2256,20 +2336,27 @@ class _CustomersPageState extends State<_CustomersPage> {
     setState(() => _future = _fetch());
   }
 
-  Future<void> _openAddDialog() async {
-    final nameCtl = TextEditingController();
-    final emailCtl = TextEditingController();
-    final phoneCtl = TextEditingController();
-    final addressCtl = TextEditingController();
+  Future<void> _openAddDialog() => _openCustomerDialog();
+
+  Future<void> _openCustomerDialog({Map<String, dynamic>? existing}) async {
+    final isEdit = existing != null;
+    final nameCtl = TextEditingController(text: _s(existing?['name']).replaceAll('—', ''));
+    final emailCtl = TextEditingController(text: _s(existing?['email']).replaceAll('—', ''));
+    final phoneCtl = TextEditingController(text: _s(existing?['phone']).replaceAll('—', ''));
+    final addressCtl = TextEditingController(text: _s(existing?['address']).replaceAll('—', ''));
     final prefix = widget.prefix.isEmpty ? 'CUST' : widget.prefix;
     final nextBox =
         '$prefix-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
-    final mailboxCtl = TextEditingController(text: nextBox);
+    final mailboxCtl = TextEditingController(
+      text: (existing?['mailbox_number'] as String?) ?? nextBox,
+    );
+    bool active = (existing?['status'] as String? ?? 'active') != 'inactive';
 
     final saved = await showDialog<bool>(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Add Customer'),
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => AlertDialog(
+        title: Text(isEdit ? 'Edit Customer' : 'Add Customer'),
         content: SizedBox(
           width: 420,
           child: SingleChildScrollView(
@@ -2319,6 +2406,16 @@ class _CustomersPageState extends State<_CustomersPage> {
                     prefixIcon: Icon(Icons.markunread_mailbox),
                   ),
                 ),
+                if (isEdit) ...[
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Active', style: TextStyle(fontSize: 14)),
+                    value: active,
+                    onChanged: (v) => setDialogState(() => active = v),
+                    activeThumbColor: AppTheme.primary,
+                  ),
+                ],
               ],
             ),
           ),
@@ -2342,18 +2439,24 @@ class _CustomersPageState extends State<_CustomersPage> {
                 return;
               }
               try {
-                await widget.db.insertCustomer({
+                final row = {
                   'name': name,
-                  if (emailCtl.text.trim().isNotEmpty)
-                    'email': emailCtl.text.trim(),
-                  if (phoneCtl.text.trim().isNotEmpty)
-                    'phone': phoneCtl.text.trim(),
-                  if (addressCtl.text.trim().isNotEmpty)
-                    'address': addressCtl.text.trim(),
+                  'email': emailCtl.text.trim(),
+                  'phone': phoneCtl.text.trim(),
+                  'address': addressCtl.text.trim(),
                   'mailbox_number': mailboxCtl.text.trim(),
-                  'status': 'active',
-                  if (widget.partnerId != null) 'partner_id': widget.partnerId,
-                });
+                  if (isEdit) 'status': active ? 'active' : 'inactive',
+                };
+                if (isEdit) {
+                  await widget.db.updateCustomer(existing['id'] as String, row);
+                } else {
+                  await widget.db.insertCustomer({
+                    ...row,
+                    'status': 'active',
+                    if (widget.partnerId != null)
+                      'partner_id': widget.partnerId,
+                  });
+                }
                 if (dialogCtx.mounted) Navigator.pop(dialogCtx, true);
               } catch (e) {
                 if (dialogCtx.mounted) {
@@ -2363,16 +2466,17 @@ class _CustomersPageState extends State<_CustomersPage> {
                 }
               }
             },
-            child: const Text('Save Customer'),
+            child: Text(isEdit ? 'Save Changes' : 'Save Customer'),
           ),
         ],
+        ),
       ),
     );
 
     if (saved == true && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Customer added')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(isEdit ? 'Customer updated' : 'Customer added')),
+      );
       _refresh();
     }
   }
@@ -2419,6 +2523,11 @@ class _CustomersPageState extends State<_CustomersPage> {
                 _date(c['created_at']),
               ],
           ],
+          rowActions: (i) => IconButton(
+            icon: const Icon(Icons.edit, size: 16, color: _muted),
+            tooltip: 'Edit',
+            onPressed: () => _openCustomerDialog(existing: data[i]),
+          ),
           emptyMessage: 'No customers yet. Add one to get started.',
         ),
       ),
@@ -2431,10 +2540,12 @@ class _PackagesPage extends StatefulWidget {
   final DatabaseService db;
   final String prefix;
   final String? partnerId;
+  final Map<String, dynamic> account;
   const _PackagesPage({
     required this.db,
     required this.prefix,
     required this.partnerId,
+    required this.account,
   });
 
   @override
@@ -2539,6 +2650,7 @@ class _PackagesPageState extends State<_PackagesPage> {
                       pkg: data[i],
                       partnerId: widget.partnerId,
                       db: widget.db,
+                      account: widget.account,
                       isFirst: i == 0,
                       isLast: i == data.length - 1,
                       onChanged: _refresh,
@@ -2557,6 +2669,7 @@ class _PackageRow extends StatelessWidget {
   final Map<String, dynamic> pkg;
   final String? partnerId;
   final DatabaseService db;
+  final Map<String, dynamic> account;
   final bool isFirst;
   final bool isLast;
   final VoidCallback onChanged;
@@ -2565,6 +2678,7 @@ class _PackageRow extends StatelessWidget {
     required this.pkg,
     required this.partnerId,
     required this.db,
+    required this.account,
     required this.isFirst,
     required this.isLast,
     required this.onChanged,
@@ -2752,7 +2866,7 @@ class _PackageRow extends StatelessWidget {
     final changed = await showDialog<bool>(
       context: context,
       builder: (_) =>
-          _BillCustomerDialog(pkg: pkg, db: db, partnerId: partnerId),
+          _BillCustomerDialog(pkg: pkg, db: db, partnerId: partnerId, account: account),
     );
     if (changed == true) onChanged();
   }
@@ -2774,13 +2888,18 @@ class _PackageEditorDialogState extends State<_PackageEditorDialog> {
   bool _saving = false;
   String? _error;
 
-  static const _statuses = [
+  static const _knownStatuses = [
     'received',
     'in_transit',
     'ready_for_pickup',
     'picked_up',
     'returned',
   ];
+  // Per-instance and mutable — _knownStatuses is a shared `const` list, so
+  // appending an unrecognized status straight onto it threw
+  // UnsupportedError at runtime for any real-world status outside that
+  // fixed set (e.g. 'pending', which packages_screen.dart actually writes).
+  late final List<String> _statuses;
 
   @override
   void initState() {
@@ -2794,6 +2913,7 @@ class _PackageEditorDialogState extends State<_PackageEditorDialog> {
     _status = (widget.pkg['status']?.toString().isNotEmpty ?? false)
         ? widget.pkg['status'].toString()
         : 'received';
+    _statuses = [..._knownStatuses];
     if (!_statuses.contains(_status)) _statuses.add(_status);
   }
 
@@ -2910,10 +3030,12 @@ class _BillCustomerDialog extends StatefulWidget {
   final Map<String, dynamic> pkg;
   final DatabaseService db;
   final String? partnerId;
+  final Map<String, dynamic> account;
   const _BillCustomerDialog({
     required this.pkg,
     required this.db,
     required this.partnerId,
+    required this.account,
   });
 
   @override
@@ -2932,10 +3054,17 @@ class _BillCustomerDialogState extends State<_BillCustomerDialog> {
     final w = double.tryParse(widget.pkg['weight']?.toString() ?? '') ?? 0;
     final value =
         double.tryParse(widget.pkg['declared_value']?.toString() ?? '') ?? 0;
-    // Default: $4.50/lb (air) + 0.5% of declared value — partner can edit.
-    final suggested = (w * 4.50 + value * 0.005).toStringAsFixed(2);
+    // Suggested amount now comes from the partner's own configured rate
+    // card (Settings → Rate Calculator / Currency) instead of a hardcoded
+    // $4.50/lb + 0.5% figure that silently ignored whatever they'd set up.
+    final settings = Map<String, dynamic>.from(
+      widget.account['settings'] as Map? ?? {},
+    );
+    final perLb = (settings['rate_air_per_lb'] as num?)?.toDouble() ?? 4.50;
+    final gct = (settings['gct_rate'] as num?)?.toDouble() ?? 15.0;
+    final suggested = (w * perLb + value * 0.005).toStringAsFixed(2);
     _amountCtl = TextEditingController(text: suggested);
-    _taxCtl = TextEditingController(text: '15'); // GCT 15%
+    _taxCtl = TextEditingController(text: gct.toStringAsFixed(1));
   }
 
   @override
@@ -3100,6 +3229,44 @@ class _ShipmentsPageState extends State<_ShipmentsPage> {
 
   void _refresh() => setState(() => _future = _fetch());
 
+  static const _statusFlow = [
+    'preparing',
+    'in_transit',
+    'arrived',
+    'delivered',
+  ];
+
+  String? _nextStatus(String current) {
+    final i = _statusFlow.indexOf(current);
+    if (i == -1 || i == _statusFlow.length - 1) return null;
+    return _statusFlow[i + 1];
+  }
+
+  Future<void> _advance(Map<String, dynamic> shipment) async {
+    final current = (shipment['status'] as String?) ?? 'preparing';
+    final next = _nextStatus(current);
+    if (next == null) return;
+    try {
+      await widget.db.updateShipment(shipment['id'] as String, {
+        'status': next,
+      });
+      _refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${shipment['shipment_number'] ?? 'Shipment'} → ${next.replaceAll('_', ' ')}',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update: $e')));
+    }
+  }
+
   Future<void> _openNewShipmentDialog() async {
     final shipmentNumber = TextEditingController();
     final origin = TextEditingController();
@@ -3241,6 +3408,21 @@ class _ShipmentsPageState extends State<_ShipmentsPage> {
                 _date(s['created_at'] ?? s['shipped_at']),
               ],
           ],
+          rowActions: (i) {
+            final next = _nextStatus(
+              (data[i]['status'] as String?) ?? 'preparing',
+            );
+            if (next == null) {
+              return const Tooltip(
+                message: 'Delivered — no further status',
+                child: Icon(Icons.check_circle, size: 16, color: AppTheme.success),
+              );
+            }
+            return TextButton(
+              onPressed: () => _advance(data[i]),
+              child: Text('Mark ${next.replaceAll('_', ' ')}'),
+            );
+          },
         ),
       ),
     );
@@ -3341,10 +3523,49 @@ class _ReceivalsPage extends StatelessWidget {
 }
 
 // ─── Pre-Alerts Page ─────────────────────────────────────────────────────
-class _PreAlertsPage extends StatelessWidget {
+class _PreAlertsPage extends StatefulWidget {
   final DatabaseService db;
   final String? partnerId;
   const _PreAlertsPage({required this.db, required this.partnerId});
+
+  @override
+  State<_PreAlertsPage> createState() => _PreAlertsPageState();
+}
+
+class _PreAlertsPageState extends State<_PreAlertsPage> {
+  late Future<List<Map<String, dynamic>>> _future;
+
+  Future<List<Map<String, dynamic>>> _fetch() => widget.partnerId != null
+      ? widget.db.getPreAlertsByPartner(widget.partnerId!)
+      : widget.db.getPreAlerts();
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _fetch();
+  }
+
+  void _refresh() => setState(() => _future = _fetch());
+
+  Future<void> _markReceived(Map<String, dynamic> alert) async {
+    try {
+      await widget.db.updatePreAlert(alert['id'] as String, {
+        'status': 'received',
+      });
+      _refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${alert['tracking_number']} marked received'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update: $e')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3352,16 +3573,15 @@ class _PreAlertsPage extends StatelessWidget {
       title: 'Pre-Alerts',
       subtitle: 'Customer pre-alert submissions awaiting receival.',
       child: _futureList<Map<String, dynamic>>(
-        future: partnerId != null
-            ? db.getPreAlertsByPartner(partnerId!)
-            : db.getPreAlerts(),
+        future: _future,
         builder: (data) => _DataTableCard(
           columns: const [
             'Tracking #',
             'Customer',
-            'Merchant',
+            'Carrier',
             'Description',
             'Value',
+            'Status',
             'Submitted',
           ],
           rows: [
@@ -3369,12 +3589,22 @@ class _PreAlertsPage extends StatelessWidget {
               [
                 _s(a['tracking_number']),
                 _s(a['customer_name'] ?? a['customer']),
-                _s(a['merchant']),
+                _s(a['carrier']),
                 _s(a['description']),
-                _money(a['value'] ?? a['declared_value']),
+                _money(a['declared_value']),
+                _s(a['status']),
                 _date(a['created_at']),
               ],
           ],
+          rowActions: (i) => (data[i]['status'] as String?) == 'received'
+              ? const Tooltip(
+                  message: 'Already received',
+                  child: Icon(Icons.check_circle, size: 16, color: AppTheme.success),
+                )
+              : TextButton(
+                  onPressed: () => _markReceived(data[i]),
+                  child: const Text('Mark Received'),
+                ),
           emptyMessage: 'No pre-alerts submitted yet.',
         ),
       ),
@@ -3383,20 +3613,89 @@ class _PreAlertsPage extends StatelessWidget {
 }
 
 // ─── Transactions Page ───────────────────────────────────────────────────
-class _TransactionsPage extends StatelessWidget {
+class _TransactionsPage extends StatefulWidget {
   final DatabaseService db;
   final String? partnerId;
   const _TransactionsPage({required this.db, required this.partnerId});
+
+  @override
+  State<_TransactionsPage> createState() => _TransactionsPageState();
+}
+
+class _TransactionsPageState extends State<_TransactionsPage> {
+  late Future<List<Map<String, dynamic>>> _future;
+
+  Future<List<Map<String, dynamic>>> _fetch() => widget.partnerId != null
+      ? widget.db.getInvoicesByPartner(widget.partnerId!)
+      : widget.db.getInvoices();
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _fetch();
+  }
+
+  void _refresh() => setState(() => _future = _fetch());
+
+  Future<void> _markPaid(Map<String, dynamic> invoice) async {
+    try {
+      await widget.db.markInvoicePaid(invoice['id'] as String);
+      _refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${invoice['invoice_number'] ?? 'Invoice'} marked paid',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update: $e')));
+    }
+  }
+
+  void _export(List<Map<String, dynamic>> data) {
+    ExportService.downloadCsv(
+      filename: 'transactions.csv',
+      headers: const ['Invoice #', 'Customer', 'Amount', 'Status', 'Created', 'Paid'],
+      rows: [
+        for (final i in data)
+          [
+            _s(i['invoice_number'] ?? i['id']),
+            _s(i['customer_name'] ?? i['customer']),
+            _money(i['total'] ?? i['amount']),
+            _s(i['status']),
+            _date(i['created_at']),
+            _date(i['paid_at']),
+          ],
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return _PagePanel(
       title: 'Transactions',
       subtitle: 'Invoices, payments, and account activity.',
+      actions: [
+        FutureBuilder<List<Map<String, dynamic>>>(
+          future: _future,
+          builder: (context, snap) => ElevatedButton.icon(
+            onPressed: snap.data == null ? null : () => _export(snap.data!),
+            icon: const Icon(Icons.download, size: 16),
+            label: const Text('Export CSV'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ),
+      ],
       child: _futureList<Map<String, dynamic>>(
-        future: partnerId != null
-            ? db.getInvoicesByPartner(partnerId!)
-            : db.getInvoices(),
+        future: _future,
         builder: (data) => _DataTableCard(
           columns: const [
             'Invoice #',
@@ -3417,6 +3716,19 @@ class _TransactionsPage extends StatelessWidget {
                 _date(i['paid_at']),
               ],
           ],
+          rowActions: (i) {
+            final status = (data[i]['status'] as String?) ?? '';
+            if (status == 'paid') {
+              return const Tooltip(
+                message: 'Paid',
+                child: Icon(Icons.check_circle, size: 16, color: AppTheme.success),
+              );
+            }
+            return TextButton(
+              onPressed: () => _markPaid(data[i]),
+              child: const Text('Mark Paid'),
+            );
+          },
           emptyMessage: 'No transactions recorded yet.',
         ),
       ),
@@ -3425,70 +3737,468 @@ class _TransactionsPage extends StatelessWidget {
 }
 
 // ─── Static placeholder pages ────────────────────────────────────────────
-class _PointOfSalePage extends StatelessWidget {
-  const _PointOfSalePage();
+class _PointOfSalePage extends StatefulWidget {
+  final DatabaseService db;
+  final String prefix;
+  final String? partnerId;
+  const _PointOfSalePage({
+    required this.db,
+    required this.prefix,
+    required this.partnerId,
+  });
+
+  @override
+  State<_PointOfSalePage> createState() => _PointOfSalePageState();
+}
+
+class _PointOfSalePageState extends State<_PointOfSalePage> {
+  List<Map<String, dynamic>> _customers = [];
+  List<Map<String, dynamic>> _sales = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final results = await Future.wait([
+        widget.partnerId != null
+            ? widget.db.getCustomersByPartner(widget.partnerId!)
+            : widget.db.getCustomers(),
+        widget.partnerId != null
+            ? widget.db.getInvoicesByPartner(widget.partnerId!)
+            : widget.db.getInvoices(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _customers = (results[0]).cast<Map<String, dynamic>>();
+        _sales = (results[1]).cast<Map<String, dynamic>>();
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _newSale(BuildContext context) async {
+    if (_customers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add a customer first — a sale needs to be billed to someone.'),
+        ),
+      );
+      return;
+    }
+    Map<String, dynamic>? selectedCustomer = _customers.first;
+    final descCtl = TextEditingController();
+    final amountCtl = TextEditingController();
+    String? error;
+    bool saving = false;
+
+    await showDialog(
+      context: context,
+      builder: (dctx) {
+        return StatefulBuilder(
+          builder: (dctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('New Sale'),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Customer',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _textSoft,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<Map<String, dynamic>>(
+                      initialValue: selectedCustomer,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: _border),
+                        ),
+                      ),
+                      items: [
+                        for (final c in _customers)
+                          DropdownMenuItem(
+                            value: c,
+                            child: Text(
+                              _s(c['name']),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (v) =>
+                          setDialogState(() => selectedCustomer = v),
+                    ),
+                    const SizedBox(height: 12),
+                    _SettingsField(label: 'Description', controller: descCtl),
+                    const SizedBox(height: 12),
+                    _SettingsField(
+                      label: 'Amount (USD)',
+                      controller: amountCtl,
+                      hint: 'e.g. 25.00',
+                    ),
+                    if (error != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        error!,
+                        style: const TextStyle(
+                          color: AppTheme.danger,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dctx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                  ),
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          final amount = double.tryParse(amountCtl.text);
+                          if (selectedCustomer == null ||
+                              descCtl.text.trim().isEmpty ||
+                              amount == null ||
+                              amount <= 0) {
+                            setDialogState(
+                              () => error =
+                                  'Select a customer and enter a description and a valid amount.',
+                            );
+                            return;
+                          }
+                          setDialogState(() => saving = true);
+                          try {
+                            await widget.db.insertQuickSaleInvoice(
+                              customerId: selectedCustomer!['id'] as String,
+                              customerName: _s(selectedCustomer!['name']),
+                              description: descCtl.text.trim(),
+                              amount: amount,
+                              partnerId: widget.partnerId,
+                            );
+                            if (!dctx.mounted) return;
+                            Navigator.of(dctx).pop();
+                            _load();
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Sale recorded — invoice created for ${_s(selectedCustomer!['name'])}',
+                                ),
+                              ),
+                            );
+                          } catch (e) {
+                            setDialogState(() {
+                              saving = false;
+                              error = 'Failed to record sale: $e';
+                            });
+                          }
+                        },
+                  child: saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Charge & Create Invoice'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return _PagePanel(
       title: 'Point of Sale',
       subtitle:
-          'Process customer payments, package pickups, and walk-in sales.',
-      actions: const [_PrimaryAction(label: 'New Sale', icon: Icons.add)],
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _border),
+          'Charge a customer for a walk-in sale — creates a real invoice.',
+      actions: [
+        _PrimaryAction(
+          label: 'New Sale',
+          icon: Icons.add,
+          onTap: () => _newSale(context),
         ),
-        padding: const EdgeInsets.all(40),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.point_of_sale, size: 48, color: _muted),
-              const SizedBox(height: 12),
-              const Text(
-                'POS Terminal',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: _text,
-                ),
+      ],
+      child: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _border),
               ),
-              const SizedBox(height: 6),
-              Text(
-                'Connect your card reader and select a customer to begin a sale.',
-                style: TextStyle(color: _muted, fontSize: 13),
+              child: _DataTableCard(
+                columns: const [
+                  'Invoice #',
+                  'Customer',
+                  'Description',
+                  'Amount',
+                  'Status',
+                  'Created',
+                ],
+                rows: [
+                  for (final s in _sales)
+                    [
+                      _s(s['invoice_number'] ?? s['id']),
+                      _s(s['customer_name']),
+                      _s(s['notes']),
+                      _money(s['total'] ?? s['amount']),
+                      _s(s['status']),
+                      _date(s['created_at']),
+                    ],
+                ],
+                emptyMessage:
+                    'No sales yet. Click "New Sale" to charge a customer.',
               ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 }
 
-class _UnknownPackagesPage extends StatelessWidget {
-  const _UnknownPackagesPage();
+class _UnknownPackagesPage extends StatefulWidget {
+  final DatabaseService db;
+  final String prefix;
+  final String? partnerId;
+  const _UnknownPackagesPage({
+    required this.db,
+    required this.prefix,
+    required this.partnerId,
+  });
+
+  @override
+  State<_UnknownPackagesPage> createState() => _UnknownPackagesPageState();
+}
+
+class _UnknownPackagesPageState extends State<_UnknownPackagesPage> {
+  List<Map<String, dynamic>> _entries = [];
+  List<Map<String, dynamic>> _customers = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.prefix.isEmpty) {
+      setState(() => _loading = false);
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      final results = await Future.wait([
+        widget.db.getUnknownPackagesByPrefix(widget.prefix),
+        widget.partnerId != null
+            ? widget.db.getCustomersByPartner(widget.partnerId!)
+            : widget.db.getCustomers(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _entries = (results[0]).cast<Map<String, dynamic>>();
+        _customers = (results[1]).cast<Map<String, dynamic>>();
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _assign(Map<String, dynamic> entry) async {
+    if (_customers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No customers to assign to yet.')),
+      );
+      return;
+    }
+    Map<String, dynamic>? selected;
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dctx) => StatefulBuilder(
+        builder: (dctx, setDialogState) => AlertDialog(
+          title: Text('Assign ${entry['tracking_number']}'),
+          content: SizedBox(
+            width: 380,
+            child: DropdownButtonFormField<Map<String, dynamic>>(
+              isExpanded: true,
+              hint: const Text('Select customer'),
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: _border),
+                ),
+              ),
+              items: [
+                for (final c in _customers)
+                  DropdownMenuItem(value: c, child: Text(_s(c['name']))),
+              ],
+              onChanged: (v) => setDialogState(() => selected = v),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+              onPressed: () => Navigator.of(dctx).pop(selected),
+              child: const Text('Assign'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result == null) return;
+    await widget.db.updateWarehouseEntry(entry['id'] as String, {
+      'customer_id': result['id'],
+      'customer_name': result['name'],
+    });
+    _load();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${entry['tracking_number']} assigned to ${result['name']}',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return _PagePanel(
       title: 'Unknown Packages',
       subtitle: 'Packages received without a matching customer account.',
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _border),
-        ),
-        padding: const EdgeInsets.all(40),
-        child: Center(
-          child: Text(
-            'No unknown packages awaiting assignment.',
-            style: TextStyle(color: _muted, fontSize: 13),
-          ),
-        ),
-      ),
+      child: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : widget.prefix.isEmpty
+          ? Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _border),
+              ),
+              padding: const EdgeInsets.all(40),
+              child: Center(
+                child: Text(
+                  'No tracking prefix is configured for this account yet — '
+                  'contact support to have one assigned.',
+                  style: TextStyle(color: _muted, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          : Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _border),
+              ),
+              child: _entries.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(40),
+                      child: Center(
+                        child: Text(
+                          'No unknown packages awaiting assignment.',
+                          style: TextStyle(color: _muted, fontSize: 13),
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(12),
+                      shrinkWrap: true,
+                      itemCount: _entries.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (_, i) {
+                        final e = _entries[i];
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: _panelBg,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: _border),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.help_outline,
+                                color: AppTheme.warning,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _s(e['tracking_number']),
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: _text,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${_s(e['description'])} · scanned in ${_date(e['scanned_in_at'])}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: _muted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppTheme.primary,
+                                ),
+                                onPressed: () => _assign(e),
+                                child: const Text('Assign to Customer'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
     );
   }
 }
@@ -3627,6 +4337,60 @@ class _ReportDetailPageState extends State<_ReportDetailPage> {
     ]);
   }
 
+  void _export(List<Map<String, dynamic>> packages, List<Map<String, dynamic>> customers, List<Map<String, dynamic>> invoices, List<Map<String, dynamic>> shipments) {
+    late String filename;
+    late List<String> headers;
+    late List<List<String>> rows;
+    switch (widget.reportKey) {
+      case 'daily_sales':
+      case 'tax_report':
+        filename = '${widget.reportKey}.csv';
+        headers = const ['Invoice #', 'Customer', 'Amount', 'Tax', 'Total', 'Status', 'Created'];
+        rows = [
+          for (final i in invoices)
+            [_s(i['invoice_number'] ?? i['id']), _s(i['customer_name']), _money(i['amount']), _money(i['tax']), _money(i['total']), _s(i['status']), _date(i['created_at'])],
+        ];
+        break;
+      case 'customer_activity':
+        filename = 'customer_activity.csv';
+        headers = const ['Name', 'Email', 'Status', 'Joined'];
+        rows = [
+          for (final c in customers)
+            [_s(c['name']), _s(c['email']), _s(c['status']), _date(c['created_at'])],
+        ];
+        break;
+      case 'outstanding_invoices':
+        filename = 'outstanding_invoices.csv';
+        headers = const ['Invoice #', 'Customer', 'Total', 'Status', 'Due'];
+        rows = [
+          for (final i in invoices.where((i) => (i['status']?.toString() ?? '') != 'paid'))
+            [_s(i['invoice_number'] ?? i['id']), _s(i['customer_name']), _money(i['total']), _s(i['status']), _date(i['due_date'])],
+        ];
+        break;
+      case 'package_aging':
+        filename = 'package_aging.csv';
+        headers = const ['Tracking #', 'Customer', 'Status', 'Created'];
+        rows = [
+          for (final p in packages)
+            [_s(p['tracking_number']), _s(p['customer_name']), _s(p['status']), _date(p['created_at'])],
+        ];
+        break;
+      case 'manifest_summary':
+        filename = 'manifest_summary.csv';
+        headers = const ['Shipment #', 'Carrier', 'Origin', 'Destination', 'Status', 'Created'];
+        rows = [
+          for (final s in shipments)
+            [_s(s['shipment_number']), _s(s['carrier']), _s(s['origin']), _s(s['destination']), _s(s['status']), _date(s['created_at'])],
+        ];
+        break;
+      default:
+        filename = 'report.csv';
+        headers = const [];
+        rows = const [];
+    }
+    ExportService.downloadCsv(filename: filename, headers: headers, rows: rows);
+  }
+
   @override
   Widget build(BuildContext context) {
     return _PagePanel(
@@ -3641,6 +4405,24 @@ class _ReportDetailPageState extends State<_ReportDetailPage> {
           ),
           icon: const Icon(Icons.arrow_back, size: 16),
           label: const Text('All Reports'),
+        ),
+        const SizedBox(width: 8),
+        FutureBuilder<List<List<Map<String, dynamic>>>>(
+          future: _future,
+          builder: (context, snap) {
+            final data = snap.data;
+            return ElevatedButton.icon(
+              onPressed: data == null
+                  ? null
+                  : () => _export(data[0], data[1], data[2], data[3]),
+              icon: const Icon(Icons.download, size: 16),
+              label: const Text('Export CSV'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+              ),
+            );
+          },
         ),
       ],
       child: FutureBuilder<List<List<Map<String, dynamic>>>>(
@@ -7372,7 +8154,9 @@ class _ToggleRowState extends State<_ToggleRow> {
 
 // ─── Broadcast / Referrals / Mobile App / Support / Instructions ─────────
 class _BroadcastPage extends StatefulWidget {
-  const _BroadcastPage();
+  final DatabaseService db;
+  final String? partnerId;
+  const _BroadcastPage({required this.db, required this.partnerId});
   @override
   State<_BroadcastPage> createState() => _BroadcastPageState();
 }
@@ -7380,12 +8164,94 @@ class _BroadcastPage extends StatefulWidget {
 class _BroadcastPageState extends State<_BroadcastPage> {
   String _channel = 'Email';
   String _audience = 'All Customers';
+  final _subjectCtl = TextEditingController();
+  final _messageCtl = TextEditingController();
+  List<Map<String, dynamic>> _recent = [];
+  bool _loading = true;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _subjectCtl.dispose();
+    _messageCtl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final pid = widget.partnerId;
+    if (pid == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final recent = await widget.db.getPartnerBroadcasts(pid);
+      if (!mounted) return;
+      setState(() {
+        _recent = recent;
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save({required bool send}) async {
+    final pid = widget.partnerId;
+    if (pid == null) return;
+    if (send &&
+        (_subjectCtl.text.trim().isEmpty || _messageCtl.text.trim().isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Write a subject and message first.')),
+      );
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await widget.db.insertPartnerBroadcast({
+        'partner_id': pid,
+        'channel': _channel,
+        'audience': _audience,
+        'subject': _subjectCtl.text.trim(),
+        'message': _messageCtl.text.trim(),
+        'status': send ? 'sent' : 'draft',
+        if (send) 'sent_at': DateTime.now().toIso8601String(),
+      });
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _subjectCtl.clear();
+      _messageCtl.clear();
+      _load();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            send
+                ? 'Broadcast logged for $_channel → $_audience. Actual '
+                      'delivery isn\'t connected yet — no message was '
+                      'really sent to customers.'
+                : 'Draft saved.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return _PagePanel(
       title: 'Broadcast',
-      subtitle: 'Send announcements and promotions to your customers.',
+      subtitle: 'Draft announcements and promotions for your customers.',
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -7402,6 +8268,29 @@ class _BroadcastPageState extends State<_BroadcastPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: AppTheme.warning.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.warning.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: AppTheme.warning, size: 16),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Broadcasts are saved and logged, but actual '
+                              'delivery (email/SMS/push) isn\'t connected '
+                              'yet — nothing is sent to customers.',
+                              style: TextStyle(fontSize: 12, color: _textSoft),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     Row(
                       children: [
                         Expanded(
@@ -7429,44 +8318,29 @@ class _BroadcastPageState extends State<_BroadcastPage> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    const _SettingsField(
+                    _SettingsField(
                       label: 'Subject',
                       hint: 'A short, attention-grabbing headline',
+                      controller: _subjectCtl,
                     ),
                     const SizedBox(height: 16),
-                    const _SettingsField(
+                    _SettingsField(
                       label: 'Message',
                       hint: 'Write your announcement here…',
+                      controller: _messageCtl,
                       maxLines: 8,
                     ),
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: () {},
-                          icon: const Icon(Icons.attach_file, size: 14),
-                          label: const Text('Attach Image'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _text,
-                            side: const BorderSide(color: _border),
-                          ),
-                        ),
                         const Spacer(),
                         TextButton(
-                          onPressed: () {},
+                          onPressed: _saving ? null : () => _save(send: false),
                           child: const Text('Save Draft'),
                         ),
                         const SizedBox(width: 8),
                         ElevatedButton.icon(
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Broadcast queued via $_channel to $_audience',
-                                ),
-                              ),
-                            );
-                          },
+                          onPressed: _saving ? null : () => _save(send: true),
                           icon: const Icon(Icons.send, size: 14),
                           label: const Text('Send Now'),
                           style: ElevatedButton.styleFrom(
@@ -7503,43 +8377,56 @@ class _BroadcastPageState extends State<_BroadcastPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  for (final r in const [
-                    ('Spring Sale 20% Off', 'Email · 1,204 sent', '3d ago'),
-                    ('Holiday Hours Update', 'SMS · 980 sent', '1w ago'),
-                    ('New Mobile App Launch', 'Push · 624 sent', '2w ago'),
-                  ])
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.campaign, size: 18, color: _muted),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  r.$1,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: _text,
-                                  ),
-                                ),
-                                Text(
-                                  r.$2,
-                                  style: TextStyle(fontSize: 11, color: _muted),
-                                ),
-                              ],
+                  if (_loading)
+                    const Center(child: CircularProgressIndicator())
+                  else if (_recent.isEmpty)
+                    Text(
+                      'Nothing sent or drafted yet.',
+                      style: TextStyle(fontSize: 12, color: _muted),
+                    )
+                  else
+                    for (final r in _recent)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          children: [
+                            Icon(
+                              r['status'] == 'sent'
+                                  ? Icons.campaign
+                                  : Icons.edit_note,
+                              size: 18,
+                              color: _muted,
                             ),
-                          ),
-                          Text(
-                            r.$3,
-                            style: TextStyle(fontSize: 11, color: _muted),
-                          ),
-                        ],
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _s(r['subject']).isEmpty
+                                        ? '(no subject)'
+                                        : _s(r['subject']),
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: _text,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    '${_s(r['channel'])} · ${r['status'] == 'sent' ? 'Sent' : 'Draft'} · ${_s(r['audience'])}',
+                                    style: TextStyle(fontSize: 11, color: _muted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              _date(r['created_at']),
+                              style: TextStyle(fontSize: 11, color: _muted),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                 ],
               ),
             ),
@@ -7601,16 +8488,86 @@ class _DropdownField extends StatelessWidget {
   }
 }
 
-class _ReferralsPage extends StatelessWidget {
+class _ReferralsPage extends StatefulWidget {
+  final DatabaseService db;
   final Map<String, dynamic> account;
-  const _ReferralsPage({required this.account});
+  const _ReferralsPage({required this.db, required this.account});
+  @override
+  State<_ReferralsPage> createState() => _ReferralsPageState();
+}
+
+class _ReferralsPageState extends State<_ReferralsPage> {
+  List<Map<String, dynamic>> _referrals = [];
+  bool _loading = true;
+
+  String get _code =>
+      ((widget.account['tracking_prefix'] as String?) ?? 'PARTNER')
+          .toUpperCase()
+          .replaceAll('-', '');
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final pid = widget.account['id']?.toString();
+    if (pid == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final referrals = await widget.db.getPartnerReferrals(pid);
+      if (!mounted) return;
+      setState(() {
+        _referrals = referrals;
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _copyCode() async {
+    await Clipboard.setData(ClipboardData(text: _code));
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Referral code copied')));
+  }
+
+  Future<void> _addReferral() async {
+    final result = await _showFormDialog(
+      context,
+      title: 'Log a Referral',
+      fields: const [
+        _FormField('company', 'Company Name'),
+        _FormField('email', 'Contact Email'),
+      ],
+      confirmLabel: 'Add',
+    );
+    if (result == null ||
+        result['company']!.isEmpty ||
+        result['email']!.isEmpty) {
+      return;
+    }
+    final pid = widget.account['id']?.toString();
+    if (pid == null) return;
+    await widget.db.insertPartnerReferral({
+      'partner_id': pid,
+      'referred_company': result['company'],
+      'referred_email': result['email'],
+    });
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final code = ((account['tracking_prefix'] as String?) ?? 'PARTNER')
-        .toUpperCase();
+    final active = _referrals.where((r) => r['status'] == 'active').length;
     return _PagePanel(
       title: 'Referrals',
-      subtitle: 'Earn rewards by referring other couriers to One Village.',
+      subtitle: 'Track courier businesses you\'ve referred to One Village.',
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -7630,7 +8587,7 @@ class _ReferralsPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Refer a partner, earn \$250 credit',
+                          'Refer another courier business',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 20,
@@ -7639,7 +8596,9 @@ class _ReferralsPage extends StatelessWidget {
                         ),
                         SizedBox(height: 6),
                         Text(
-                          'When they sign up and complete their first month, you both get rewarded.',
+                          'Share your code. There\'s no automated reward '
+                          'program yet — log referrals here to keep track '
+                          'of who you\'ve sent our way.',
                           style: TextStyle(color: Colors.white70, fontSize: 13),
                         ),
                       ],
@@ -7663,11 +8622,20 @@ class _ReferralsPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          code,
+                          _code,
                           style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
                             color: AppTheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextButton.icon(
+                          onPressed: _copyCode,
+                          icon: const Icon(Icons.copy, size: 14),
+                          label: const Text(
+                            'Copy',
+                            style: TextStyle(fontSize: 12),
                           ),
                         ),
                       ],
@@ -7681,25 +8649,17 @@ class _ReferralsPage extends StatelessWidget {
               children: [
                 Expanded(
                   child: _MetricTile(
-                    label: 'Referrals Sent',
-                    value: '12',
+                    label: 'Referrals Logged',
+                    value: '${_referrals.length}',
                     icon: Icons.send,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _MetricTile(
-                    label: 'Signed Up',
-                    value: '4',
+                    label: 'Active',
+                    value: '$active',
                     icon: Icons.person_add,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _MetricTile(
-                    label: 'Credits Earned',
-                    value: '\$1,000',
-                    icon: Icons.savings,
                   ),
                 ),
               ],
@@ -7715,66 +8675,85 @@ class _ReferralsPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Recent Referrals',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: _text,
-                    ),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Referrals',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: _text,
+                          ),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: _addReferral,
+                        icon: const Icon(Icons.add, size: 14),
+                        label: const Text('Log Referral'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
-                  for (final r in const [
-                    ('Quick Ship Ltd', 'quick@example.com', 'Active'),
-                    ('Island Express', 'island@example.com', 'Active'),
-                    ('Coast Couriers', 'coast@example.com', 'Pending'),
-                  ])
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              r.$1,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: _text,
+                  if (_loading)
+                    const Center(child: CircularProgressIndicator())
+                  else if (_referrals.isEmpty)
+                    Text(
+                      'No referrals logged yet.',
+                      style: TextStyle(fontSize: 12, color: _muted),
+                    )
+                  else
+                    for (final r in _referrals)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _s(r['referred_company']),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: _text,
+                                ),
                               ),
                             ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              r.$2,
-                              style: TextStyle(fontSize: 12, color: _muted),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color:
-                                  (r.$3 == 'Active'
-                                          ? AppTheme.success
-                                          : AppTheme.warning)
-                                      .withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              r.$3,
-                              style: TextStyle(
-                                color: r.$3 == 'Active'
-                                    ? AppTheme.success
-                                    : AppTheme.warning,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
+                            Expanded(
+                              child: Text(
+                                _s(r['referred_email']),
+                                style: TextStyle(fontSize: 12, color: _muted),
                               ),
                             ),
-                          ),
-                        ],
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    (r['status'] == 'active'
+                                            ? AppTheme.success
+                                            : AppTheme.warning)
+                                        .withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                r['status'] == 'active' ? 'Active' : 'Pending',
+                                style: TextStyle(
+                                  color: r['status'] == 'active'
+                                      ? AppTheme.success
+                                      : AppTheme.warning,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                 ],
               ),
             ),
@@ -7840,7 +8819,7 @@ class _MobileAppPage extends StatelessWidget {
   const _MobileAppPage({required this.account});
   @override
   Widget build(BuildContext context) {
-    final brand = (account['business_name'] as String?) ?? 'Your Brand';
+    final brand = (account['company_name'] as String?) ?? 'Your Brand';
     return _PagePanel(
       title: 'Mobile App',
       subtitle: 'Your white-label customer app for iOS and Android.',
@@ -7903,11 +8882,11 @@ class _MobileAppPage extends StatelessWidget {
                             vertical: 3,
                           ),
                           decoration: BoxDecoration(
-                            color: AppTheme.primary,
+                            color: AppTheme.warning,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
-                            'NEW',
+                            'COMING SOON',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 10,
@@ -7926,29 +8905,32 @@ class _MobileAppPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Pre-alerts, package tracking, payments, and notifications — all in your customers\' pocket.',
+                          'A white-label mobile app isn\'t built yet — this '
+                          'preview shows what it will look like once it '
+                          'ships. Your customers can already do everything '
+                          'below from the web customer portal today.',
                           style: TextStyle(fontSize: 13, color: _muted),
                         ),
                         const SizedBox(height: 16),
                         Row(
                           children: [
-                            ElevatedButton.icon(
-                              onPressed: () {},
+                            OutlinedButton.icon(
+                              onPressed: null,
                               icon: const Icon(Icons.apple, size: 16),
-                              label: const Text('App Store'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.black,
-                                foregroundColor: Colors.white,
+                              label: const Text('Not published'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _muted,
+                                side: BorderSide(color: _border),
                               ),
                             ),
                             const SizedBox(width: 8),
-                            ElevatedButton.icon(
-                              onPressed: () {},
+                            OutlinedButton.icon(
+                              onPressed: null,
                               icon: const Icon(Icons.android, size: 16),
-                              label: const Text('Google Play'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.black,
-                                foregroundColor: Colors.white,
+                              label: const Text('Not published'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _muted,
+                                side: BorderSide(color: _border),
                               ),
                             ),
                           ],
@@ -7961,7 +8943,7 @@ class _MobileAppPage extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             const Text(
-              'App Features',
+              'Planned Features',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
@@ -8018,43 +9000,149 @@ class _MobileAppPage extends StatelessWidget {
   }
 }
 
-class _SupportPage extends StatelessWidget {
-  const _SupportPage();
+class _SupportPage extends StatefulWidget {
+  final DatabaseService db;
+  final String? partnerId;
+  const _SupportPage({required this.db, required this.partnerId});
+  @override
+  State<_SupportPage> createState() => _SupportPageState();
+}
+
+class _SupportPageState extends State<_SupportPage> {
+  static const _supportEmail = 'support@applizonecentralja.com';
+  final _subjectCtl = TextEditingController();
+  final _descCtl = TextEditingController();
+  List<Map<String, dynamic>> _tickets = [];
+  bool _loading = true;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _subjectCtl.dispose();
+    _descCtl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final pid = widget.partnerId;
+    if (pid == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final tickets = await widget.db.getPartnerSupportTickets(pid);
+      if (!mounted) return;
+      setState(() {
+        _tickets = tickets;
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _emailSupport() {
+    final uri = Uri(
+      scheme: 'mailto',
+      path: _supportEmail,
+      query: _subjectCtl.text.trim().isEmpty
+          ? null
+          : 'subject=${Uri.encodeComponent(_subjectCtl.text.trim())}',
+    );
+    html.window.open(uri.toString(), '_self');
+  }
+
+  void _liveChatNotAvailable() {
+    showDialog(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Live Chat — not available yet'),
+        content: const Text(
+          'Live chat isn\'t connected yet. Email us or submit a ticket '
+          'below and we\'ll get back to you.',
+        ),
+        actions: [
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+            onPressed: () => Navigator.of(dctx).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _submitTicket() async {
+    final pid = widget.partnerId;
+    if (pid == null) return;
+    if (_subjectCtl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a subject first.')),
+      );
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await widget.db.insertPartnerSupportTicket({
+        'partner_id': pid,
+        'subject': _subjectCtl.text.trim(),
+        'description': _descCtl.text.trim(),
+      });
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _subjectCtl.clear();
+      _descCtl.clear();
+      _load();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Ticket submitted. A team member will follow up by email.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to submit: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return _PagePanel(
       title: 'Support',
-      subtitle: 'We\'re here 24/7 — pick the channel that works for you.',
+      subtitle: 'Reach us by email or submit a ticket below.',
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
-              children: const [
+              children: [
                 Expanded(
                   child: _SupportTile(
                     title: 'Live Chat',
-                    subtitle: 'Average reply: 2 min',
+                    subtitle: 'Not connected yet',
                     icon: Icons.chat,
                     cta: 'Start Chat',
+                    onTap: _liveChatNotAvailable,
                   ),
                 ),
-                SizedBox(width: 12),
+                const SizedBox(width: 12),
                 Expanded(
                   child: _SupportTile(
                     title: 'Email',
-                    subtitle: 'support@applizonecentralja.com',
+                    subtitle: _supportEmail,
                     icon: Icons.mail,
                     cta: 'Send Email',
-                  ),
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: _SupportTile(
-                    title: 'Phone',
-                    subtitle: '+1 (876) 555-0100',
-                    icon: Icons.call,
-                    cta: 'Call Now',
+                    onTap: _emailSupport,
                   ),
                 ),
               ],
@@ -8079,14 +9167,16 @@ class _SupportPage extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const _SettingsField(
+                  _SettingsField(
                     label: 'Subject',
                     hint: 'Briefly describe the issue',
+                    controller: _subjectCtl,
                   ),
                   const SizedBox(height: 12),
-                  const _SettingsField(
+                  _SettingsField(
                     label: 'Description',
                     hint: 'Steps to reproduce, screenshots, error messages…',
+                    controller: _descCtl,
                     maxLines: 6,
                   ),
                   const SizedBox(height: 12),
@@ -8094,19 +9184,66 @@ class _SupportPage extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       ElevatedButton(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Ticket submitted')),
-                          );
-                        },
+                        onPressed: _saving ? null : _submitTicket,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primary,
                           foregroundColor: Colors.white,
                         ),
-                        child: const Text('Submit Ticket'),
+                        child: _saving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text('Submit Ticket'),
                       ),
                     ],
                   ),
+                  if (!_loading && _tickets.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Your tickets',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: _textSoft,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    for (final t in _tickets)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          children: [
+                            Icon(
+                              t['status'] == 'closed'
+                                  ? Icons.check_circle
+                                  : Icons.schedule,
+                              size: 14,
+                              color: t['status'] == 'closed'
+                                  ? AppTheme.success
+                                  : AppTheme.warning,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _s(t['subject']),
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                            Text(
+                              _date(t['created_at']),
+                              style: TextStyle(fontSize: 11, color: _muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -8135,16 +9272,16 @@ class _SupportPage extends StatelessWidget {
                     a: 'Open the Customers tab and click "Add Customer" in the top-right.',
                   ),
                   _FaqRow(
-                    q: 'How do I generate shipping labels?',
-                    a: 'Open a package and click "Print Label" in the actions menu.',
+                    q: 'How do I bill a customer for a package?',
+                    a: 'Open Packages, use the ⋮ menu on a package, and choose "Bill customer".',
                   ),
                   _FaqRow(
                     q: 'How do I configure my tracking prefix?',
-                    a: 'Go to Settings → Company Profile → Tracking Prefix.',
+                    a: 'Go to Settings → Company, under Tracking Prefix.',
                   ),
                   _FaqRow(
-                    q: 'How do I get paid?',
-                    a: 'Connect Stripe in Settings → Integrations. Payouts are daily.',
+                    q: 'How do I set my rates and taxes?',
+                    a: 'Go to Settings → Rate Calculator and Settings → Currency.',
                   ),
                 ],
               ),
@@ -8161,11 +9298,13 @@ class _SupportTile extends StatelessWidget {
   final String subtitle;
   final IconData icon;
   final String cta;
+  final VoidCallback? onTap;
   const _SupportTile({
     required this.title,
     required this.subtitle,
     required this.icon,
     required this.cta,
+    this.onTap,
   });
   @override
   Widget build(BuildContext context) {
@@ -8201,7 +9340,7 @@ class _SupportTile extends StatelessWidget {
           Text(subtitle, style: TextStyle(fontSize: 12, color: _muted)),
           const SizedBox(height: 12),
           OutlinedButton(
-            onPressed: () {},
+            onPressed: onTap,
             style: OutlinedButton.styleFrom(
               foregroundColor: AppTheme.primary,
               side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.4)),
@@ -8243,131 +9382,200 @@ class _FaqRow extends StatelessWidget {
 
 class _InstructionsPage extends StatelessWidget {
   const _InstructionsPage();
+
+  static const _guides = [
+    (
+      'Getting Started',
+      Icons.rocket_launch,
+      'Set up your portal, brand it, and add your first customer.',
+      'Fill in your business details under Settings → Company: business '
+          'name, contact info, address, and your tracking prefix (this is '
+          'the code, e.g. "HDS-", that identifies which packages arriving '
+          'at the warehouse belong to your customers).\n\n'
+          'Then head to Customers → Add Customer to create your first '
+          'customer record. Each customer gets a mailbox number they can '
+          'give to merchants when shopping online.',
+    ),
+    (
+      'Receivals',
+      Icons.inbox,
+      'How packages arriving at the OneVillage warehouse show up for you.',
+      'Warehouse staff scan packages in at the physical OneVillage '
+          'warehouse. Anything with your tracking prefix shows up '
+          'automatically on your Receivals page — no action needed on '
+          'your end to have it appear.\n\n'
+          'If a package arrives but couldn\'t be matched to one of your '
+          'customers, it shows up under Unk Packages instead, where you '
+          'can assign it to the right customer.',
+    ),
+    (
+      'Pre-Alerts',
+      Icons.notifications_active,
+      'How customers submit pre-alerts and how you match them.',
+      'Your customers submit a pre-alert (tracking number, carrier, '
+          'description, declared value) from their own portal before a '
+          'package arrives. It shows up on your Pre-Alerts page with '
+          'status "pending".\n\n'
+          'Once the physical package actually arrives at the warehouse '
+          '(see Receivals), come back to Pre-Alerts and click "Mark '
+          'Received" on the matching entry.',
+    ),
+    (
+      'Creating Shipments',
+      Icons.local_shipping,
+      'Build outbound shipments and track them through to delivery.',
+      'From Shipments, click "New Shipment" and fill in the shipment '
+          'number, type (Air/Sea), origin, and destination. New shipments '
+          'start at "preparing".\n\n'
+          'Use the action button on each row to advance it through '
+          'preparing → in transit → arrived → delivered as it moves.',
+    ),
+    (
+      'Invoicing & Payments',
+      Icons.receipt_long,
+      'Bill customers, record sales, and track what\'s outstanding.',
+      'To bill for a specific package, open Packages, use the ⋮ menu on '
+          'a row, and choose "Bill customer" — the suggested amount is '
+          'calculated from your rates in Settings → Rate Calculator and '
+          'Currency, and you can adjust it before charging.\n\n'
+          'For a walk-in or non-package sale, use Point of Sale → New '
+          'Sale instead. Track everything — paid or outstanding — under '
+          'Transactions, where you can mark an invoice paid and export a '
+          'CSV.\n\nNote: online card payments aren\'t connected yet '
+          '(Settings → Online Payment Gateway) — invoices are marked '
+          'paid manually today.',
+    ),
+    (
+      'Api Sync & Webhooks',
+      Icons.code,
+      'Your API key and webhook URL, and what they do today.',
+      'Settings → Api Sync lets you generate an API key and set a '
+          'webhook URL and rate limit for your account. These are saved '
+          'to your account so they\'re ready when you need them.\n\n'
+          'Note: this records your configuration, but live request '
+          'handling and webhook delivery aren\'t connected yet — treat '
+          'this as reserving your credentials, not an active integration.',
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final guides = const [
-      (
-        'Getting Started',
-        Icons.rocket_launch,
-        '5 min read',
-        'Set up your portal, brand it, and add your first customer.',
-      ),
-      (
-        'Receiving Packages',
-        Icons.inbox,
-        '4 min read',
-        'Workflow for receiving, weighing, and labeling incoming packages.',
-      ),
-      (
-        'Pre-Alerts',
-        Icons.notifications_active,
-        '3 min read',
-        'How customers submit pre-alerts and how to match them to packages.',
-      ),
-      (
-        'Creating Shipments',
-        Icons.local_shipping,
-        '6 min read',
-        'Build manifests, print labels, and hand off to carriers.',
-      ),
-      (
-        'Invoicing & Payments',
-        Icons.receipt_long,
-        '5 min read',
-        'Generate invoices, accept card payments, and track AR.',
-      ),
-      (
-        'API & Webhooks',
-        Icons.code,
-        '8 min read',
-        'Integrate One Village with your own systems via REST + webhooks.',
-      ),
-    ];
     return _PagePanel(
       title: 'Instructions',
       subtitle: 'Step-by-step guides and best practices.',
-      child: GridView.count(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 3,
-        children: [
-          for (final g in guides)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _border),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(g.$2, color: AppTheme.primary, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final cols = c.maxWidth >= 900 ? 2 : 1;
+          return GridView.count(
+            crossAxisCount: cols,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: cols == 2 ? 3 : 4,
+            children: [
+              for (final g in _guides)
+                Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => showDialog(
+                      context: context,
+                      builder: (dctx) => AlertDialog(
+                        title: Row(
                           children: [
-                            Expanded(
-                              child: Text(
-                                g.$1,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: _text,
+                            Icon(g.$2, color: AppTheme.primary, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(child: Text(g.$1)),
+                          ],
+                        ),
+                        content: SizedBox(
+                          width: 460,
+                          child: SingleChildScrollView(
+                            child: Text(
+                              g.$4,
+                              style: const TextStyle(fontSize: 13, height: 1.5),
+                            ),
+                          ),
+                        ),
+                        actions: [
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppTheme.primary,
+                            ),
+                            onPressed: () => Navigator.of(dctx).pop(),
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: _border),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(g.$2, color: AppTheme.primary, size: 20),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  g.$1,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: _text,
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  g.$3,
+                                  style: TextStyle(fontSize: 12, color: _muted),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Text(
+                                      'Read guide',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.primary,
+                                      ),
+                                    ),
+                                    const Icon(
+                                      Icons.arrow_forward,
+                                      size: 12,
+                                      color: AppTheme.primary,
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
-                            Text(
-                              g.$3,
-                              style: TextStyle(fontSize: 11, color: _muted),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          g.$4,
-                          style: TextStyle(fontSize: 12, color: _muted),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Text(
-                              'Read guide',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: AppTheme.primary,
-                              ),
-                            ),
-                            const Icon(
-                              Icons.arrow_forward,
-                              size: 12,
-                              color: AppTheme.primary,
-                            ),
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
-            ),
-        ],
+                ),
+            ],
+          );
+        },
       ),
     );
   }

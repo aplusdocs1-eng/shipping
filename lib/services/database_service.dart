@@ -206,6 +206,19 @@ class DatabaseService {
     return Map<String, dynamic>.from(data);
   }
 
+  Future<Map<String, dynamic>> updateCustomer(
+    String id,
+    Map<String, dynamic> updates,
+  ) async {
+    final data = await _db
+        .from('customers')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
   /// Self-serve customer sign-up, scoped to the partner whose domain the
   /// customer registered on. Goes through a SECURITY DEFINER RPC because
   /// a brand-new customer has no row yet to satisfy the RLS insert check.
@@ -488,6 +501,36 @@ class DatabaseService {
     } catch (_) {
       // Columns may not exist yet; ignore.
     }
+    return Map<String, dynamic>.from(data);
+  }
+
+  /// A POS "quick sale" not tied to any existing package — e.g. a walk-in
+  /// charge for packing materials, a same-day local delivery, etc.
+  Future<Map<String, dynamic>> insertQuickSaleInvoice({
+    required String customerId,
+    required String customerName,
+    required String description,
+    required double amount,
+    double taxRate = 0,
+    String? partnerId,
+  }) async {
+    final tax = amount * taxRate;
+    final total = amount + tax;
+    final invNumber =
+        'INV-${DateTime.now().millisecondsSinceEpoch.toString().substring(4)}';
+    final row = <String, dynamic>{
+      'invoice_number': invNumber,
+      'customer_id': customerId,
+      'customer_name': customerName,
+      'amount': amount,
+      'tax': tax,
+      'total': total,
+      'status': 'pending',
+      'invoice_type': 'customer_billing',
+      'notes': description,
+      if (partnerId != null) 'partner_id': partnerId,
+    };
+    final data = await _db.from('invoices').insert(row).select().single();
     return Map<String, dynamic>.from(data);
   }
 
@@ -961,6 +1004,89 @@ class DatabaseService {
 
   Future<void> deletePartnerShippingAddress(String id) async {
     await _db.from('partner_shipping_addresses').delete().eq('id', id);
+  }
+
+  // ─── Broadcasts / Referrals / Support Tickets ─────────────────────────
+
+  Future<List<Map<String, dynamic>>> getPartnerBroadcasts(
+    String partnerId,
+  ) async {
+    final data = await _db
+        .from('partner_broadcasts')
+        .select()
+        .eq('partner_id', partnerId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> insertPartnerBroadcast(
+    Map<String, dynamic> row,
+  ) async {
+    final data = await _db
+        .from('partner_broadcasts')
+        .insert(row)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<List<Map<String, dynamic>>> getPartnerReferrals(
+    String partnerId,
+  ) async {
+    final data = await _db
+        .from('partner_referrals')
+        .select()
+        .eq('partner_id', partnerId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> insertPartnerReferral(
+    Map<String, dynamic> row,
+  ) async {
+    final data = await _db
+        .from('partner_referrals')
+        .insert(row)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<List<Map<String, dynamic>>> getPartnerSupportTickets(
+    String partnerId,
+  ) async {
+    final data = await _db
+        .from('partner_support_tickets')
+        .select()
+        .eq('partner_id', partnerId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> insertPartnerSupportTicket(
+    Map<String, dynamic> row,
+  ) async {
+    final data = await _db
+        .from('partner_support_tickets')
+        .insert(row)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  /// Warehouse entries matching this partner's tracking prefix that never
+  /// got matched to one of their customers — i.e. genuinely unidentified
+  /// packages, not a hardcoded "all clear" claim.
+  Future<List<Map<String, dynamic>>> getUnknownPackagesByPrefix(
+    String prefix,
+  ) async {
+    final data = await _db
+        .from('warehouse_entries')
+        .select()
+        .ilike('tracking_number', '$prefix%')
+        .isFilter('customer_id', null)
+        .order('scanned_in_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
   }
 
   // ─── Vendor API (admin Settings "API for 3rd Party Vendors") ─────────
