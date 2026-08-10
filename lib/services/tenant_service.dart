@@ -60,6 +60,14 @@ class TenantService {
       _partner?['tracking_prefix'] as String? ??
       (isAdminHost ? _directTrackingPrefix : null);
 
+  /// Curated public branding for the current partner's customer-facing
+  /// pages (see PartnerBranding) — null on the admin host or when nothing
+  /// has been customized. Populated by get_partner_by_domain /
+  /// get_partner_by_code, which expose only this specific subset of
+  /// partner_accounts.settings, never the raw column.
+  Map<String, dynamic>? get branding =>
+      _partner?['branding'] as Map<String, dynamic>?;
+
   /// Reads `Uri.base.host` (on web this is `window.location.hostname`) and
   /// queries Supabase for a matching partner. Silently falls back to admin
   /// behaviour if the lookup fails or there is no match.

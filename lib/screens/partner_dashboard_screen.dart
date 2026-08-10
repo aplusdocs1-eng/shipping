@@ -7587,6 +7587,12 @@ class _BrandingTabState extends State<_BrandingTab> {
     0xFF0EA5E9,
     0xFF111827,
   ];
+  static const _defaultFeatures = [
+    'Real-time tracking on every package',
+    'View and pay invoices online',
+    'Instant delivery status alerts',
+    'Manage multiple shipping addresses',
+  ];
   late final Map<String, dynamic> _settings = Map<String, dynamic>.from(
     widget.account['settings'] as Map? ?? {},
   );
@@ -7597,6 +7603,21 @@ class _BrandingTabState extends State<_BrandingTab> {
         (_settings['branding_portal_title'] as String?) ??
         'Welcome to your courier portal',
   );
+  late final _subtitleCtl = TextEditingController(
+    text: (_settings['branding_subtitle'] as String?) ?? '',
+  );
+  late final _logoUrlCtl = TextEditingController(
+    text: (_settings['branding_logo_url'] as String?) ?? '',
+  );
+  late final _heroImageUrlCtl = TextEditingController(
+    text: (_settings['branding_hero_image_url'] as String?) ?? '',
+  );
+  late final List<TextEditingController> _featureCtls = () {
+    final raw = _settings['branding_features'];
+    final saved = raw is List ? raw.whereType<String>().toList() : <String>[];
+    final initial = saved.isNotEmpty ? saved : List<String>.from(_defaultFeatures);
+    return initial.map((f) => TextEditingController(text: f)).toList();
+  }();
   late final _senderCtl = TextEditingController(
     text:
         (_settings['branding_email_sender'] as String?) ??
@@ -7614,6 +7635,37 @@ class _BrandingTabState extends State<_BrandingTab> {
   late bool _darkMode = _settings['branding_dark_mode'] as bool? ?? false;
   bool _saving = false;
 
+  @override
+  void dispose() {
+    _titleCtl.dispose();
+    _subtitleCtl.dispose();
+    _logoUrlCtl.dispose();
+    _heroImageUrlCtl.dispose();
+    for (final c in _featureCtls) {
+      c.dispose();
+    }
+    _senderCtl.dispose();
+    _footerCtl.dispose();
+    super.dispose();
+  }
+
+  String get _previewLink {
+    final domain = (widget.account['domain'] as String?)?.trim();
+    if (domain != null && domain.isNotEmpty) {
+      return 'https://$domain/#/customer-login';
+    }
+    final code = ((widget.account['tracking_prefix'] as String?) ?? '')
+        .replaceAll('-', '')
+        .toUpperCase();
+    return '${Uri.base.origin}/?partner=$code#/customer-login';
+  }
+
+  void _addFeature() => setState(() => _featureCtls.add(TextEditingController()));
+
+  void _removeFeature(int i) => setState(() {
+    _featureCtls.removeAt(i).dispose();
+  });
+
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
@@ -7622,6 +7674,13 @@ class _BrandingTabState extends State<_BrandingTab> {
         {
           'branding_color': _selectedColor,
           'branding_portal_title': _titleCtl.text.trim(),
+          'branding_subtitle': _subtitleCtl.text.trim(),
+          'branding_logo_url': _logoUrlCtl.text.trim(),
+          'branding_hero_image_url': _heroImageUrlCtl.text.trim(),
+          'branding_features': _featureCtls
+              .map((c) => c.text.trim())
+              .where((s) => s.isNotEmpty)
+              .toList(),
           'branding_email_sender': _senderCtl.text.trim(),
           'branding_email_footer': _footerCtl.text.trim(),
           'branding_show_in_emails': _showInEmails,
@@ -7632,9 +7691,9 @@ class _BrandingTabState extends State<_BrandingTab> {
       if (!mounted) return;
       setState(() => _saving = false);
       widget.onAccountUpdated?.call(updated);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Branding saved')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Branding saved — your customers see this immediately.')),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -7654,6 +7713,33 @@ class _BrandingTabState extends State<_BrandingTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.primary.withValues(alpha: 0.15)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.visibility_outlined, size: 18, color: AppTheme.primary),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          "This is what your customers see when they visit your sign-in link — not the admin site's own page.",
+                          style: TextStyle(fontSize: 12.5, color: _text),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => html.window.open(_previewLink, '_blank'),
+                        icon: const Icon(Icons.open_in_new, size: 15),
+                        label: const Text('Preview'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
                 const Text(
                   'Primary Brand Color',
                   style: TextStyle(
@@ -7661,6 +7747,11 @@ class _BrandingTabState extends State<_BrandingTab> {
                     fontWeight: FontWeight.w700,
                     color: _text,
                   ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Used for your sign-in button and focused fields on your customer login page.',
+                  style: TextStyle(fontSize: 11.5, color: _muted),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -7694,10 +7785,67 @@ class _BrandingTabState extends State<_BrandingTab> {
                 ),
                 const SizedBox(height: 24),
                 _SettingsField(
-                  label: 'Customer Portal Title',
+                  label: 'Login Page Headline',
+                  hint: 'e.g. Track every shipment.\\nAnywhere you are.',
                   controller: _titleCtl,
+                  maxLines: 2,
                 ),
                 const SizedBox(height: 16),
+                _SettingsField(
+                  label: 'Login Page Subtext',
+                  hint: 'Your personal dashboard for packages, invoices, and delivery updates.',
+                  controller: _subtitleCtl,
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 16),
+                _SettingsField(
+                  label: 'Logo URL (blank = default logo)',
+                  hint: 'https://…',
+                  controller: _logoUrlCtl,
+                ),
+                const SizedBox(height: 16),
+                _SettingsField(
+                  label: 'Login Page Background Photo URL (blank = default photo)',
+                  hint: 'https://…',
+                  controller: _heroImageUrlCtl,
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Feature Highlights',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _text),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'The checklist shown on your login page.',
+                  style: TextStyle(fontSize: 11.5, color: _muted),
+                ),
+                const SizedBox(height: 10),
+                for (var i = 0; i < _featureCtls.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _SettingsField(label: '', controller: _featureCtls[i]),
+                        ),
+                        IconButton(
+                          onPressed: _featureCtls.length > 1 ? () => _removeFeature(i) : null,
+                          icon: const Icon(Icons.delete_outline, size: 18, color: AppTheme.danger),
+                          tooltip: 'Remove',
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+                    ),
+                  ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _featureCtls.length >= 6 ? null : _addFeature,
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add feature'),
+                  ),
+                ),
+                const SizedBox(height: 24),
                 _SettingsField(
                   label: 'Email Sender Name',
                   controller: _senderCtl,
@@ -7723,6 +7871,13 @@ class _BrandingTabState extends State<_BrandingTab> {
                   title: 'Use dark mode in customer portal',
                   value: _darkMode,
                   onChanged: (v) => setState(() => _darkMode = v),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Email sender/footer, PDF downloads, and dark mode are saved but not yet '
+                  'connected to live behavior — the fields above (color, headline, subtext, '
+                  'logo, photo, features) are the ones your customers actually see today.',
+                  style: TextStyle(fontSize: 11, color: _muted, fontStyle: FontStyle.italic),
                 ),
               ],
             ),

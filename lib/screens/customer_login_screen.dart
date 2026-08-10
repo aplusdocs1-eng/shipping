@@ -1,7 +1,24 @@
 import 'package:flutter/material.dart';
+import '../models/partner_branding.dart';
 import '../services/database_service.dart';
 import '../services/tenant_service.dart';
+import '../widgets/adaptive_image.dart';
 import 'landing_screen.dart' show LandingScreen;
+
+const _defaultFeatures = [
+  'Real-time tracking on every package',
+  'View and pay invoices online',
+  'Instant delivery status alerts',
+  'Manage multiple shipping addresses',
+];
+
+/// bg.computeLuminance() > 0.5 reads as a "light" color needing dark text
+/// on top for contrast; otherwise white text. Used for the sign-in button,
+/// which sits on a white background and takes on a courier's own brand
+/// color — unlike the rest of this page's fixed navy/yellow palette, this
+/// one has to stay legible against whatever color a courier picks.
+Color _contrastColor(Color bg) =>
+    bg.computeLuminance() > 0.5 ? const Color(0xFF111827) : Colors.white;
 
 /// Customer Portal login/sign-up, mirroring applizonecentralja.com/auth/customer/login.
 /// Sign-up is only offered when the app has resolved a partner tenant from
@@ -27,6 +44,7 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
   bool _argsApplied = false;
   String? _error;
   String? _success;
+  Color? _brandColor;
 
   @override
   void didChangeDependencies() {
@@ -178,7 +196,7 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(10),
-      borderSide: const BorderSide(color: _gold, width: 1.6),
+      borderSide: BorderSide(color: _brandColor ?? _gold, width: 1.6),
     ),
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
     suffixIcon: suffixIcon,
@@ -194,15 +212,17 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
     final canSignUp = TenantService().partnerId != null;
     final wide = MediaQuery.of(context).size.width > 920;
     final companyName = TenantService().companyName ?? 'One Village Shipping & Freight';
+    final branding = PartnerBranding.from(TenantService().branding);
+    _brandColor = branding.color != null ? Color(branding.color!) : null;
 
-    final form = _buildFormPanel(canSignUp, companyName);
+    final form = _buildFormPanel(canSignUp, companyName, branding);
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: wide
           ? Row(
               children: [
-                const Expanded(flex: 5, child: _BrandPanel()),
+                Expanded(flex: 5, child: _BrandPanel(branding: branding)),
                 Expanded(
                   flex: 4,
                   child: Center(child: SingleChildScrollView(padding: const EdgeInsets.all(32), child: form)),
@@ -212,7 +232,7 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
           : SingleChildScrollView(
               child: Column(
                 children: [
-                  const _CompactBrandHeader(),
+                  _CompactBrandHeader(branding: branding),
                   Padding(padding: const EdgeInsets.all(24), child: form),
                 ],
               ),
@@ -220,7 +240,7 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
     );
   }
 
-  Widget _buildFormPanel(bool canSignUp, String companyName) {
+  Widget _buildFormPanel(bool canSignUp, String companyName, PartnerBranding branding) {
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 400),
       child: Column(
@@ -231,13 +251,15 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
               Container(
                 width: 44,
                 height: 44,
-                decoration: BoxDecoration(color: _navy, borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(color: _brandColor ?? _navy, borderRadius: BorderRadius.circular(10)),
                 clipBehavior: Clip.antiAlias,
-                child: Image.asset(
-                  'assets/images/one_village_logo.png',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.local_shipping_outlined, color: _yellow),
-                ),
+                child: branding.logoUrl != null
+                    ? AdaptiveImage(url: branding.logoUrl, assetPath: 'assets/images/one_village_logo.png', fit: BoxFit.cover)
+                    : Image.asset(
+                        'assets/images/one_village_logo.png',
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(Icons.local_shipping_outlined, color: _yellow),
+                      ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -372,17 +394,20 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
             child: ElevatedButton(
               onPressed: _loading ? null : (_isSignUp ? _signUp : _signIn),
               style: ElevatedButton.styleFrom(
-                backgroundColor: _yellow,
-                foregroundColor: _navy,
+                backgroundColor: _brandColor ?? _yellow,
+                foregroundColor: _brandColor != null ? _contrastColor(_brandColor!) : _navy,
                 elevation: 0,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5),
               ),
               child: _loading
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2.2, color: _navy),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: _brandColor != null ? _contrastColor(_brandColor!) : _navy,
+                      ),
                     )
                   : Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -480,17 +505,12 @@ class _ModeToggle extends StatelessWidget {
 }
 
 class _BrandPanel extends StatelessWidget {
-  const _BrandPanel();
-
-  static const _features = [
-    'Real-time tracking on every package',
-    'View and pay invoices online',
-    'Instant delivery status alerts',
-    'Manage multiple shipping addresses',
-  ];
+  final PartnerBranding branding;
+  const _BrandPanel({required this.branding});
 
   @override
   Widget build(BuildContext context) {
+    final features = branding.features.isNotEmpty ? branding.features : _defaultFeatures;
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -504,7 +524,7 @@ class _BrandPanel extends StatelessWidget {
         children: [
           Opacity(
             opacity: 0.22,
-            child: Image.asset('assets/images/hero_port.jpg', fit: BoxFit.cover),
+            child: AdaptiveImage(url: branding.heroImageUrl, assetPath: 'assets/images/hero_port.jpg', fit: BoxFit.cover),
           ),
           DecoratedBox(
             decoration: BoxDecoration(
@@ -521,18 +541,23 @@ class _BrandPanel extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Image.asset(
-                  'assets/images/one_village_logo.png',
-                  height: 56,
-                  errorBuilder: (_, __, ___) => const Text(
-                    'ONE VILLAGE',
-                    style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
-                  ),
-                ),
+                branding.logoUrl != null
+                    ? SizedBox(
+                        height: 56,
+                        child: AdaptiveImage(url: branding.logoUrl, assetPath: 'assets/images/one_village_logo.png', fit: BoxFit.contain),
+                      )
+                    : Image.asset(
+                        'assets/images/one_village_logo.png',
+                        height: 56,
+                        errorBuilder: (_, __, ___) => const Text(
+                          'ONE VILLAGE',
+                          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
+                        ),
+                      ),
                 const SizedBox(height: 44),
-                const Text(
-                  'Track every shipment.\nAnywhere you are.',
-                  style: TextStyle(
+                Text(
+                  branding.portalTitle ?? 'Track every shipment.\nAnywhere you are.',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 34,
                     fontWeight: FontWeight.w800,
@@ -541,12 +566,12 @@ class _BrandPanel extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Text(
-                  'Your personal One Village dashboard for packages, invoices, and delivery updates — all in one place.',
-                  style: TextStyle(color: Color(0xFFC7D2E0), fontSize: 15, height: 1.5),
+                Text(
+                  branding.subtitle ?? 'Your personal dashboard for packages, invoices, and delivery updates — all in one place.',
+                  style: const TextStyle(color: Color(0xFFC7D2E0), fontSize: 15, height: 1.5),
                 ),
                 const SizedBox(height: 36),
-                for (final f in _features) ...[
+                for (final f in features) ...[
                   Row(
                     children: [
                       Container(
@@ -574,7 +599,8 @@ class _BrandPanel extends StatelessWidget {
 }
 
 class _CompactBrandHeader extends StatelessWidget {
-  const _CompactBrandHeader();
+  final PartnerBranding branding;
+  const _CompactBrandHeader({required this.branding});
 
   @override
   Widget build(BuildContext context) {
@@ -590,19 +616,24 @@ class _CompactBrandHeader extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Image.asset(
-            'assets/images/one_village_logo.png',
-            height: 48,
-            errorBuilder: (_, __, ___) => const Text(
-              'ONE VILLAGE',
-              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
-            ),
-          ),
+          branding.logoUrl != null
+              ? SizedBox(
+                  height: 48,
+                  child: AdaptiveImage(url: branding.logoUrl, assetPath: 'assets/images/one_village_logo.png', fit: BoxFit.contain),
+                )
+              : Image.asset(
+                  'assets/images/one_village_logo.png',
+                  height: 48,
+                  errorBuilder: (_, __, ___) => const Text(
+                    'ONE VILLAGE',
+                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+                  ),
+                ),
           const SizedBox(height: 12),
-          const Text(
-            'Track every shipment, anywhere you are.',
+          Text(
+            (branding.subtitle ?? 'Track every shipment, anywhere you are.').split('\n').first,
             textAlign: TextAlign.center,
-            style: TextStyle(color: Color(0xFFC7D2E0), fontSize: 13, fontWeight: FontWeight.w600),
+            style: const TextStyle(color: Color(0xFFC7D2E0), fontSize: 13, fontWeight: FontWeight.w600),
           ),
         ],
       ),

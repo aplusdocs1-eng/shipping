@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/landing_content.dart';
 import '../services/database_service.dart';
+import '../widgets/adaptive_image.dart';
 
 /// Public marketing home page for One Village Shipping & Freight.
 /// All copy, numbers, icons, and images below are the *defaults* — an
@@ -229,29 +230,6 @@ class _MaxWidth extends StatelessWidget {
           child: child,
         ),
       ),
-    );
-  }
-}
-
-/// Renders an admin-supplied image URL when present, otherwise falls back
-/// to the bundled default asset — and falls back again to the asset if the
-/// URL turns out to be broken/unreachable, so a bad image link an admin
-/// pastes can never blank out part of the live page.
-class _AdaptiveImage extends StatelessWidget {
-  final String url;
-  final String assetPath;
-  final BoxFit fit;
-  const _AdaptiveImage({required this.url, required this.assetPath, required this.fit});
-
-  @override
-  Widget build(BuildContext context) {
-    if (url.isEmpty) {
-      return Image.asset(assetPath, fit: fit);
-    }
-    return Image.network(
-      url,
-      fit: fit,
-      errorBuilder: (context, error, stackTrace) => Image.asset(assetPath, fit: fit),
     );
   }
 }
@@ -635,7 +613,7 @@ class _Hero extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             child: AspectRatio(
               aspectRatio: 1.15,
-              child: _AdaptiveImage(
+              child: AdaptiveImage(
                 url: content.img('hero', 'backgroundImageUrl'),
                 assetPath: 'assets/images/hero_port.jpg',
                 fit: BoxFit.cover,
@@ -868,7 +846,7 @@ class _ServiceCard extends StatelessWidget {
                 borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), topRight: Radius.circular(14)),
                 child: AspectRatio(
                   aspectRatio: 3 / 2,
-                  child: _AdaptiveImage(url: imageUrl, assetPath: fallbackAsset, fit: BoxFit.cover),
+                  child: AdaptiveImage(url: imageUrl, assetPath: fallbackAsset, fit: BoxFit.cover),
                 ),
               ),
               Positioned(
@@ -1114,7 +1092,7 @@ class _CtaSignup extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: AspectRatio(
         aspectRatio: 4 / 3,
-        child: _AdaptiveImage(
+        child: AdaptiveImage(
           url: content.img('cta', 'imageUrl'),
           assetPath: 'assets/images/forklift_warehouse.jpg',
           fit: BoxFit.cover,
