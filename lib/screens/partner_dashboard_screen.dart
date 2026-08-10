@@ -496,25 +496,61 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
           ? Drawer(child: _buildSidebar(a, expanded: true, inDrawer: true))
           : null,
       body: SafeArea(
-        child: Row(
+        child: Column(
           children: [
-            if (!isCompact)
-              _buildSidebar(a, expanded: !_sidebarCollapsed, inDrawer: false),
+            // Bold, always-visible strip identifying this as the courier
+            // portal — distinct in both color and label from the admin/
+            // warehouse dashboard, which a partner never sees, but staff
+            // sometimes have both open side by side.
+            Container(
+              width: double.infinity,
+              height: 30,
+              color: AppTheme.gold,
+              alignment: Alignment.center,
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.local_shipping, size: 15, color: AppTheme.primary),
+                  SizedBox(width: 8),
+                  Text(
+                    'COURIER DASHBOARD',
+                    style: TextStyle(
+                      color: AppTheme.primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             Expanded(
-              child: Container(
-                margin: EdgeInsets.fromLTRB(isCompact ? 0 : 0, 8, 8, 8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _border),
-                ),
-                child: Column(
-                  children: [
-                    _buildTopBar(current, isCompact),
-                    const Divider(height: 1, color: _border),
-                    Expanded(child: _buildPageContent(current, a)),
-                  ],
-                ),
+              child: Row(
+                children: [
+                  if (!isCompact)
+                    _buildSidebar(
+                      a,
+                      expanded: !_sidebarCollapsed,
+                      inDrawer: false,
+                    ),
+                  Expanded(
+                    child: Container(
+                      margin: EdgeInsets.fromLTRB(isCompact ? 0 : 0, 8, 8, 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: _border),
+                      ),
+                      child: Column(
+                        children: [
+                          _buildTopBar(current, isCompact),
+                          const Divider(height: 1, color: _border),
+                          Expanded(child: _buildPageContent(current, a)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

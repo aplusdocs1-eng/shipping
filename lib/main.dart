@@ -173,8 +173,13 @@ class _MainShellState extends State<MainShell> {
           const SizedBox(width: 8),
         ],
         bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(1),
-          child: Divider(height: 1, color: AppTheme.border),
+          preferredSize: Size.fromHeight(30),
+          child: _DashboardKindBanner(
+            label: 'ADMIN / WAREHOUSE DASHBOARD',
+            icon: Icons.admin_panel_settings,
+            background: AppTheme.primary,
+            foreground: Colors.white,
+          ),
         ),
       ),
       drawer: AppNavDrawer(
@@ -182,6 +187,49 @@ class _MainShellState extends State<MainShell> {
         onItemSelected: (index) => setState(() => _selectedIndex = index),
       ),
       body: _screens[_selectedIndex],
+    );
+  }
+}
+
+/// Bold, always-visible strip identifying which portal is currently on
+/// screen — admin/warehouse staff and couriers both sometimes have more
+/// than one of this app's dashboards open, and the two look similar
+/// enough at a glance to mix up.
+class _DashboardKindBanner extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color background;
+  final Color foreground;
+  const _DashboardKindBanner({
+    required this.label,
+    required this.icon,
+    required this.background,
+    required this.foreground,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      height: 30,
+      color: background,
+      alignment: Alignment.center,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 15, color: foreground),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
