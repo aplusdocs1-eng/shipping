@@ -1,7 +1,14 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../models/landing_content.dart';
+import '../services/database_service.dart';
 
 /// Public marketing home page for One Village Shipping & Freight.
+/// All copy, numbers, icons, and images below are the *defaults* — an
+/// admin can override any of them from the Site Content editor in the
+/// admin dashboard (site_content_screen.dart). This screen always renders
+/// defaults immediately (so the page is never blank/loading), then swaps
+/// in any saved overrides once fetched.
 class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key});
 
@@ -25,6 +32,24 @@ class _LandingScreenState extends State<LandingScreen> {
   final _scrollController = ScrollController();
   final _servicesKey = GlobalKey();
   final _ctaKey = GlobalKey();
+  LandingContent _content = LandingContent.merged(null);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContent();
+  }
+
+  Future<void> _loadContent() async {
+    try {
+      final overrides = await DatabaseService().getSiteContent('landing');
+      if (!mounted || overrides == null) return;
+      setState(() => _content = LandingContent.merged(overrides));
+    } catch (_) {
+      // Keep showing defaults — the public landing page must never fail
+      // to render just because the content-override fetch failed.
+    }
+  }
 
   void _scrollToTop() {
     _scrollController.animateTo(
@@ -85,28 +110,27 @@ class _LandingScreenState extends State<LandingScreen> {
     Navigator.of(context).pushNamed('/partner-login');
   }
 
-  static const _serviceDetails = {
-    'Sea Freight':
-        'Cost-effective ocean freight from anywhere in the USA to Kingston, Jamaica. Ideal for large or heavy shipments, with flexible container and consolidation options.',
-    'Air Freight':
-        'Fast, secure air cargo for time-sensitive shipments — from the USA to Kingston in days, not weeks, with full tracking every step of the way.',
-    'Warehousing':
-        'Secure, monitored storage with professional inventory management and distribution — your goods are safe and organized from arrival to dispatch.',
-    'Door to Door':
-        'We handle the entire journey — from pickup at our USA warehouse straight to your door in Jamaica, no extra steps required.',
-    'Customs Clearance':
-        'Expert documentation and fast customs processing so your shipment clears without delays or surprises.',
-  };
-
   void _showServiceDialog(String title) {
-    _showInfoDialog(title, _serviceDetails[title] ?? '');
+    final match = _content
+        .list('services', 'items')
+        .where((s) => s['title'] == title)
+        .toList();
+    final detail = match.isNotEmpty ? (match.first['detail'] as String?) : null;
+    _showInfoDialog(title, detail ?? '');
   }
 
   void _showKnutsfordDialog() {
     _showInfoDialog(
       'Knutsford Express Partnership',
-      'One Village Shipping & Freight offers express delivery to Knutsford Express locations islandwide — a fast, convenient pickup option for customers across Jamaica.',
+      _content.str('knutsford', 'dialogBody'),
     );
+  }
+
+  String _contactBody() {
+    final phone = _content.str('contact', 'phone');
+    final address = _content.str('contact', 'address');
+    final email = _content.str('contact', 'email');
+    return 'Phone: $phone\n$address\n$email';
   }
 
   void _showSocialComingSoon(String platform) {
@@ -133,42 +157,36 @@ class _LandingScreenState extends State<LandingScreen> {
             _Header(
               onHome: _scrollToTop,
               onServices: () => _scrollToKey(_servicesKey),
-              onRates: () => _showInfoDialog(
-                'Rates',
-                'Create a free account to get instant, personalized rates for sea and air freight, plus door-to-door and customs clearance pricing.',
-              ),
+              onRates: () => _showInfoDialog('Rates', _content.str('rates', 'body')),
               onAbout: () => _showInfoDialog(
                 'About One Village Shipping & Freight',
-                'One Village Shipping & Freight is your trusted partner for shipping, freight, and delivery solutions worldwide — connecting the USA to Kingston, Jamaica via sea and air freight, with secure warehousing, door-to-door delivery, and expert customs clearance.',
+                _content.str('about', 'body'),
               ),
-              onContact: () => _showInfoDialog(
-                'Contact Us',
-                'Phone: 267-844-5155\nHollywood, Florida\nshipping@onevillageshipping.com',
-              ),
+              onContact: () => _showInfoDialog('Contact Us', _contactBody()),
               onGetStarted: () => _scrollToKey(_ctaKey),
               onCustomerSignIn: _goToCustomerSignIn,
               onPartnerSignIn: _goToPartnerSignIn,
             ),
             _Hero(
+              content: _content,
               onGetStarted: () => _scrollToKey(_ctaKey),
               onTrackShipment: _goToCustomerSignIn,
               onKnutsfordTap: _showKnutsfordDialog,
             ),
-            _Services(key: _servicesKey, onLearnMore: _showServiceDialog),
-            const _WhyChooseUs(),
-            const _StatsBar(),
+            _Services(key: _servicesKey, content: _content, onLearnMore: _showServiceDialog),
+            _WhyChooseUs(content: _content),
+            _StatsBar(content: _content),
             _CtaSignup(
               key: _ctaKey,
+              content: _content,
               onCourierSignUp: _goToPartnerSignUp,
               onCustomerSignUp: _goToCustomerSignUp,
             ),
             _Footer(
+              content: _content,
               onHome: _scrollToTop,
               onServices: () => _scrollToKey(_servicesKey),
-              onContact: () => _showInfoDialog(
-                'Contact Us',
-                'Phone: 267-844-5155\nHollywood, Florida\nshipping@onevillageshipping.com',
-              ),
+              onContact: () => _showInfoDialog('Contact Us', _contactBody()),
               onServiceTap: _showServiceDialog,
               onSocialTap: _showSocialComingSoon,
             ),
@@ -199,6 +217,29 @@ class _MaxWidth extends StatelessWidget {
           child: child,
         ),
       ),
+    );
+  }
+}
+
+/// Renders an admin-supplied image URL when present, otherwise falls back
+/// to the bundled default asset — and falls back again to the asset if the
+/// URL turns out to be broken/unreachable, so a bad image link an admin
+/// pastes can never blank out part of the live page.
+class _AdaptiveImage extends StatelessWidget {
+  final String url;
+  final String assetPath;
+  final BoxFit fit;
+  const _AdaptiveImage({required this.url, required this.assetPath, required this.fit});
+
+  @override
+  Widget build(BuildContext context) {
+    if (url.isEmpty) {
+      return Image.asset(assetPath, fit: fit);
+    }
+    return Image.network(
+      url,
+      fit: fit,
+      errorBuilder: (context, error, stackTrace) => Image.asset(assetPath, fit: fit),
     );
   }
 }
@@ -412,10 +453,16 @@ class _SignInMenuItem extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _Hero extends StatelessWidget {
+  final LandingContent content;
   final VoidCallback onGetStarted;
   final VoidCallback onTrackShipment;
   final VoidCallback onKnutsfordTap;
-  const _Hero({required this.onGetStarted, required this.onTrackShipment, required this.onKnutsfordTap});
+  const _Hero({
+    required this.content,
+    required this.onGetStarted,
+    required this.onTrackShipment,
+    required this.onKnutsfordTap,
+  });
 
   static const _features = [
     (Icons.verified_user_outlined, 'SECURE', 'SHIPPING'),
@@ -431,7 +478,7 @@ class _Hero extends StatelessWidget {
       crossAxisAlignment: wide ? CrossAxisAlignment.start : CrossAxisAlignment.center,
       children: [
         Text(
-          'ONE VILLAGE.',
+          content.str('hero', 'titleLine1'),
           textAlign: wide ? TextAlign.left : TextAlign.center,
           style: const TextStyle(
             color: Colors.white,
@@ -441,9 +488,10 @@ class _Hero extends StatelessWidget {
             letterSpacing: -0.5,
           ),
         ),
-        const Text(
-          'GLOBAL REACH.',
-          style: TextStyle(
+        Text(
+          content.str('hero', 'titleLine2'),
+          textAlign: wide ? TextAlign.left : TextAlign.center,
+          style: const TextStyle(
             color: LandingScreen.yellow,
             fontSize: 44,
             fontWeight: FontWeight.w900,
@@ -454,10 +502,10 @@ class _Hero extends StatelessWidget {
         const SizedBox(height: 16),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
-          child: const Text(
-            'Your trusted partner for shipping, freight, and delivery solutions worldwide.',
+          child: Text(
+            content.str('hero', 'subtitle'),
             textAlign: TextAlign.center,
-            style: TextStyle(color: Color(0xFFC7D2E0), fontSize: 16, height: 1.5),
+            style: const TextStyle(color: Color(0xFFC7D2E0), fontSize: 16, height: 1.5),
           ),
         ),
         const SizedBox(height: 28),
@@ -500,12 +548,12 @@ class _Hero extends StatelessWidget {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                 textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('GET STARTED'),
-                  SizedBox(width: 6),
-                  Icon(Icons.arrow_forward, size: 16),
+                  Text(content.str('hero', 'primaryButtonText')),
+                  const SizedBox(width: 6),
+                  const Icon(Icons.arrow_forward, size: 16),
                 ],
               ),
             ),
@@ -518,7 +566,7 @@ class _Hero extends StatelessWidget {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                 textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
               ),
-              child: const Text('TRACK SHIPMENT'),
+              child: Text(content.str('hero', 'secondaryButtonText')),
             ),
           ],
         ),
@@ -536,22 +584,22 @@ class _Hero extends StatelessWidget {
             runSpacing: 8,
             children: [
               const Text('🇺🇸', style: TextStyle(fontSize: 18)),
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('WE SHIP FROM', style: TextStyle(color: Color(0xFFC7D2E0), fontSize: 9, fontWeight: FontWeight.w700)),
-                  Text('ANYWHERE IN THE U.S.A.', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+                  Text(content.str('hero', 'originLabel'), style: const TextStyle(color: Color(0xFFC7D2E0), fontSize: 9, fontWeight: FontWeight.w700)),
+                  Text(content.str('hero', 'originText'), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
                 ],
               ),
               const Icon(Icons.double_arrow, color: LandingScreen.yellow, size: 16),
               const Text('🇯🇲', style: TextStyle(fontSize: 18)),
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('TO KINGSTON, JA', style: TextStyle(color: Color(0xFFC7D2E0), fontSize: 9, fontWeight: FontWeight.w700)),
-                  Text('via sea and air freight', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+                  Text(content.str('hero', 'destLabel'), style: const TextStyle(color: Color(0xFFC7D2E0), fontSize: 9, fontWeight: FontWeight.w700)),
+                  Text(content.str('hero', 'destText'), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
                 ],
               ),
             ],
@@ -575,15 +623,20 @@ class _Hero extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             child: AspectRatio(
               aspectRatio: 1.15,
-              child: Image.asset('assets/images/hero_port.jpg', fit: BoxFit.cover),
+              child: _AdaptiveImage(
+                url: content.img('hero', 'backgroundImageUrl'),
+                assetPath: 'assets/images/hero_port.jpg',
+                fit: BoxFit.cover,
+              ),
             ),
           ),
         ),
-        Positioned(
-          right: 14,
-          bottom: 14,
-          child: _KnutsfordCard(onTap: onKnutsfordTap),
-        ),
+        if (content.data['knutsford']?['enabled'] != false)
+          Positioned(
+            right: 14,
+            bottom: 14,
+            child: _KnutsfordCard(content: content, onTap: onKnutsfordTap),
+          ),
       ],
     );
 
@@ -620,8 +673,9 @@ class _Hero extends StatelessWidget {
 }
 
 class _KnutsfordCard extends StatelessWidget {
+  final LandingContent content;
   final VoidCallback onTap;
-  const _KnutsfordCard({required this.onTap});
+  const _KnutsfordCard({required this.content, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -646,11 +700,11 @@ class _KnutsfordCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           RichText(
-            text: const TextSpan(
+            text: TextSpan(
               children: [
                 TextSpan(
-                  text: 'Knutsford ',
-                  style: TextStyle(
+                  text: content.str('knutsford', 'titlePrefix'),
+                  style: const TextStyle(
                     color: Color(0xFFD6006E),
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
@@ -658,8 +712,8 @@ class _KnutsfordCard extends StatelessWidget {
                   ),
                 ),
                 TextSpan(
-                  text: 'Express',
-                  style: TextStyle(
+                  text: content.str('knutsford', 'titleSuffix'),
+                  style: const TextStyle(
                     color: LandingScreen.navy,
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
@@ -669,9 +723,9 @@ class _KnutsfordCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'EXPRESS SERVICES TO KNUTSFORD EXPRESS LOCATIONS',
-            style: TextStyle(color: LandingScreen.charcoal, fontSize: 10.5, fontWeight: FontWeight.w700, height: 1.4),
+          Text(
+            content.str('knutsford', 'subtitle'),
+            style: const TextStyle(color: LandingScreen.charcoal, fontSize: 10.5, fontWeight: FontWeight.w700, height: 1.4),
           ),
           const SizedBox(height: 10),
           Container(
@@ -679,9 +733,9 @@ class _KnutsfordCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 8),
             decoration: BoxDecoration(color: LandingScreen.yellow, borderRadius: BorderRadius.circular(6)),
             alignment: Alignment.center,
-            child: const Text(
-              'ISLANDWIDE',
-              style: TextStyle(color: LandingScreen.navy, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.4),
+            child: Text(
+              content.str('knutsford', 'badge'),
+              style: const TextStyle(color: LandingScreen.navy, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.4),
             ),
           ),
         ],
@@ -697,59 +751,36 @@ class _KnutsfordCard extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _Services extends StatelessWidget {
+  final LandingContent content;
   final ValueChanged<String> onLearnMore;
-  const _Services({super.key, required this.onLearnMore});
+  const _Services({super.key, required this.content, required this.onLearnMore});
 
-  static const _items = [
-    (
-      'assets/images/sea_freight.jpg',
-      Icons.directions_boat_outlined,
-      'Sea Freight',
-      'Reliable and cost-effective ocean shipping to destinations worldwide.',
-    ),
-    (
-      'assets/images/air_freight.jpg',
-      Icons.flight_outlined,
-      'Air Freight',
-      'Fast and secure air cargo solutions when time matters.',
-    ),
-    (
-      'assets/images/warehousing.jpg',
-      Icons.warehouse_outlined,
-      'Warehousing',
-      'Secure storage, inventory management, and distribution.',
-    ),
-    (
-      'assets/images/door_to_door.jpg',
-      Icons.local_shipping_outlined,
-      'Door to Door',
-      'Complete delivery solution from our warehouse to your door.',
-    ),
-    (
-      'assets/images/customs_clearance.jpg',
-      Icons.fact_check_outlined,
-      'Customs Clearance',
-      'Expert documentation and fast customs clearance.',
-    ),
+  static const _fallbackAssets = [
+    'assets/images/sea_freight.jpg',
+    'assets/images/air_freight.jpg',
+    'assets/images/warehousing.jpg',
+    'assets/images/door_to_door.jpg',
+    'assets/images/customs_clearance.jpg',
   ];
 
   @override
   Widget build(BuildContext context) {
+    final items = content.list('services', 'items');
     return Container(
       color: Colors.white,
       child: _MaxWidth(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 88),
         child: Column(
           children: [
-            const Text(
-              'OUR SERVICES',
-              style: TextStyle(color: LandingScreen.gold, fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1.2),
+            Text(
+              content.str('services', 'eyebrow'),
+              style: const TextStyle(color: LandingScreen.gold, fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1.2),
             ),
             const SizedBox(height: 10),
-            const Text(
-              'Comprehensive Solutions. Delivered.',
+            Text(
+              content.str('services', 'heading'),
               textAlign: TextAlign.center,
-              style: TextStyle(color: LandingScreen.navy, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+              style: const TextStyle(color: LandingScreen.navy, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: -0.5),
             ),
             const SizedBox(height: 44),
             LayoutBuilder(
@@ -762,15 +793,20 @@ class _Services extends StatelessWidget {
                   mainAxisSpacing: 20,
                   crossAxisSpacing: 20,
                   childAspectRatio: 0.72,
-                  children: _items
-                      .map((s) => _ServiceCard(
-                            image: s.$1,
-                            icon: s.$2,
-                            title: s.$3,
-                            desc: s.$4,
-                            onTap: () => onLearnMore(s.$3),
-                          ))
-                      .toList(),
+                  children: [
+                    for (var i = 0; i < items.length; i++)
+                      _ServiceCard(
+                        imageUrl: (items[i]['imageUrl'] as String?) ?? '',
+                        fallbackAsset: _fallbackAssets[i % _fallbackAssets.length],
+                        icon: LandingContent.iconFor(
+                          (items[i]['icon'] as String?) ?? '',
+                          Icons.local_shipping_outlined,
+                        ),
+                        title: (items[i]['title'] as String?) ?? '',
+                        desc: (items[i]['description'] as String?) ?? '',
+                        onTap: () => onLearnMore((items[i]['title'] as String?) ?? ''),
+                      ),
+                  ],
                 );
               },
             ),
@@ -782,13 +818,15 @@ class _Services extends StatelessWidget {
 }
 
 class _ServiceCard extends StatelessWidget {
-  final String image;
+  final String imageUrl;
+  final String fallbackAsset;
   final IconData icon;
   final String title;
   final String desc;
   final VoidCallback onTap;
   const _ServiceCard({
-    required this.image,
+    required this.imageUrl,
+    required this.fallbackAsset,
     required this.icon,
     required this.title,
     required this.desc,
@@ -818,7 +856,7 @@ class _ServiceCard extends StatelessWidget {
                 borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), topRight: Radius.circular(14)),
                 child: AspectRatio(
                   aspectRatio: 3 / 2,
-                  child: Image.asset(image, fit: BoxFit.cover),
+                  child: _AdaptiveImage(url: imageUrl, assetPath: fallbackAsset, fit: BoxFit.cover),
                 ),
               ),
               Positioned(
@@ -877,33 +915,27 @@ class _ServiceCard extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _WhyChooseUs extends StatelessWidget {
-  const _WhyChooseUs();
-
-  static const _items = [
-    (Icons.groups_outlined, 'Experienced Team', 'Professionals with years of industry expertise.'),
-    (Icons.shield_outlined, 'Secure & Reliable', 'Your cargo is safe with us.'),
-    (Icons.attach_money, 'Competitive Rates', 'Quality service at the best value.'),
-    (Icons.public, 'Global Coverage', 'Strong network across the world.'),
-    (Icons.support_agent_outlined, '24/7 Customer Support', "We're here whenever you need us."),
-  ];
+  final LandingContent content;
+  const _WhyChooseUs({required this.content});
 
   @override
   Widget build(BuildContext context) {
+    final items = content.list('whyChooseUs', 'items');
     return Container(
       color: LandingScreen.navy,
       child: _MaxWidth(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 72),
         child: Column(
           children: [
-            const Text(
-              'WHY CHOOSE US',
-              style: TextStyle(color: LandingScreen.gold, fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1.2),
+            Text(
+              content.str('whyChooseUs', 'eyebrow'),
+              style: const TextStyle(color: LandingScreen.gold, fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1.2),
             ),
             const SizedBox(height: 10),
-            const Text(
-              'We go the extra mile for your cargo.',
+            Text(
+              content.str('whyChooseUs', 'heading'),
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.3),
+              style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.3),
             ),
             const SizedBox(height: 44),
             LayoutBuilder(
@@ -916,28 +948,31 @@ class _WhyChooseUs extends StatelessWidget {
                   mainAxisSpacing: 28,
                   crossAxisSpacing: 20,
                   childAspectRatio: cols == 1 ? 3.4 : 1.0,
-                  children: _items
-                      .map(
-                        (w) => Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Icon(w.$1, color: LandingScreen.yellow, size: 28),
-                            const SizedBox(height: 12),
-                            Text(
-                              w.$2,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              w.$3,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 11.5, height: 1.4),
-                            ),
-                          ],
-                        ),
-                      )
-                      .toList(),
+                  children: [
+                    for (final w in items)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Icon(
+                            LandingContent.iconFor((w['icon'] as String?) ?? '', Icons.star_outline),
+                            color: LandingScreen.yellow,
+                            size: 28,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            (w['title'] as String?) ?? '',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            (w['description'] as String?) ?? '',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 11.5, height: 1.4),
+                          ),
+                        ],
+                      ),
+                  ],
                 );
               },
             ),
@@ -953,17 +988,19 @@ class _WhyChooseUs extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _StatsBar extends StatelessWidget {
-  const _StatsBar();
+  final LandingContent content;
+  const _StatsBar({required this.content});
 
-  static const _stats = [
-    (Icons.directions_boat_filled_outlined, '10+', 'YEARS EXPERIENCE'),
-    (Icons.inventory_2_outlined, '50,000+', 'SHIPMENTS DELIVERED'),
-    (Icons.public, '100+', 'COUNTRIES SERVED'),
-    (Icons.groups_outlined, '5,000+', 'SATISFIED CUSTOMERS'),
+  static const _icons = [
+    Icons.directions_boat_filled_outlined,
+    Icons.inventory_2_outlined,
+    Icons.public,
+    Icons.groups_outlined,
   ];
 
   @override
   Widget build(BuildContext context) {
+    final stats = content.list('stats', 'items');
     return Container(
       color: LandingScreen.yellow,
       child: _MaxWidth(
@@ -978,26 +1015,25 @@ class _StatsBar extends StatelessWidget {
               mainAxisSpacing: 16,
               crossAxisSpacing: 16,
               childAspectRatio: cols == 1 ? 4.5 : 2.4,
-              children: _stats
-                  .map(
-                    (s) => Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(s.$1, color: LandingScreen.navy, size: 26),
-                        const SizedBox(width: 10),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(s.$2, style: const TextStyle(color: LandingScreen.navy, fontSize: 20, fontWeight: FontWeight.w900)),
-                            Text(s.$3, style: const TextStyle(color: LandingScreen.navy, fontSize: 10, fontWeight: FontWeight.w700)),
-                          ],
-                        ),
-                      ],
-                    ),
-                  )
-                  .toList(),
+              children: [
+                for (var i = 0; i < stats.length; i++)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(_icons[i % _icons.length], color: LandingScreen.navy, size: 26),
+                      const SizedBox(width: 10),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text((stats[i]['value'] as String?) ?? '', style: const TextStyle(color: LandingScreen.navy, fontSize: 20, fontWeight: FontWeight.w900)),
+                          Text((stats[i]['label'] as String?) ?? '', style: const TextStyle(color: LandingScreen.navy, fontSize: 10, fontWeight: FontWeight.w700)),
+                        ],
+                      ),
+                    ],
+                  ),
+              ],
             );
           },
         ),
@@ -1011,9 +1047,10 @@ class _StatsBar extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _CtaSignup extends StatelessWidget {
+  final LandingContent content;
   final VoidCallback onCourierSignUp;
   final VoidCallback onCustomerSignUp;
-  const _CtaSignup({super.key, required this.onCourierSignUp, required this.onCustomerSignUp});
+  const _CtaSignup({super.key, required this.content, required this.onCourierSignUp, required this.onCustomerSignUp});
 
   @override
   Widget build(BuildContext context) {
@@ -1021,21 +1058,21 @@ class _CtaSignup extends StatelessWidget {
     final intro = Column(
       crossAxisAlignment: wide ? CrossAxisAlignment.start : CrossAxisAlignment.center,
       children: [
-        const Text(
-          'Ready to ship?',
-          style: TextStyle(color: LandingScreen.gold, fontSize: 22, fontWeight: FontWeight.w800),
+        Text(
+          content.str('cta', 'eyebrow'),
+          style: const TextStyle(color: LandingScreen.gold, fontSize: 22, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 6),
-        const Text(
-          "Let's move your world forward.",
+        Text(
+          content.str('cta', 'heading'),
           textAlign: TextAlign.center,
-          style: TextStyle(color: LandingScreen.navy, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.3),
+          style: const TextStyle(color: LandingScreen.navy, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.3),
         ),
         const SizedBox(height: 10),
-        const Text(
-          'Get a free quote today and experience the One Village difference.',
+        Text(
+          content.str('cta', 'subtitle'),
           textAlign: TextAlign.center,
-          style: TextStyle(color: LandingScreen.charcoalSoft, fontSize: 14),
+          style: const TextStyle(color: LandingScreen.charcoalSoft, fontSize: 14),
         ),
       ],
     );
@@ -1046,15 +1083,15 @@ class _CtaSignup extends StatelessWidget {
       children: [
         _SignupCard(
           icon: Icons.local_shipping_outlined,
-          title: 'COURIER SIGN UP',
-          desc: 'Partner with us to manage your own customers and shipments.',
+          title: content.str('cta', 'courierCardTitle'),
+          desc: content.str('cta', 'courierCardDesc'),
           filled: true,
           onTap: onCourierSignUp,
         ),
         _SignupCard(
           icon: Icons.person_outline,
-          title: 'CUSTOMER SIGN UP',
-          desc: 'Create an account to ship faster and easier.',
+          title: content.str('cta', 'customerCardTitle'),
+          desc: content.str('cta', 'customerCardDesc'),
           filled: false,
           onTap: onCustomerSignUp,
         ),
@@ -1065,7 +1102,11 @@ class _CtaSignup extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: AspectRatio(
         aspectRatio: 4 / 3,
-        child: Image.asset('assets/images/forklift_warehouse.jpg', fit: BoxFit.cover),
+        child: _AdaptiveImage(
+          url: content.img('cta', 'imageUrl'),
+          assetPath: 'assets/images/forklift_warehouse.jpg',
+          fit: BoxFit.cover,
+        ),
       ),
     );
 
@@ -1179,12 +1220,14 @@ class _SignupCard extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _Footer extends StatelessWidget {
+  final LandingContent content;
   final VoidCallback onHome;
   final VoidCallback onServices;
   final VoidCallback onContact;
   final ValueChanged<String> onServiceTap;
   final ValueChanged<String> onSocialTap;
   const _Footer({
+    required this.content,
     required this.onHome,
     required this.onServices,
     required this.onContact,
@@ -1214,9 +1257,9 @@ class _Footer extends StatelessWidget {
                       const SizedBox(height: 12),
                       ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 280),
-                        child: const Text(
-                          'Your trusted partner for shipping, freight, and delivery solutions worldwide.',
-                          style: TextStyle(color: Color(0xFFA9B8CC), fontSize: 12.5, height: 1.6),
+                        child: Text(
+                          content.str('footer', 'tagline'),
+                          style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 12.5, height: 1.6),
                         ),
                       ),
                     ],
@@ -1236,8 +1279,11 @@ class _Footer extends StatelessWidget {
                   child: _FooterColumn(
                     'SERVICES',
                     [
-                      for (final s in const ['Sea Freight', 'Air Freight', 'Warehousing', 'Door to Door', 'Customs Clearance'])
-                        (s, () => onServiceTap(s)),
+                      for (final s in content.list('services', 'items'))
+                        (
+                          (s['title'] as String?) ?? '',
+                          () => onServiceTap((s['title'] as String?) ?? ''),
+                        ),
                     ],
                   ),
                 ),
@@ -1252,11 +1298,11 @@ class _Footer extends StatelessWidget {
                         style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6),
                       ),
                       const SizedBox(height: 14),
-                      const _FooterContactRow(Icons.phone_outlined, '267-844-5155'),
+                      _FooterContactRow(Icons.phone_outlined, content.str('contact', 'phone')),
                       const SizedBox(height: 10),
-                      const _FooterContactRow(Icons.location_on_outlined, 'Hollywood, Florida'),
+                      _FooterContactRow(Icons.location_on_outlined, content.str('contact', 'address')),
                       const SizedBox(height: 10),
-                      const _FooterContactRow(Icons.email_outlined, 'shipping@onevillageshipping.com'),
+                      _FooterContactRow(Icons.email_outlined, content.str('contact', 'email')),
                       const SizedBox(height: 16),
                       Row(
                         children: [
@@ -1281,7 +1327,7 @@ class _Footer extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 18),
             child: Text(
-              '© ${DateTime.now().year} One Village Shipping & Freight LLC. All Rights Reserved.',
+              '© ${DateTime.now().year} ${content.str('footer', 'copyrightName')}. All Rights Reserved.',
               style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 11.5),
             ),
           ),

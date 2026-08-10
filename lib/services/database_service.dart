@@ -1151,6 +1151,35 @@ class DatabaseService {
     return List<Map<String, dynamic>>.from(data);
   }
 
+  // ─── Site Content (public landing page editor) ──────────────────────
+
+  /// Raw admin-saved overrides for the landing page, or null if nothing
+  /// has ever been saved (or the row/table isn't reachable) — callers
+  /// merge this over `LandingContent.defaults` so the page always renders
+  /// something correct even with no overrides at all.
+  Future<Map<String, dynamic>?> getSiteContent(String pageId) async {
+    try {
+      final data = await _db
+          .from('site_content')
+          .select('content')
+          .eq('id', pageId)
+          .maybeSingle();
+      final content = data?['content'];
+      return content is Map<String, dynamic> ? content : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> updateSiteContent(String pageId, Map<String, dynamic> content) async {
+    await _db.from('site_content').upsert({
+      'id': pageId,
+      'content': content,
+      'updated_at': DateTime.now().toIso8601String(),
+      'updated_by': currentUser?.id,
+    });
+  }
+
   // ─── Admin Users ─────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>?> getAdminUser(String authUserId) async {

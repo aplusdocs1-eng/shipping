@@ -17,6 +17,7 @@ import '../theme/app_theme.dart';
 // 12 Settings
 // 13 Warehouse
 // 14 Shipping Partners
+// 15 Site Content
 
 class AppNavDrawer extends StatelessWidget {
   final int selectedIndex;
@@ -206,6 +207,15 @@ class AppNavDrawer extends StatelessWidget {
                   _DrawerTile(
                     label: 'Settings',
                     index: 12,
+                    selectedIndex: selectedIndex,
+                    onTap: (i) {
+                      onItemSelected(i);
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                  _DrawerTile(
+                    label: 'Site Content',
+                    index: 15,
                     selectedIndex: selectedIndex,
                     onTap: (i) {
                       onItemSelected(i);
