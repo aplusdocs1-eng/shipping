@@ -32,13 +32,18 @@ class AppNavDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Drawer(
+      backgroundColor: AppTheme.sidebarBg,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Logo header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 16, 8),
+            // Logo header — solid navy, matching the identity banner atop
+            // the app bar, so the sidebar reads as part of the same brand
+            // surface rather than a plain white panel bolted on beside it.
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 18),
+              color: AppTheme.primary,
               child: Row(
                 children: [
                   Image.asset(
@@ -50,7 +55,7 @@ class AppNavDrawer extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
-                          color: AppTheme.primary,
+                          color: Colors.white,
                         ),
                       );
                     },
@@ -58,12 +63,11 @@ class AppNavDrawer extends StatelessWidget {
                   const Spacer(),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close, size: 22),
+                    icon: const Icon(Icons.close, size: 22, color: Colors.white),
                   ),
                 ],
               ),
             ),
-            const Divider(color: AppTheme.border, height: 1),
             const SizedBox(height: 8),
             // Nav items
             Expanded(
@@ -248,17 +252,35 @@ class _DrawerTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSelected = selectedIndex == index;
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () => onTap(index),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
-            color: isSelected ? AppTheme.textPrimary : AppTheme.textSecondary,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          hoverColor: AppTheme.primary.withValues(alpha: 0.04),
+          onTap: () => onTap(index),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+              color: isSelected ? AppTheme.primary.withValues(alpha: 0.08) : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: Border(
+                left: BorderSide(
+                  color: isSelected ? AppTheme.gold : Colors.transparent,
+                  width: 3,
+                ),
+              ),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+                color: isSelected ? AppTheme.primary : AppTheme.sidebarText,
+              ),
+            ),
           ),
         ),
       ),
