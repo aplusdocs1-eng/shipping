@@ -457,13 +457,28 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                     // guess — settle it so later edits to the field don't
                     // silently override what was just looked up.
                     courierManuallySet = true;
+                    // Only select the customer once its courier is
+                    // actually the one now selected — the Customer
+                    // dropdown's items are filtered to selectedCourierTenant,
+                    // so setting a customer whose courier isn't in
+                    // _partnerAccounts (e.g. not currently approved) would
+                    // leave `value` pointing at something not in `items`,
+                    // which Flutter's dropdown treats as a crash, not a
+                    // graceful no-op.
+                    selectedCustomer = cust;
+                    customerError = null;
+                    scanFeedback =
+                        'Matched an existing package — customer, courier, '
+                        'description, and weight filled in below.';
+                  } else {
+                    selectedCustomer = null;
+                    scanFeedback =
+                        "Matched an existing package, but its courier "
+                        "isn't currently available to select — pick the "
+                        'courier and customer manually.';
                   }
-                  selectedCustomer = cust;
-                  customerError = null;
-                  scanFeedback =
-                      'Matched an existing package — customer, courier, '
-                      'description, and weight filled in below.';
                 } else {
+                  selectedCustomer = null;
                   scanFeedback =
                       'Matched an existing package, but its customer '
                       "record couldn't be found — select one manually.";
@@ -1488,11 +1503,18 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     );
   }
 
+  // Both helpers below only consider active partners — the Carrier
+  // dropdown's own items list is filtered to _partners.where((p) =>
+  // p.isActive), so returning an inactive one here would hand
+  // DropdownButtonFormField a `value` that isn't among its `items`, which
+  // is a hard Flutter assertion failure, not a graceful fallback.
   ShippingPartner? _matchPartnerByTracking(String tracking) {
     if (tracking.isEmpty) return null;
     final upper = tracking.toUpperCase();
     for (final p in _partners) {
-      if (p.trackingPrefix.isNotEmpty && upper.startsWith(p.trackingPrefix.toUpperCase())) {
+      if (p.isActive &&
+          p.trackingPrefix.isNotEmpty &&
+          upper.startsWith(p.trackingPrefix.toUpperCase())) {
         return p;
       }
     }
@@ -1503,7 +1525,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   /// courier selection for a package that isn't tied to an external courier.
   ShippingPartner? _ovsPartner() {
     for (final p in _partners) {
-      if (p.code == 'OVS') return p;
+      if (p.code == 'OVS' && p.isActive) return p;
     }
     return null;
   }
