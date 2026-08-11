@@ -2,8 +2,53 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import '../services/database_service.dart';
 import '../theme/app_theme.dart';
+
+/// Every field on this screen used to be either a hardcoded literal or a
+/// plain in-memory State variable — nothing loaded from or saved to the
+/// database, and "Save Changes" showed a success message regardless. All
+/// of it (Company Profile, Regional Settings, Notifications, Security,
+/// Integrations) now reads from and writes to `company_settings`, a
+/// single shared row every admin sees and edits. The one section that
+/// was already real — API for 3rd Party Vendors — is unchanged.
+const Map<String, dynamic> _settingsDefaults = {
+  'companyName': 'One Village Shipping & Freight',
+  'companyEmail': 'admin@applizonecentralja.com',
+  'companyPhone': '',
+  'companyAddress': '',
+  'companyWebsite': '',
+  'currency': 'USD',
+  'weightUnit': 'lbs',
+  'timezone': 'UTC-5 (Eastern)',
+  'emailNotifications': true,
+  'smsNotifications': false,
+  'autoInvoicing': true,
+  'twoFactorRequired': false,
+  'integrations': {
+    'stripe': {'enabled': false, 'key': ''},
+    'sendgrid': {'enabled': false, 'key': ''},
+    'twilio': {'enabled': false, 'key': ''},
+    'webhooks': {'enabled': false, 'key': ''},
+  },
+};
+
+Map<String, dynamic> _deepMerge(Map<String, dynamic> base, Map<String, dynamic> override) {
+  final result = <String, dynamic>{...base};
+  override.forEach((key, value) {
+    final baseValue = result[key];
+    if (value is Map && baseValue is Map) {
+      result[key] = _deepMerge(
+        Map<String, dynamic>.from(baseValue),
+        Map<String, dynamic>.from(value),
+      );
+    } else if (value != null) {
+      result[key] = value;
+    }
+  });
+  return result;
+}
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -13,16 +58,370 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  final _db = DatabaseService();
+  bool _loading = true;
+  bool _saving = false;
+  String? _loadError;
+
+  final _companyNameCtl = TextEditingController();
+  final _companyEmailCtl = TextEditingController();
+  final _companyPhoneCtl = TextEditingController();
+  final _companyAddressCtl = TextEditingController();
+  final _companyWebsiteCtl = TextEditingController();
+
+  String _currency = 'USD';
+  String _weightUnit = 'lbs';
+  String _timezone = 'UTC-5 (Eastern)';
   bool _emailNotifications = true;
   bool _smsNotifications = false;
   bool _autoInvoicing = true;
-  bool _twoFactorAuth = false;
-  String _currency = 'USD';
-  String _weightUnit = 'kg';
-  String _timezone = 'UTC-5 (Eastern)';
+  bool _twoFactorRequired = false;
+  Map<String, Map<String, dynamic>> _integrations = {};
+
+  static const _integrationKeys = ['stripe', 'sendgrid', 'twilio', 'webhooks'];
+
+  @override
+  void initState() {
+    super.initState();
+    _applySettings(_settingsDefaults);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _companyNameCtl.dispose();
+    _companyEmailCtl.dispose();
+    _companyPhoneCtl.dispose();
+    _companyAddressCtl.dispose();
+    _companyWebsiteCtl.dispose();
+    super.dispose();
+  }
+
+  void _applySettings(Map<String, dynamic> s) {
+    _companyNameCtl.text = (s['companyName'] as String?) ?? '';
+    _companyEmailCtl.text = (s['companyEmail'] as String?) ?? '';
+    _companyPhoneCtl.text = (s['companyPhone'] as String?) ?? '';
+    _companyAddressCtl.text = (s['companyAddress'] as String?) ?? '';
+    _companyWebsiteCtl.text = (s['companyWebsite'] as String?) ?? '';
+    _currency = (s['currency'] as String?) ?? 'USD';
+    _weightUnit = (s['weightUnit'] as String?) ?? 'lbs';
+    _timezone = (s['timezone'] as String?) ?? 'UTC-5 (Eastern)';
+    _emailNotifications = (s['emailNotifications'] as bool?) ?? true;
+    _smsNotifications = (s['smsNotifications'] as bool?) ?? false;
+    _autoInvoicing = (s['autoInvoicing'] as bool?) ?? true;
+    _twoFactorRequired = (s['twoFactorRequired'] as bool?) ?? false;
+    final rawIntegrations = s['integrations'];
+    final defaultIntegrations = _settingsDefaults['integrations'] as Map<String, dynamic>;
+    _integrations = {
+      for (final key in _integrationKeys)
+        key: Map<String, dynamic>.from(
+          (rawIntegrations is Map && rawIntegrations[key] is Map)
+              ? rawIntegrations[key] as Map
+              : defaultIntegrations[key] as Map,
+        ),
+    };
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final raw = await _db.getCompanySettings();
+      final merged = _deepMerge(_settingsDefaults, raw ?? {});
+      if (!mounted) return;
+      setState(() {
+        _applySettings(merged);
+        _loading = false;
+        _loadError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadError = 'Could not load saved settings — showing defaults. $e';
+      });
+    }
+  }
+
+  Map<String, dynamic> _currentSettingsMap() => {
+    'companyName': _companyNameCtl.text.trim(),
+    'companyEmail': _companyEmailCtl.text.trim(),
+    'companyPhone': _companyPhoneCtl.text.trim(),
+    'companyAddress': _companyAddressCtl.text.trim(),
+    'companyWebsite': _companyWebsiteCtl.text.trim(),
+    'currency': _currency,
+    'weightUnit': _weightUnit,
+    'timezone': _timezone,
+    'emailNotifications': _emailNotifications,
+    'smsNotifications': _smsNotifications,
+    'autoInvoicing': _autoInvoicing,
+    'twoFactorRequired': _twoFactorRequired,
+    'integrations': _integrations,
+  };
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _db.updateCompanySettings(_currentSettingsMap());
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Settings saved.'),
+          backgroundColor: AppTheme.success,
+          behavior: SnackBarBehavior.floating,
+          width: 280,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to save: $e'),
+          backgroundColor: AppTheme.danger,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _discard() async {
+    await _load();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Reverted to last saved settings.'),
+        behavior: SnackBarBehavior.floating,
+        width: 280,
+      ),
+    );
+  }
+
+  void _configureIntegration(String key, String label, IconData icon) {
+    final current = _integrations[key] ?? {'enabled': false, 'key': ''};
+    final keyCtl = TextEditingController(text: current['key'] as String? ?? '');
+    bool enabled = current['enabled'] as bool? ?? false;
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Configure $label'),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Saved for your own records. Actually sending live '
+                  '$label requests from this app is separate work that '
+                  "hasn't been built yet — this just remembers your "
+                  'credential and whether you consider it set up.',
+                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: keyCtl,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: '$label API Key',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _ToggleSetting(
+                  label: 'Configured',
+                  subtitle: 'Show this as set up on the Integrations list',
+                  value: enabled,
+                  onChanged: (v) => setDialogState(() => enabled = v),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                setState(() {
+                  _integrations[key] = {'enabled': enabled, 'key': keyCtl.text.trim()};
+                });
+                Navigator.pop(context);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showChangePassword() {
+    final newPwCtl = TextEditingController();
+    final confirmPwCtl = TextEditingController();
+    String? error;
+    bool saving = false;
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Change Password'),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: newPwCtl,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: 'New password',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    errorText: error,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: confirmPwCtl,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: 'Confirm new password',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onSubmitted: (_) {},
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final pw = newPwCtl.text;
+                      if (pw.length < 6) {
+                        setDialogState(
+                          () => error = 'Must be at least 6 characters',
+                        );
+                        return;
+                      }
+                      if (pw != confirmPwCtl.text) {
+                        setDialogState(() => error = 'Passwords do not match');
+                        return;
+                      }
+                      setDialogState(() {
+                        saving = true;
+                        error = null;
+                      });
+                      try {
+                        await _db.updateOwnPassword(pw);
+                        if (!context.mounted) return;
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(this.context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Password changed.'),
+                            backgroundColor: AppTheme.success,
+                            behavior: SnackBarBehavior.floating,
+                            width: 280,
+                          ),
+                        );
+                      } catch (e) {
+                        setDialogState(() {
+                          saving = false;
+                          error = 'Failed: $e';
+                        });
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Change Password'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showTeamActivity() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Team & Login Activity'),
+        content: SizedBox(
+          width: 420,
+          height: 360,
+          child: FutureBuilder<List<Map<String, dynamic>>>(
+            future: _db.getAllAdminUsers(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return Text('Failed to load: ${snapshot.error}');
+              }
+              final admins = snapshot.data ?? const [];
+              if (admins.isEmpty) {
+                return const Text('No admin accounts found.');
+              }
+              return ListView.separated(
+                itemCount: admins.length,
+                separatorBuilder: (_, __) => const Divider(height: 1, color: AppTheme.border),
+                itemBuilder: (context, i) {
+                  final a = admins[i];
+                  final name = (a['full_name'] as String?)?.trim();
+                  final email = (a['email'] as String?) ?? '';
+                  final role = (a['role'] as String?) ?? '';
+                  final active = a['is_active'] as bool? ?? true;
+                  final lastLogin = a['last_login_at'] as String?;
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      (name != null && name.isNotEmpty) ? name : email,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      '$email · $role${active ? '' : ' · deactivated'}',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    trailing: Text(
+                      lastLogin != null
+                          ? DateFormat('MMM d, h:mm a').format(DateTime.parse(lastLogin).toLocal())
+                          : 'Never logged in',
+                      style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
     return SingleChildScrollView(
       padding: const EdgeInsets.all(28),
       child: Column(
@@ -39,9 +438,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 2),
           const Text(
-            'Manage your platform preferences',
+            'Manage your platform preferences — changes here are shared by '
+            'the whole admin team.',
             style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
           ),
+          if (_loadError != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.warning.withValues(alpha: 0.08),
+                border: Border.all(color: AppTheme.warning.withValues(alpha: 0.3)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(_loadError!, style: const TextStyle(fontSize: 12.5)),
+            ),
+          ],
           const SizedBox(height: 28),
 
           LayoutBuilder(
@@ -54,25 +467,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: 'Company Profile',
                     icon: Icons.business_rounded,
                     children: [
-                      _SettingsField(
-                        label: 'Company Name',
-                        value: 'One Village Shipping & Freight',
-                      ),
-                      _SettingsField(
-                        label: 'Email',
-                        value: 'admin@applizonecentralja.com',
-                      ),
-                      _SettingsField(
-                        label: 'Phone',
-                        value: '+1 (305) 000-0000',
-                      ),
-                      _SettingsField(
-                        label: 'Address',
-                        value: '123 Logistics Ave, Miami, FL',
-                      ),
-                      _SettingsField(
+                      _EditableField(label: 'Company Name', controller: _companyNameCtl),
+                      _EditableField(label: 'Email', controller: _companyEmailCtl),
+                      _EditableField(label: 'Phone', controller: _companyPhoneCtl),
+                      _EditableField(label: 'Address', controller: _companyAddressCtl),
+                      _EditableField(
                         label: 'Website',
-                        value: 'https://courier.applizonecentralja.com',
+                        controller: _companyWebsiteCtl,
+                        last: true,
                       ),
                     ],
                   ),
@@ -125,8 +527,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         label: 'Email Notifications',
                         subtitle: 'Receive updates via email',
                         value: _emailNotifications,
-                        onChanged: (v) =>
-                            setState(() => _emailNotifications = v),
+                        onChanged: (v) => setState(() => _emailNotifications = v),
                       ),
                       const Divider(height: 1, color: AppTheme.border),
                       _ToggleSetting(
@@ -150,22 +551,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.security_rounded,
                     children: [
                       _ToggleSetting(
-                        label: 'Two-Factor Authentication',
-                        subtitle: 'Add an extra layer of security',
-                        value: _twoFactorAuth,
-                        onChanged: (v) => setState(() => _twoFactorAuth = v),
+                        label: 'Require Two-Factor Authentication',
+                        subtitle: 'Saved as your security policy — sign-in '
+                            "enforcement isn't wired up yet.",
+                        value: _twoFactorRequired,
+                        onChanged: (v) => setState(() => _twoFactorRequired = v),
                       ),
                       const SizedBox(height: 12),
                       _ActionButton(
                         label: 'Change Password',
                         icon: Icons.lock_outline,
-                        onTap: () {},
+                        onTap: _showChangePassword,
                       ),
                       const SizedBox(height: 8),
                       _ActionButton(
-                        label: 'View Audit Log',
+                        label: 'Team & Login Activity',
                         icon: Icons.history_rounded,
-                        onTap: () {},
+                        onTap: _showTeamActivity,
                       ),
                     ],
                   ),
@@ -177,29 +579,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _IntegrationTile(
                         name: 'Stripe',
                         description: 'Online payment processing',
-                        isConnected: false,
+                        configured: _integrations['stripe']?['enabled'] as bool? ?? false,
                         icon: Icons.credit_card,
+                        onTap: () => _configureIntegration('stripe', 'Stripe', Icons.credit_card),
                       ),
                       const Divider(height: 1, color: AppTheme.border),
                       _IntegrationTile(
                         name: 'SendGrid',
                         description: 'Email delivery service',
-                        isConnected: false,
+                        configured: _integrations['sendgrid']?['enabled'] as bool? ?? false,
                         icon: Icons.email_rounded,
+                        onTap: () => _configureIntegration('sendgrid', 'SendGrid', Icons.email_rounded),
                       ),
                       const Divider(height: 1, color: AppTheme.border),
                       _IntegrationTile(
                         name: 'Twilio',
                         description: 'SMS messaging',
-                        isConnected: false,
+                        configured: _integrations['twilio']?['enabled'] as bool? ?? false,
                         icon: Icons.sms_rounded,
+                        onTap: () => _configureIntegration('twilio', 'Twilio', Icons.sms_rounded),
                       ),
                       const Divider(height: 1, color: AppTheme.border),
                       _IntegrationTile(
                         name: 'Webhooks API',
                         description: 'Custom event notifications',
-                        isConnected: false,
+                        configured: _integrations['webhooks']?['enabled'] as bool? ?? false,
                         icon: Icons.webhook,
+                        onTap: () => _configureIntegration('webhooks', 'Webhooks API', Icons.webhook),
                       ),
                     ],
                   ),
@@ -225,25 +631,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
 
           const SizedBox(height: 20),
-          // Save button
           Row(
             children: [
               ElevatedButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Settings saved successfully'),
-                      backgroundColor: AppTheme.success,
-                      behavior: SnackBarBehavior.floating,
-                      width: 280,
-                    ),
-                  );
-                },
-                child: const Text('Save Changes'),
+                onPressed: _saving ? null : _save,
+                child: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Save Changes'),
               ),
               const SizedBox(width: 12),
               TextButton(
-                onPressed: () {},
+                onPressed: _saving ? null : _discard,
                 child: const Text(
                   'Discard Changes',
                   style: TextStyle(color: AppTheme.textSecondary),
@@ -300,16 +702,21 @@ class _SettingsSection extends StatelessWidget {
   }
 }
 
-class _SettingsField extends StatelessWidget {
+class _EditableField extends StatelessWidget {
   final String label;
-  final String value;
+  final TextEditingController controller;
+  final bool last;
 
-  const _SettingsField({required this.label, required this.value});
+  const _EditableField({
+    required this.label,
+    required this.controller,
+    this.last = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.only(bottom: last ? 0 : 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -323,7 +730,7 @@ class _SettingsField extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           TextField(
-            controller: TextEditingController(text: value),
+            controller: controller,
             style: const TextStyle(fontSize: 13),
             decoration: const InputDecoration(),
           ),
@@ -348,6 +755,11 @@ class _DropdownSetting extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Defensive: if a previously-saved value no longer appears in this
+    // list (e.g. this screen's currency list changes in a future update),
+    // fall back to the first option rather than handing the dropdown a
+    // value that isn't among its items, which crashes.
+    final safeValue = items.contains(value) ? value : items.first;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -370,7 +782,7 @@ class _DropdownSetting extends StatelessWidget {
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
-              value: value,
+              value: safeValue,
               isExpanded: true,
               icon: const Icon(
                 Icons.keyboard_arrow_down,
@@ -497,14 +909,16 @@ class _ActionButton extends StatelessWidget {
 class _IntegrationTile extends StatelessWidget {
   final String name;
   final String description;
-  final bool isConnected;
+  final bool configured;
   final IconData icon;
+  final VoidCallback onTap;
 
   const _IntegrationTile({
     required this.name,
     required this.description,
-    required this.isConnected,
+    required this.configured,
     required this.icon,
+    required this.onTap,
   });
 
   @override
@@ -546,40 +960,45 @@ class _IntegrationTile extends StatelessWidget {
               ],
             ),
           ),
-          isConnected
-              ? Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.success.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: AppTheme.success.withOpacity(0.3),
+          configured
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppTheme.success.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppTheme.success.withValues(alpha: 0.3)),
+                      ),
+                      child: const Text(
+                        'Configured',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.success,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                  ),
-                  child: const Text(
-                    'Connected',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppTheme.success,
-                      fontWeight: FontWeight.w600,
+                    IconButton(
+                      onPressed: onTap,
+                      icon: const Icon(Icons.edit_outlined, size: 14),
+                      tooltip: 'Edit',
+                      padding: const EdgeInsets.only(left: 4),
+                      constraints: const BoxConstraints(),
+                      visualDensity: VisualDensity.compact,
                     ),
-                  ),
+                  ],
                 )
               : TextButton(
-                  onPressed: () {},
+                  onPressed: onTap,
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   child: const Text(
-                    'Connect',
+                    'Configure',
                     style: TextStyle(
                       fontSize: 12,
                       color: AppTheme.primary,
@@ -1016,9 +1435,9 @@ class _EndpointRow extends StatelessWidget {
             width: 52,
             padding: const EdgeInsets.symmetric(vertical: 3),
             decoration: BoxDecoration(
-              color: _methodColor.withOpacity(0.1),
+              color: _methodColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: _methodColor.withOpacity(0.3)),
+              border: Border.all(color: _methodColor.withValues(alpha: 0.3)),
             ),
             child: Text(
               method,

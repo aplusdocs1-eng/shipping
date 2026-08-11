@@ -1200,6 +1200,50 @@ class DatabaseService {
     } catch (_) {}
   }
 
+  /// The full admin roster — name, email, role, last login. Used by the
+  /// Settings screen's Security section in place of a fictional "audit
+  /// log" (this app doesn't track per-action history; this is the real
+  /// data that does exist).
+  Future<List<Map<String, dynamic>>> getAllAdminUsers() async {
+    final data = await _db
+        .from('admin_users')
+        .select()
+        .order('last_login_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  /// Changes the password of the *currently signed-in* user — Supabase
+  /// Auth only supports updating your own credentials this way (there is
+  /// no "change someone else's password" client call, by design).
+  Future<void> updateOwnPassword(String newPassword) async {
+    await _db.auth.updateUser(UserAttributes(password: newPassword));
+  }
+
+  // ─── Company Settings (admin Settings screen) ───────────────────────
+
+  Future<Map<String, dynamic>?> getCompanySettings() async {
+    try {
+      final data = await _db
+          .from('company_settings')
+          .select('settings')
+          .eq('id', 'default')
+          .maybeSingle();
+      final settings = data?['settings'];
+      return settings is Map<String, dynamic> ? settings : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> updateCompanySettings(Map<String, dynamic> settings) async {
+    await _db.from('company_settings').upsert({
+      'id': 'default',
+      'settings': settings,
+      'updated_at': DateTime.now().toIso8601String(),
+      'updated_by': currentUser?.id,
+    });
+  }
+
   // ─── Auth ────────────────────────────────────────────────────────────
 
   Future<AuthResponse> signUp(String email, String password) async {
