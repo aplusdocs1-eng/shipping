@@ -387,10 +387,13 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
 
   void _showScanInDialog(BuildContext context) {
     final trackingController = TextEditingController();
+    final billAmountController = TextEditingController();
+    final billNoteController = TextEditingController();
     StorageLocation? selectedLocation;
     String? errorText;
     String? customerError;
     String? partnerError;
+    String? billError;
     Customer? selectedCustomer;
     ShippingPartner? selectedPartner = _ovsPartner();
     Map<String, dynamic>? selectedCourierTenant = _defaultCourierTenant();
@@ -684,6 +687,74 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                         color: AppTheme.textSecondary,
                       ),
                     ),
+                    const SizedBox(height: 20),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.receipt_long_outlined,
+                          size: 16,
+                          color: AppTheme.textSecondary,
+                        ),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Bill Courier (optional)',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      selectedCourierTenant == null
+                          ? 'Leave blank to bill this package later from '
+                                'its row menu instead.'
+                          : 'Charges ${selectedCourierTenant!['company_name']} '
+                                'for this package immediately — leave blank '
+                                'to bill it later from its row menu instead.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: billAmountController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      onChanged: (_) {
+                        if (billError != null) {
+                          setDialogState(() => billError = null);
+                        }
+                      },
+                      decoration: InputDecoration(
+                        labelText: 'Amount (USD)',
+                        prefixText: '\$ ',
+                        filled: true,
+                        fillColor: AppTheme.surface,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        errorText: billError,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: billNoteController,
+                      decoration: InputDecoration(
+                        labelText: 'Note (optional)',
+                        hintText: 'e.g. Storage + handling',
+                        filled: true,
+                        fillColor: AppTheme.surface,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -716,6 +787,23 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                                   : null;
                             });
                             return;
+                          }
+
+                          // The bill amount is optional — only validate it
+                          // (and block submission) if something was
+                          // actually typed into it.
+                          final billAmountText = billAmountController.text
+                              .trim();
+                          double? billAmount;
+                          if (billAmountText.isNotEmpty) {
+                            billAmount = double.tryParse(billAmountText);
+                            if (billAmount == null || billAmount <= 0) {
+                              setDialogState(
+                                () => billError =
+                                    'Enter a valid amount or leave blank',
+                              );
+                              return;
+                            }
                           }
 
                           // Check if already scanned in
@@ -763,6 +851,8 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                             synced = result.success;
                           }
 
+                          bool billApplied = false;
+                          String? billFailure;
                           try {
                             final row = await _db.insertWarehouseEntry(
                               trackingNumber: tracking,
@@ -787,6 +877,35 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                             setState(() {
                               _entries.add(WarehouseEntry.fromMap(row));
                             });
+
+                            // Bill the courier tenant in the same action,
+                            // right on the row that was just created —
+                            // this never blocks the scan-in itself from
+                            // succeeding; a billing failure here just
+                            // means it still needs billing later from the
+                            // row's own menu.
+                            if (billAmount != null) {
+                              try {
+                                await _db.updateWarehouseEntry(
+                                  row['id'] as String,
+                                  {
+                                    'partner_charge_amount': billAmount,
+                                    'partner_charge_status': 'billed',
+                                    'partner_charge_note':
+                                        billNoteController.text
+                                            .trim()
+                                            .isEmpty
+                                        ? null
+                                        : billNoteController.text.trim(),
+                                    'partner_charged_at': DateTime.now()
+                                        .toIso8601String(),
+                                  },
+                                );
+                                billApplied = true;
+                              } catch (e) {
+                                billFailure = e.toString();
+                              }
+                            }
                           } catch (e) {
                             setDialogState(
                               () => errorText = 'Failed to save: $e',
@@ -824,15 +943,23 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
 
                           final partnerMsg = ' · ${partner.name}';
                           final syncMsg = synced ? ' · Synced ✓' : '';
+                          final billMsg = billApplied
+                              ? ' · Billed \$${billAmount!.toStringAsFixed(2)}'
+                              : billFailure != null
+                              ? ' · Billing failed — bill it from the row '
+                                    'menu instead'
+                              : '';
 
                           ScaffoldMessenger.of(this.context).showSnackBar(
                             SnackBar(
                               content: Text(
                                 selectedLocation != null
-                                    ? 'Package $tracking scanned in → ${selectedLocation!.displayLabel}$partnerMsg$syncMsg · printing label…'
-                                    : 'Package $tracking scanned in$partnerMsg$syncMsg · printing label…',
+                                    ? 'Package $tracking scanned in → ${selectedLocation!.displayLabel}$partnerMsg$syncMsg$billMsg · printing label…'
+                                    : 'Package $tracking scanned in$partnerMsg$syncMsg$billMsg · printing label…',
                               ),
-                              backgroundColor: AppTheme.primary,
+                              backgroundColor: billFailure != null
+                                  ? AppTheme.warning
+                                  : AppTheme.primary,
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
