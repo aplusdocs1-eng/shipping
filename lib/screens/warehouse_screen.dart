@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/applizone_api.dart';
 import '../services/database_service.dart';
+import '../services/export_service.dart';
 import '../theme/app_theme.dart';
 
 class WarehouseScreen extends StatefulWidget {
@@ -372,6 +373,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                   onMarkReady: _markReadyForPickup,
                   onMarkPickedUp: _markPickedUp,
                   onBillCourier: _billCourier,
+                  onPrintLabel: _printLabel,
                 ),
               ],
             ),
@@ -724,6 +726,30 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                           Navigator.of(context).pop();
                           unawaited(_load());
 
+                          // A package isn't actually stored until its label
+                          // is printed and physically attached to it — so
+                          // scanning in opens the print dialog immediately
+                          // rather than waiting for a separate click.
+                          unawaited(
+                            ExportService.printLabels([
+                              {
+                                'trackingNumber': tracking,
+                                'to': customer.name,
+                                'toDetail': selectedLocation?.displayLabel ?? '',
+                                'from': 'One Village Shipping & Freight',
+                                'fromDetail': isThirdPartyCourier
+                                    ? 'Received via ${partner.name}'
+                                    : 'Direct / in-house',
+                                'description':
+                                    packageMatch?.description ?? 'Scanned package',
+                                'weight': (packageMatch?.weight ?? 0.0).toString(),
+                                'zone': selectedLocation != null
+                                    ? '${selectedLocation!.shelf}-${selectedLocation!.slot}'
+                                    : '',
+                              },
+                            ]),
+                          );
+
                           final partnerMsg = ' · ${partner.name}';
                           final syncMsg = synced ? ' · Synced ✓' : '';
 
@@ -731,8 +757,8 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                             SnackBar(
                               content: Text(
                                 selectedLocation != null
-                                    ? 'Package $tracking scanned in → ${selectedLocation!.displayLabel}$partnerMsg$syncMsg'
-                                    : 'Package $tracking scanned in$partnerMsg$syncMsg',
+                                    ? 'Package $tracking scanned in → ${selectedLocation!.displayLabel}$partnerMsg$syncMsg · printing label…'
+                                    : 'Package $tracking scanned in$partnerMsg$syncMsg · printing label…',
                               ),
                               backgroundColor: AppTheme.primary,
                               behavior: SnackBarBehavior.floating,
@@ -762,6 +788,33 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   }
 
   // ─── Actions ─────────────────────────────────────────────────────────────
+
+  /// Reprints a label for an already-scanned-in entry — for a jammed
+  /// printer, a torn label, or a duplicate for a second box. The scan-in
+  /// dialog itself triggers the same ExportService.printLabels call
+  /// automatically the moment a package is saved.
+  void _printLabel(WarehouseEntry entry) {
+    final carrier = _matchPartnerByTracking(entry.trackingNumber);
+    final isThirdParty =
+        entry.shippingPartnerCode != null && entry.shippingPartnerCode != 'OVS';
+    final loc = entry.storageLocation;
+    unawaited(
+      ExportService.printLabels([
+        {
+          'trackingNumber': entry.trackingNumber,
+          'to': entry.customerName,
+          'toDetail': loc?.displayLabel ?? '',
+          'from': 'One Village Shipping & Freight',
+          'fromDetail': isThirdParty
+              ? 'Received via ${carrier?.name ?? entry.shippingPartnerCode}'
+              : 'Direct / in-house',
+          'description': entry.description,
+          'weight': entry.weight.toString(),
+          'zone': loc != null ? '${loc.shelf}-${loc.slot}' : '',
+        },
+      ]),
+    );
+  }
 
   void _billCourier(WarehouseEntry entry) {
     final courier = _matchPartnerAccountByTracking(entry.trackingNumber);
@@ -1337,6 +1390,7 @@ class _InventoryTable extends StatelessWidget {
   final ValueChanged<WarehouseEntry> onMarkReady;
   final ValueChanged<WarehouseEntry> onMarkPickedUp;
   final ValueChanged<WarehouseEntry> onBillCourier;
+  final ValueChanged<WarehouseEntry> onPrintLabel;
 
   const _InventoryTable({
     required this.entries,
@@ -1344,6 +1398,7 @@ class _InventoryTable extends StatelessWidget {
     required this.onMarkReady,
     required this.onMarkPickedUp,
     required this.onBillCourier,
+    required this.onPrintLabel,
   });
 
   @override
@@ -1591,6 +1646,7 @@ class _InventoryTable extends StatelessWidget {
                   onMarkReady: onMarkReady,
                   onMarkPickedUp: onMarkPickedUp,
                   onBillCourier: onBillCourier,
+                  onPrintLabel: onPrintLabel,
                 ),
               ),
             ],
@@ -1640,6 +1696,7 @@ class _ActionsMenu extends StatelessWidget {
   final ValueChanged<WarehouseEntry> onMarkReady;
   final ValueChanged<WarehouseEntry> onMarkPickedUp;
   final ValueChanged<WarehouseEntry> onBillCourier;
+  final ValueChanged<WarehouseEntry> onPrintLabel;
 
   const _ActionsMenu({
     required this.entry,
@@ -1647,6 +1704,7 @@ class _ActionsMenu extends StatelessWidget {
     required this.onMarkReady,
     required this.onMarkPickedUp,
     required this.onBillCourier,
+    required this.onPrintLabel,
   });
 
   @override
@@ -1705,6 +1763,21 @@ class _ActionsMenu extends StatelessWidget {
           );
         }
 
+        // Reprint the label — printer jams, torn labels, or a duplicate
+        // for a second box all happen; scan-in shouldn't be the only
+        // chance to get one.
+        items.add(
+          const PopupMenuItem(
+            value: 'print',
+            child: ListTile(
+              leading: Icon(Icons.print_outlined, size: 18),
+              title: Text('Print Label', style: TextStyle(fontSize: 13)),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+        );
+
         // Bill (or update the charge on) the courier this package belongs to
         items.add(
           PopupMenuItem(
@@ -1735,6 +1808,8 @@ class _ActionsMenu extends StatelessWidget {
             onMarkPickedUp(entry);
           case 'bill':
             onBillCourier(entry);
+          case 'print':
+            onPrintLabel(entry);
         }
       },
     );

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:printing/printing.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
 import '../services/export_service.dart';
@@ -216,28 +216,30 @@ class _LabelsScreenState extends State<LabelsScreen> {
     );
   }
 
-  Map<String, String> _labelData(Package p) => {
-    'trackingNumber': p.trackingNumber,
-    'customerName': p.customerName,
-    'origin': p.origin,
-    'destination': p.destination,
-    'description': p.description,
-    'weight': p.weight.toString(),
-  };
-
   Future<void> _printOne(BuildContext context, Package p) async {
-    await ExportService.printLabels([_labelData(p)]);
+    await ExportService.printLabels([_labelDataFor(p)]);
   }
 
   Future<void> _printSelected(BuildContext context) async {
     final labels = _allPackages
         .where((p) => _selected.contains(p.id))
-        .map(_labelData)
+        .map(_labelDataFor)
         .toList();
     if (labels.isEmpty) return;
     await ExportService.printLabels(labels);
   }
 }
+
+/// Shared by the list's print actions and the live preview panel, so both
+/// always build a label from exactly the same fields.
+Map<String, String> _labelDataFor(Package p) => {
+  'trackingNumber': p.trackingNumber,
+  'to': p.customerName,
+  'toDetail': p.destination,
+  'fromDetail': p.origin,
+  'description': p.description,
+  'weight': p.weight.toString(),
+};
 
 class _TableHeader extends StatelessWidget {
   @override
@@ -416,6 +418,11 @@ class _LabelRow extends StatelessWidget {
   );
 }
 
+/// Renders the *actual* PDF that would print (via PdfPreview, from the
+/// `printing` package) rather than a hand-built lookalike — so what's
+/// shown here can never drift out of sync with what comes out of the
+/// printer. PdfPreview's own toolbar provides zoom plus print/share
+/// actions already wired to the same bytes.
 class _LabelPreview extends StatelessWidget {
   final Package package;
   final VoidCallback onClose;
@@ -424,7 +431,7 @@ class _LabelPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 320,
+      width: 340,
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(left: BorderSide(color: AppTheme.border)),
@@ -457,52 +464,16 @@ class _LabelPreview extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  _LabelCard(package: package),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () => ExportService.printLabels([
-                        {
-                          'trackingNumber': package.trackingNumber,
-                          'customerName': package.customerName,
-                          'origin': package.origin,
-                          'destination': package.destination,
-                          'description': package.description,
-                          'weight': package.weight.toString(),
-                        },
-                      ]),
-                      icon: const Icon(Icons.print, size: 14),
-                      label: const Text('Print This Label'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () => ExportService.downloadLabels(
-                        filename: '${package.trackingNumber}-label.pdf',
-                        labels: [
-                          {
-                            'trackingNumber': package.trackingNumber,
-                            'customerName': package.customerName,
-                            'origin': package.origin,
-                            'destination': package.destination,
-                            'description': package.description,
-                            'weight': package.weight.toString(),
-                          },
-                        ],
-                      ),
-                      icon: const Icon(Icons.download_outlined, size: 14),
-                      label: const Text('Download PDF'),
-                    ),
-                  ),
-                ],
-              ),
+            child: PdfPreview(
+              key: ValueKey(package.id),
+              build: (format) => ExportService.labelsPdfBytes([_labelDataFor(package)]),
+              allowPrinting: true,
+              allowSharing: true,
+              canChangePageFormat: false,
+              canChangeOrientation: false,
+              canDebug: false,
+              pdfFileName: '${package.trackingNumber}-label.pdf',
+              actionBarTheme: const PdfActionBarTheme(iconColor: AppTheme.primary),
             ),
           ),
         ],
@@ -511,208 +482,3 @@ class _LabelPreview extends StatelessWidget {
   }
 }
 
-class _LabelCard extends StatelessWidget {
-  final Package package;
-  const _LabelCard({required this.package});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: Colors.black, width: 2),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: const BoxDecoration(color: Colors.black),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'APPLIZONE CENTRAL JAMAICA',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1,
-                  ),
-                ),
-                Text(
-                  package.description.toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Barcode simulation
-          Container(
-            width: double.infinity,
-            height: 50,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(2),
-            ),
-            child: CustomPaint(painter: _BarcodePainter()),
-          ),
-          const SizedBox(height: 4),
-          Center(
-            child: Text(
-              package.trackingNumber,
-              style: const TextStyle(
-                fontSize: 10,
-                fontFamily: 'monospace',
-                fontWeight: FontWeight.w700,
-                letterSpacing: 2,
-              ),
-            ),
-          ),
-          const Divider(height: 16),
-          // From
-          const Text(
-            'FROM:',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            package.customerName,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-          Text(
-            package.origin,
-            style: const TextStyle(fontSize: 10, color: Colors.black87),
-          ),
-          const SizedBox(height: 8),
-          // To
-          const Text(
-            'TO:',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            package.destination,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-          ),
-          Text(
-            package.description,
-            style: const TextStyle(fontSize: 11, color: Colors.black87),
-          ),
-          const Divider(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'WEIGHT',
-                    style: TextStyle(
-                      fontSize: 8,
-                      letterSpacing: 1,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    '${package.weight} lbs',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  const Text(
-                    'DATE',
-                    style: TextStyle(
-                      fontSize: 8,
-                      letterSpacing: 1,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    DateFormat('MMM d, yyyy').format(package.createdAt),
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BarcodePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.white;
-    final rng = [
-      3,
-      1,
-      4,
-      1,
-      5,
-      9,
-      2,
-      6,
-      5,
-      3,
-      5,
-      8,
-      9,
-      7,
-      9,
-      3,
-      2,
-      3,
-      8,
-      4,
-      6,
-      2,
-      6,
-      4,
-      3,
-      3,
-      8,
-      3,
-      2,
-      7,
-      5,
-    ];
-    double x = 0;
-    bool isBar = true;
-    for (final w in rng) {
-      final width = w * (size.width / rng.fold(0, (a, b) => a + b));
-      if (isBar)
-        canvas.drawRect(Rect.fromLTWH(x, 4, width, size.height - 8), paint);
-      x += width;
-      isBar = !isBar;
-    }
-  }
-
-  @override
-  bool shouldRepaint(_BarcodePainter old) => false;
-}
