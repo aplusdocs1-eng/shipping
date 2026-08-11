@@ -393,7 +393,9 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     String? partnerError;
     Customer? selectedCustomer;
     ShippingPartner? selectedPartner = _ovsPartner();
+    Map<String, dynamic>? selectedCourierTenant = _defaultCourierTenant();
     bool partnerManuallySet = false;
+    bool courierManuallySet = false;
     bool syncing = false;
 
     showDialog(
@@ -401,6 +403,14 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            final filteredCustomers = selectedCourierTenant == null
+                ? const <Customer>[]
+                : _customers
+                      .where(
+                        (c) => c.partnerId == selectedCourierTenant!['id'],
+                      )
+                      .toList();
+
             return AlertDialog(
               title: Row(
                 children: [
@@ -416,8 +426,9 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Enter the tracking number, then select the customer '
-                      'and courier this package is tied to.',
+                      'Enter the tracking number, pick the courier this '
+                      "package belongs to, then select the customer from "
+                      "that courier's list.",
                       style: TextStyle(
                         color: AppTheme.textSecondary,
                         fontSize: 14,
@@ -433,6 +444,17 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                             selectedPartner =
                                 _matchPartnerByTracking(v.trim()) ??
                                 _ovsPartner();
+                          }
+                          if (!courierManuallySet) {
+                            final matched =
+                                _matchPartnerAccountByTracking(v.trim()) ??
+                                _defaultCourierTenant();
+                            if (matched?['id'] != selectedCourierTenant?['id']) {
+                              selectedCourierTenant = matched;
+                              // A courier change can invalidate whichever
+                              // customer was picked under the old courier.
+                              selectedCustomer = null;
+                            }
                           }
                         });
                       },
@@ -452,10 +474,57 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    DropdownButtonFormField<Map<String, dynamic>>(
+                      value: selectedCourierTenant,
+                      isExpanded: true,
+                      hint: const Text('Select courier'),
+                      decoration: InputDecoration(
+                        labelText: 'Courier',
+                        prefixIcon: const Icon(
+                          Icons.storefront_outlined,
+                          size: 20,
+                        ),
+                        filled: true,
+                        fillColor: AppTheme.surface,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      items: _partnerAccounts
+                          .map(
+                            (p) => DropdownMenuItem(
+                              value: p,
+                              child: Text(
+                                (p['company_name'] as String?) ?? 'Unnamed',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setDialogState(() {
+                        selectedCourierTenant = v;
+                        courierManuallySet = true;
+                        if (selectedCustomer != null &&
+                            selectedCustomer!.partnerId != v?['id']) {
+                          selectedCustomer = null;
+                        }
+                      }),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Choosing a courier narrows the customer list below '
+                      'to that courier\'s own customers.',
+                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                    ),
+                    const SizedBox(height: 16),
                     DropdownButtonFormField<Customer>(
                       value: selectedCustomer,
                       isExpanded: true,
-                      hint: const Text('Select customer'),
+                      hint: Text(
+                        selectedCourierTenant == null
+                            ? 'Select a courier first'
+                            : 'Select customer',
+                      ),
                       decoration: InputDecoration(
                         labelText: 'Customer',
                         prefixIcon: const Icon(
@@ -469,7 +538,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                         ),
                         errorText: customerError,
                       ),
-                      items: _customers
+                      items: filteredCustomers
                           .map(
                             (c) => DropdownMenuItem(
                               value: c,
@@ -482,16 +551,19 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                             ),
                           )
                           .toList(),
-                      onChanged: (v) => setDialogState(() {
-                        selectedCustomer = v;
-                        customerError = null;
-                      }),
+                      onChanged: selectedCourierTenant == null
+                          ? null
+                          : (v) => setDialogState(() {
+                              selectedCustomer = v;
+                              customerError = null;
+                            }),
                     ),
-                    if (_customers.isEmpty) ...[
+                    if (selectedCourierTenant != null &&
+                        filteredCustomers.isEmpty) ...[
                       const SizedBox(height: 6),
                       Text(
-                        'No customers yet — add one from the Customers tab '
-                        'first.',
+                        'No customers for this courier yet — add one from '
+                        'the Customers tab first.',
                         style: TextStyle(
                           fontSize: 12,
                           color: AppTheme.warning,
@@ -503,7 +575,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                       value: selectedPartner,
                       isExpanded: true,
                       decoration: InputDecoration(
-                        labelText: 'Courier',
+                        labelText: 'Carrier',
                         prefixIcon: const Icon(
                           Icons.local_shipping_outlined,
                           size: 20,
@@ -549,7 +621,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                             child: Text(
                               selectedPartner!.code == 'OVS'
                                   ? 'In-house package — not tied to an '
-                                        'external courier.'
+                                        'external carrier.'
                                   : '${selectedPartner!.region} · Code: '
                                         '${selectedPartner!.code}',
                               style: TextStyle(
@@ -639,7 +711,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                                   ? 'Select a customer'
                                   : null;
                               partnerError = missingPartner
-                                  ? 'Select a courier or One Village '
+                                  ? 'Select a carrier or One Village '
                                         'Shipping & Freight'
                                   : null;
                             });
@@ -1218,6 +1290,18 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     for (final p in _partnerAccounts) {
       final prefix = (p['tracking_prefix'] as String?) ?? '';
       if (prefix.isNotEmpty && upper.startsWith(prefix.toUpperCase())) {
+        return p;
+      }
+    }
+    return null;
+  }
+
+  /// The seeded "One Village Shipping & Freight" courier tenant — default
+  /// when a tracking number doesn't match any other courier's own prefix,
+  /// mirroring how the Carrier field itself defaults to _ovsPartner().
+  Map<String, dynamic>? _defaultCourierTenant() {
+    for (final p in _partnerAccounts) {
+      if (((p['tracking_prefix'] as String?) ?? '').toUpperCase() == 'OVS-') {
         return p;
       }
     }

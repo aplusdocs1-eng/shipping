@@ -164,6 +164,12 @@ class Customer {
   final int totalPackages;
   final double balance;
   final bool isActive;
+  // partner_accounts.id this customer belongs to — the "courier" (reseller
+  // tenant) sense used throughout the app, e.g. Howdidship, not the
+  // shipping_partners delivery-carrier sense. Every customer has one
+  // (direct/One Village customers carry the seeded OVS tenant id), but
+  // it's nullable here defensively in case of legacy/unscoped rows.
+  final String? partnerId;
 
   Customer({
     required this.id,
@@ -177,6 +183,7 @@ class Customer {
     required this.totalPackages,
     required this.balance,
     required this.isActive,
+    this.partnerId,
   });
 
   factory Customer.fromMap(Map<String, dynamic> m) => Customer(
@@ -192,6 +199,7 @@ class Customer {
     totalPackages: 0,
     balance: 0.0,
     isActive: (m['status']?.toString() ?? 'active') != 'inactive',
+    partnerId: m['partner_id']?.toString(),
   );
 
   Customer copyWith({int? totalPackages, double? balance}) => Customer(
@@ -206,6 +214,7 @@ class Customer {
     totalPackages: totalPackages ?? this.totalPackages,
     balance: balance ?? this.balance,
     isActive: isActive,
+    partnerId: partnerId,
   );
 }
 
