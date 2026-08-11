@@ -28,6 +28,10 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   List<ShippingPartner> _partners = [];
   List<Customer> _customers = [];
   List<Map<String, dynamic>> _partnerAccounts = [];
+  // Real company name from Settings -> Company Profile, printed as the
+  // sender on every label — falls back to the platform default until
+  // settings load (or if the admin has never customized it).
+  String _companyName = 'One Village Shipping & Freight';
 
   @override
   void initState() {
@@ -47,6 +51,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
         _db.getShippingPartners(),
         _db.getCustomers(),
         _db.getAllPartnerAccounts(),
+        _db.getCompanySettings(),
       ]);
       if (!mounted) return;
       final zoneRows = (results[2] as List).cast<Map<String, dynamic>>();
@@ -119,6 +124,11 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
             .cast<Map<String, dynamic>>()
             .where((p) => p['status'] == 'approved')
             .toList();
+        final settings = results[7] as Map<String, dynamic>?;
+        final loadedCompanyName = settings?['companyName'] as String?;
+        if (loadedCompanyName != null && loadedCompanyName.trim().isNotEmpty) {
+          _companyName = loadedCompanyName.trim();
+        }
         _zones = zoneRows
             .map(
               (z) => StorageZone(
@@ -1039,23 +1049,25 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                           // scanning in opens the print dialog immediately
                           // rather than waiting for a separate click.
                           unawaited(
-                            ExportService.printLabels([
-                              {
-                                'trackingNumber': tracking,
-                                'to': customer.name,
-                                'toDetail': selectedLocation?.displayLabel ?? '',
-                                'from': 'One Village Shipping & Freight',
-                                'fromDetail': isThirdPartyCourier
-                                    ? 'Received via ${partner.name}'
-                                    : 'Direct / in-house',
-                                'description':
-                                    packageMatch?.description ?? 'Scanned package',
-                                'weight': (packageMatch?.weight ?? 0.0).toString(),
-                                'zone': selectedLocation != null
-                                    ? '${selectedLocation!.shelf}-${selectedLocation!.slot}'
-                                    : '',
-                              },
-                            ]),
+                            ExportService.printLabels(
+                              [
+                                {
+                                  'trackingNumber': tracking,
+                                  'to': customer.name,
+                                  'toDetail': selectedLocation?.displayLabel ?? '',
+                                  'fromDetail': isThirdPartyCourier
+                                      ? 'Received via ${partner.name}'
+                                      : 'Direct / in-house',
+                                  'description':
+                                      packageMatch?.description ?? 'Scanned package',
+                                  'weight': (packageMatch?.weight ?? 0.0).toString(),
+                                  'zone': selectedLocation != null
+                                      ? '${selectedLocation!.shelf}-${selectedLocation!.slot}'
+                                      : '',
+                                },
+                              ],
+                              companyName: _companyName,
+                            ),
                           );
 
                           final partnerMsg = ' · ${partner.name}';
@@ -1115,20 +1127,22 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
         entry.shippingPartnerCode != null && entry.shippingPartnerCode != 'OVS';
     final loc = entry.storageLocation;
     unawaited(
-      ExportService.printLabels([
-        {
-          'trackingNumber': entry.trackingNumber,
-          'to': entry.customerName,
-          'toDetail': loc?.displayLabel ?? '',
-          'from': 'One Village Shipping & Freight',
-          'fromDetail': isThirdParty
-              ? 'Received via ${carrier?.name ?? entry.shippingPartnerCode}'
-              : 'Direct / in-house',
-          'description': entry.description,
-          'weight': entry.weight.toString(),
-          'zone': loc != null ? '${loc.shelf}-${loc.slot}' : '',
-        },
-      ]),
+      ExportService.printLabels(
+        [
+          {
+            'trackingNumber': entry.trackingNumber,
+            'to': entry.customerName,
+            'toDetail': loc?.displayLabel ?? '',
+            'fromDetail': isThirdParty
+                ? 'Received via ${carrier?.name ?? entry.shippingPartnerCode}'
+                : 'Direct / in-house',
+            'description': entry.description,
+            'weight': entry.weight.toString(),
+            'zone': loc != null ? '${loc.shelf}-${loc.slot}' : '',
+          },
+        ],
+        companyName: _companyName,
+      ),
     );
   }
 

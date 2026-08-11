@@ -21,6 +21,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<Customer> _customers = [];
   List<Shipment> _shipments = [];
   double _totalRevenue = 0;
+  // Real company name from Settings -> Company Profile — falls back to
+  // the platform default until settings load.
+  String _companyName = 'One Village Shipping & Freight';
 
   @override
   void initState() {
@@ -36,13 +39,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _db.getCustomers(),
         _db.getShipments(),
         _db.getInvoices(),
+        _db.getCompanySettings(),
       ]);
       if (!mounted) return;
       final invoices = (results[4] as List)
           .cast<Map<String, dynamic>>()
           .map(Invoice.fromMap)
           .toList();
+      final settings = results[5] as Map<String, dynamic>?;
+      final loadedCompanyName = settings?['companyName'] as String?;
       setState(() {
+        if (loadedCompanyName != null && loadedCompanyName.trim().isNotEmpty) {
+          _companyName = loadedCompanyName.trim();
+        }
         _pendingPartners = (results[0] as List)
             .cast<Map<String, dynamic>>()
             .where((a) => (a['status'] as String? ?? 'pending') == 'pending')
@@ -113,9 +122,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  const Text(
-                    'One Village Shipping & Freight',
-                    style: TextStyle(
+                  Text(
+                    _companyName,
+                    style: const TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.w800,
                       color: AppTheme.textPrimary,

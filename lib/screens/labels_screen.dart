@@ -20,6 +20,9 @@ class _LabelsScreenState extends State<LabelsScreen> {
   Package? _preview;
   bool _loading = true;
   List<Package> _allPackages = [];
+  // Real company name from Settings -> Company Profile — falls back to
+  // the platform default until settings load.
+  String _companyName = 'One Village Shipping & Freight';
 
   @override
   void initState() {
@@ -30,10 +33,19 @@ class _LabelsScreenState extends State<LabelsScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final rows = await _db.getPackages();
+      final results = await Future.wait([
+        _db.getPackages(),
+        _db.getCompanySettings(),
+      ]);
+      final rows = results[0] as List<Map<String, dynamic>>;
+      final settings = results[1] as Map<String, dynamic>?;
+      final loadedCompanyName = settings?['companyName'] as String?;
       if (mounted)
         setState(() {
           _allPackages = rows.map(Package.fromMap).toList();
+          if (loadedCompanyName != null && loadedCompanyName.trim().isNotEmpty) {
+            _companyName = loadedCompanyName.trim();
+          }
           _loading = false;
         });
     } catch (_) {
@@ -210,6 +222,7 @@ class _LabelsScreenState extends State<LabelsScreen> {
         if (_preview != null)
           _LabelPreview(
             package: _preview!,
+            companyName: _companyName,
             onClose: () => setState(() => _preview = null),
           ),
       ],
@@ -217,7 +230,7 @@ class _LabelsScreenState extends State<LabelsScreen> {
   }
 
   Future<void> _printOne(BuildContext context, Package p) async {
-    await ExportService.printLabels([_labelDataFor(p)]);
+    await ExportService.printLabels([_labelDataFor(p)], companyName: _companyName);
   }
 
   Future<void> _printSelected(BuildContext context) async {
@@ -226,7 +239,7 @@ class _LabelsScreenState extends State<LabelsScreen> {
         .map(_labelDataFor)
         .toList();
     if (labels.isEmpty) return;
-    await ExportService.printLabels(labels);
+    await ExportService.printLabels(labels, companyName: _companyName);
   }
 }
 
@@ -425,8 +438,13 @@ class _LabelRow extends StatelessWidget {
 /// actions already wired to the same bytes.
 class _LabelPreview extends StatelessWidget {
   final Package package;
+  final String companyName;
   final VoidCallback onClose;
-  const _LabelPreview({required this.package, required this.onClose});
+  const _LabelPreview({
+    required this.package,
+    required this.companyName,
+    required this.onClose,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -466,7 +484,10 @@ class _LabelPreview extends StatelessWidget {
           Expanded(
             child: PdfPreview(
               key: ValueKey(package.id),
-              build: (format) => ExportService.labelsPdfBytes([_labelDataFor(package)]),
+              build: (format) => ExportService.labelsPdfBytes(
+                [_labelDataFor(package)],
+                companyName: companyName,
+              ),
               allowPrinting: true,
               allowSharing: true,
               canChangePageFormat: false,

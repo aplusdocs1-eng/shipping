@@ -111,11 +111,22 @@ class ExportService {
   ///
   /// Each label map: trackingNumber (required — encoded in both codes),
   /// to/toDetail (recipient + address/location line), from/fromDetail
-  /// (sender + its detail line, defaults to "One Village Shipping &
-  /// Freight"), description, weight, zone (storage location, shown as a
-  /// small badge if present), date (defaults to today). All optional
-  /// fields are simply omitted from the label when blank.
-  static pw.Document _buildLabelsDocument(List<Map<String, String>> labels) {
+  /// (sender + its detail line, defaults to `companyName`), description,
+  /// weight, zone (storage location, shown as a small badge if present),
+  /// date (defaults to today). All optional fields are simply omitted
+  /// from the label when blank.
+  ///
+  /// `companyName` is also the header wordmark printed on every label in
+  /// the batch — pass the real value from company_settings (Settings ->
+  /// Company Profile) rather than leaving it to fall back, so a label
+  /// actually reflects what the admin has on file.
+  static pw.Document _buildLabelsDocument(
+    List<Map<String, String>> labels, {
+    String? companyName,
+  }) {
+    final company = (companyName?.trim().isNotEmpty ?? false)
+        ? companyName!.trim()
+        : 'One Village Shipping & Freight';
     final doc = pw.Document();
     for (final label in labels) {
       final safe = label.map((k, v) => MapEntry(k, _pdfSafe(v)));
@@ -124,7 +135,7 @@ class ExportService {
       final toDetail = safe['toDetail'] ?? safe['destination'] ?? '';
       final from = safe['from']?.isNotEmpty == true
           ? safe['from']!
-          : 'One Village Shipping & Freight';
+          : company;
       final fromDetail = safe['fromDetail'] ?? safe['origin'] ?? '';
       final description = safe['description'] ?? '';
       final weight = safe['weight'] ?? '';
@@ -145,7 +156,7 @@ class ExportService {
                 crossAxisAlignment: pw.CrossAxisAlignment.center,
                 children: [
                   pw.Text(
-                    'ONE VILLAGE SHIPPING & FREIGHT',
+                    company.toUpperCase(),
                     style: pw.TextStyle(
                       fontSize: 9,
                       fontWeight: pw.FontWeight.bold,
@@ -268,16 +279,20 @@ class ExportService {
     ],
   );
 
-  static Future<void> printLabels(List<Map<String, String>> labels) async {
-    final doc = _buildLabelsDocument(labels);
+  static Future<void> printLabels(
+    List<Map<String, String>> labels, {
+    String? companyName,
+  }) async {
+    final doc = _buildLabelsDocument(labels, companyName: companyName);
     await Printing.layoutPdf(onLayout: (_) async => doc.save());
   }
 
   static Future<void> downloadLabels({
     required String filename,
     required List<Map<String, String>> labels,
+    String? companyName,
   }) async {
-    final doc = _buildLabelsDocument(labels);
+    final doc = _buildLabelsDocument(labels, companyName: companyName);
     await Printing.sharePdf(bytes: await doc.save(), filename: filename);
   }
 
@@ -286,8 +301,11 @@ class ExportService {
   /// the preview is guaranteed to show exactly the same document that
   /// prints, rather than a hand-maintained lookalike that can drift out of
   /// sync with it.
-  static Future<Uint8List> labelsPdfBytes(List<Map<String, String>> labels) {
-    return _buildLabelsDocument(labels).save();
+  static Future<Uint8List> labelsPdfBytes(
+    List<Map<String, String>> labels, {
+    String? companyName,
+  }) {
+    return _buildLabelsDocument(labels, companyName: companyName).save();
   }
 
   static pw.Document _buildTableDocument({
