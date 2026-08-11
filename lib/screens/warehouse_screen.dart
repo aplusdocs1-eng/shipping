@@ -394,6 +394,8 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     String? customerError;
     String? partnerError;
     String? billError;
+    String? scanFeedback;
+    bool scanFeedbackIsMatch = false;
     Customer? selectedCustomer;
     ShippingPartner? selectedPartner = _ovsPartner();
     Map<String, dynamic>? selectedCourierTenant = _defaultCourierTenant();
@@ -414,6 +416,62 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                       )
                       .toList();
 
+            // Fired by the scanner's Enter keystroke, the manual lookup
+            // button, or pressing Enter after typing by hand — finds any
+            // existing package for this tracking number and fills in
+            // everything it can: customer (and therefore courier, since a
+            // customer belongs to exactly one), carrier, description, and
+            // weight, so a scan alone can carry the whole form.
+            void applyScanLookup(String tracking) {
+              if (tracking.isEmpty) return;
+              final matches = _allPackages.where(
+                (p) => p.trackingNumber == tracking,
+              );
+              if (matches.isEmpty) {
+                setDialogState(() {
+                  scanFeedback =
+                      'No existing package record for this tracking number '
+                      '— enter the rest below manually.';
+                  scanFeedbackIsMatch = false;
+                });
+                return;
+              }
+              final pkg = matches.first;
+              setDialogState(() {
+                errorText = null;
+                if (!partnerManuallySet) {
+                  selectedPartner =
+                      _matchPartnerByTracking(tracking) ?? _ovsPartner();
+                }
+                final custMatches = _customers.where(
+                  (c) => c.id == pkg.customerId,
+                );
+                if (custMatches.isNotEmpty) {
+                  final cust = custMatches.first;
+                  final tenantMatches = _partnerAccounts.where(
+                    (p) => p['id'] == cust.partnerId,
+                  );
+                  if (tenantMatches.isNotEmpty) {
+                    selectedCourierTenant = tenantMatches.first;
+                    // An exact package match beats a tracking-prefix
+                    // guess — settle it so later edits to the field don't
+                    // silently override what was just looked up.
+                    courierManuallySet = true;
+                  }
+                  selectedCustomer = cust;
+                  customerError = null;
+                  scanFeedback =
+                      'Matched an existing package — customer, courier, '
+                      'description, and weight filled in below.';
+                } else {
+                  scanFeedback =
+                      'Matched an existing package, but its customer '
+                      "record couldn't be found — select one manually.";
+                }
+                scanFeedbackIsMatch = true;
+              });
+            }
+
             return AlertDialog(
               title: Row(
                 children: [
@@ -424,14 +482,15 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
               ),
               content: SizedBox(
                 width: 480,
-                child: Column(
+                child: SingleChildScrollView(
+                  child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Enter the tracking number, pick the courier this '
-                      "package belongs to, then select the customer from "
-                      "that courier's list.",
+                      "Connect a barcode scanner and scan the package — or "
+                      'type the tracking number manually — then confirm the '
+                      'details below.',
                       style: TextStyle(
                         color: AppTheme.textSecondary,
                         fontSize: 14,
@@ -440,9 +499,12 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                     const SizedBox(height: 20),
                     TextField(
                       controller: trackingController,
+                      autofocus: true,
+                      textInputAction: TextInputAction.done,
                       onChanged: (v) {
                         setDialogState(() {
                           errorText = null;
+                          scanFeedback = null;
                           if (!partnerManuallySet) {
                             selectedPartner =
                                 _matchPartnerByTracking(v.trim()) ??
@@ -461,12 +523,22 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                           }
                         });
                       },
+                      // A handheld/USB scanner types the barcode then sends
+                      // Enter — same signal as a person finishing manual
+                      // entry, so both trigger the same lookup here.
+                      onSubmitted: (v) => applyScanLookup(v.trim()),
                       decoration: InputDecoration(
                         labelText: 'Tracking Number',
-                        hintText: 'e.g. APS-20260411-001',
+                        hintText: 'Scan barcode or type e.g. APS-20260411-001',
                         prefixIcon: const Icon(
-                          Icons.local_shipping_outlined,
+                          Icons.qr_code_scanner,
                           size: 20,
+                        ),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.manage_search, size: 20),
+                          tooltip: 'Look up this tracking number',
+                          onPressed: () =>
+                              applyScanLookup(trackingController.text.trim()),
                         ),
                         filled: true,
                         fillColor: AppTheme.surface,
@@ -476,6 +548,35 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                         errorText: errorText,
                       ),
                     ),
+                    if (scanFeedback != null) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            scanFeedbackIsMatch
+                                ? Icons.check_circle_outline
+                                : Icons.info_outline,
+                            size: 14,
+                            color: scanFeedbackIsMatch
+                                ? AppTheme.success
+                                : AppTheme.textSecondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              scanFeedback!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scanFeedbackIsMatch
+                                    ? AppTheme.success
+                                    : AppTheme.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     DropdownButtonFormField<Map<String, dynamic>>(
                       value: selectedCourierTenant,
@@ -756,6 +857,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                       ),
                     ),
                   ],
+                  ),
                 ),
               ),
               actions: [
