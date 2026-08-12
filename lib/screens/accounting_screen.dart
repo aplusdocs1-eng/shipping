@@ -6,15 +6,12 @@ import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 
-/// Real financial data only: invoices, customer payment submissions, and
-/// per-package courier billing (warehouse_entries.partner_charge_*) — the
-/// three places actual money is tracked in this app today. Deliberately
-/// excludes POS: pos_screen.dart still runs entirely on bundled mock data
-/// (data/mock_data.dart) and has never written a sale to the database, so
-/// folding it in here would mean reporting revenue that was never real.
-/// This is a revenue/receivables/courier-billing dashboard, not a
-/// general-ledger system — there's no expense tracking anywhere in this
-/// app to build a P&L from.
+/// Real financial data only: invoices, customer payment submissions,
+/// per-package courier billing (warehouse_entries.partner_charge_*), and
+/// point-of-sale transactions — the four places actual money is tracked in
+/// this app today. This is a revenue/receivables/courier-billing
+/// dashboard, not a general-ledger system — there's no expense tracking
+/// anywhere in this app to build a P&L from.
 class AccountingScreen extends StatefulWidget {
   const AccountingScreen({super.key});
 
@@ -30,6 +27,7 @@ class _AccountingScreenState extends State<AccountingScreen> {
   List<Map<String, dynamic>> _paymentSubmissions = [];
   List<Map<String, dynamic>> _warehouseEntries = [];
   List<Map<String, dynamic>> _partnerAccounts = [];
+  List<Map<String, dynamic>> _posTransactions = [];
   final Set<String> _actingOn = {};
 
   final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
@@ -56,6 +54,7 @@ class _AccountingScreenState extends State<AccountingScreen> {
         _db.getAllPaymentSubmissions(),
         _db.getWarehouseEntries(),
         _db.getAllPartnerAccounts(),
+        _db.getPosTransactions(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -65,6 +64,7 @@ class _AccountingScreenState extends State<AccountingScreen> {
         _partnerAccounts = List<Map<String, dynamic>>.from(
           results[3],
         ).where((p) => p['status'] == 'approved').toList();
+        _posTransactions = List<Map<String, dynamic>>.from(results[4]);
         _loading = false;
       });
     } catch (e) {
@@ -168,6 +168,9 @@ class _AccountingScreenState extends State<AccountingScreen> {
   double get _courierRevenueCollected =>
       _courierBilling.fold(0.0, (s, c) => s + c.paid);
 
+  double get _posRevenue =>
+      _posTransactions.fold(0.0, (s, t) => s + _num(t['total']));
+
   List<MapEntry<DateTime, double>> get _monthlyRevenue {
     final now = DateTime.now();
     final months = List.generate(
@@ -225,6 +228,19 @@ class _AccountingScreenState extends State<AccountingScreen> {
           detail:
               '${(courier?['company_name'] as String?) ?? 'Unmatched courier'} · ${e['tracking_number'] ?? ''}',
           amount: _num(e['partner_charge_amount']),
+        ),
+      );
+    }
+    for (final t in _posTransactions) {
+      final at = _date(t['created_at']);
+      if (at == null) continue;
+      list.add(
+        _LedgerEntry(
+          date: at,
+          label: 'POS sale · ${t['payment_method'] ?? 'unspecified method'}',
+          detail:
+              '${(t['customer_name'] as String?) ?? 'Walk-in customer'} · ${t['receipt_number'] ?? ''}',
+          amount: _num(t['total']),
         ),
       );
     }
@@ -361,7 +377,7 @@ class _AccountingScreenState extends State<AccountingScreen> {
 
           LayoutBuilder(
             builder: (context, c) {
-              final cols = c.maxWidth > 1200 ? 5 : (c.maxWidth > 760 ? 3 : (c.maxWidth > 480 ? 2 : 1));
+              final cols = c.maxWidth > 1300 ? 6 : (c.maxWidth > 900 ? 3 : (c.maxWidth > 480 ? 2 : 1));
               return GridView.count(
                 crossAxisCount: cols,
                 shrinkWrap: true,
@@ -405,6 +421,13 @@ class _AccountingScreenState extends State<AccountingScreen> {
                     icon: Icons.fact_check_outlined,
                     iconColor: AppTheme.primary,
                   ),
+                  StatCard(
+                    title: 'POS Sales',
+                    value: _currency.format(_posRevenue),
+                    subtitle: '${_posTransactions.length} sale${_posTransactions.length == 1 ? '' : 's'} rung up',
+                    icon: Icons.point_of_sale_outlined,
+                    iconColor: AppTheme.success,
+                  ),
                 ],
               );
             },
@@ -447,6 +470,11 @@ class _AccountingScreenState extends State<AccountingScreen> {
                       label: 'Courier billing',
                       value: _courierRevenueCollected,
                       color: AppTheme.accent,
+                    ),
+                    _ChartSlice(
+                      label: 'POS sales',
+                      value: _posRevenue,
+                      color: AppTheme.gold,
                     ),
                   ],
                 ),

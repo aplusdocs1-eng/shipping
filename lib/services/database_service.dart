@@ -1271,4 +1271,74 @@ class DatabaseService {
 
   User? get currentUser => _db.auth.currentUser;
   bool get isAuthenticated => _db.auth.currentUser != null;
+
+  // ─── Point of Sale ───────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> getPosItems() async {
+    final data = await _db
+        .from('pos_items')
+        .select()
+        .order('category', ascending: true)
+        .order('name', ascending: true);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> insertPosItem(
+    Map<String, dynamic> item,
+  ) async {
+    final data = await _db.from('pos_items').insert(item).select().single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<void> updatePosItem(String id, Map<String, dynamic> updates) async {
+    await _db.from('pos_items').update(updates).eq('id', id);
+  }
+
+  Future<void> deletePosItem(String id) async {
+    await _db.from('pos_items').delete().eq('id', id);
+  }
+
+  Future<List<Map<String, dynamic>>> getPosTransactions() async {
+    final data = await _db
+        .from('pos_transactions')
+        .select()
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  /// Inserts the transaction row, then its line items (linked by the new
+  /// transaction's id). The line items keep their own copy of name/price
+  /// at time of sale — a historical receipt shouldn't change retroactively
+  /// just because a catalog item's price was edited later.
+  Future<Map<String, dynamic>> insertPosTransaction({
+    required String receiptNumber,
+    String? customerId,
+    required String customerName,
+    required double subtotal,
+    required double tax,
+    required double total,
+    required String paymentMethod,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final txn = await _db
+        .from('pos_transactions')
+        .insert({
+          'receipt_number': receiptNumber,
+          'customer_id': customerId,
+          'customer_name': customerName,
+          'subtotal': subtotal,
+          'tax': tax,
+          'total': total,
+          'payment_method': paymentMethod,
+        })
+        .select()
+        .single();
+    final txnId = txn['id'] as String;
+    if (items.isNotEmpty) {
+      await _db.from('pos_transaction_items').insert([
+        for (final i in items) {...i, 'transaction_id': txnId},
+      ]);
+    }
+    return Map<String, dynamic>.from(txn);
+  }
 }

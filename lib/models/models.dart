@@ -702,6 +702,15 @@ class PosItem {
     required this.unit,
     this.isActive = true,
   });
+
+  factory PosItem.fromMap(Map<String, dynamic> m) => PosItem(
+    id: m['id']?.toString() ?? '',
+    name: m['name']?.toString() ?? '',
+    category: m['category']?.toString() ?? '',
+    price: (m['price'] as num?)?.toDouble() ?? 0.0,
+    unit: m['unit']?.toString() ?? '',
+    isActive: m['is_active'] as bool? ?? true,
+  );
 }
 
 class PosTransaction {
@@ -728,6 +737,24 @@ class PosTransaction {
     required this.createdAt,
     this.customerId,
   });
+
+  /// Line items aren't fetched here — getPosTransactions() reads just the
+  /// transaction rows, which is all list/summary views need — so `items`
+  /// is always empty on a transaction built this way.
+  factory PosTransaction.fromMap(Map<String, dynamic> m) => PosTransaction(
+    id: m['id']?.toString() ?? '',
+    receiptNumber: m['receipt_number']?.toString() ?? '',
+    customerId: m['customer_id']?.toString(),
+    customerName: m['customer_name']?.toString() ?? '',
+    items: const [],
+    subtotal: (m['subtotal'] as num?)?.toDouble() ?? 0.0,
+    tax: (m['tax'] as num?)?.toDouble() ?? 0.0,
+    total: (m['total'] as num?)?.toDouble() ?? 0.0,
+    paymentMethod: m['payment_method']?.toString() ?? '',
+    createdAt:
+        DateTime.tryParse(m['created_at']?.toString() ?? '') ??
+        DateTime.now(),
+  );
 }
 
 class PosCartItem {
