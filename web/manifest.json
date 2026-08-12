@@ -1,11 +1,11 @@
 {
-    "name": "courierwarehousing",
-    "short_name": "courierwarehousing",
+    "name": "One Village Shipping & Freight",
+    "short_name": "One Village",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#071B33",
+    "theme_color": "#071B33",
+    "description": "One Village Shipping & Freight — courier, freight, and warehouse management.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

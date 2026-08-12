@@ -42,9 +42,9 @@ class _RatesPageState extends State<RatesPage> {
         child: Column(
           children: [
             SiteHeader(content: _content, currentRoute: '/rates'),
-            const SitePageBanner(
-              eyebrow: 'Pricing',
-              title: 'Rates',
+            SitePageBanner(
+              eyebrow: _content.str('rates', 'bannerEyebrow'),
+              title: _content.str('rates', 'bannerTitle'),
             ),
             MaxWidth(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 64),

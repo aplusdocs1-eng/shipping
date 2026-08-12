@@ -151,11 +151,20 @@ class LandingContent {
   static const Map<String, dynamic> defaults = {
     'header': {
       'companyName': 'One Village',
+      // Empty = the bundled asset. Shown at header (52px) and footer (44px)
+      // height in the public site only — the admin dashboard's own chrome
+      // (sidebar, app bar) is a separate, developer-owned tool and keeps
+      // the bundled asset regardless of this field.
+      'logoUrl': '',
     },
     'contact': {
       'phone': '267-844-5155',
       'address': 'Hollywood, Florida',
       'email': 'shipping@onevillageshipping.com',
+      'bannerEyebrow': 'Get In Touch',
+      'bannerTitle': 'Contact Us',
+      'bannerSubtitle':
+          "Questions about a shipment, a rate, or setting up an account? We're here to help.",
     },
     'hero': {
       'titleLine1': 'ONE VILLAGE.',
@@ -165,10 +174,25 @@ class LandingContent {
       'primaryButtonText': 'GET STARTED',
       'secondaryButtonText': 'TRACK SHIPMENT',
       'backgroundImageUrl': '',
+      // Empty = the bundled clip. Desktop-only regardless (see
+      // _HeroVideoBackground) — this only swaps which video plays there.
+      'backgroundVideoUrl': '',
       'originLabel': 'WE SHIP FROM',
       'originText': 'ANYWHERE IN THE U.S.A.',
+      'originFlag': '🇺🇸',
       'destLabel': 'TO KINGSTON, JA',
       'destText': 'via sea and air freight',
+      'destFlag': '🇯🇲',
+      // The 4 small badges under the hero subtitle — same icon/title/
+      // description shape in spirit as `services`/`whyChooseUs`, just a
+      // 2-line label instead of a title+description pair to match how
+      // tightly they're actually laid out on the page.
+      'features': [
+        {'icon': 'verified_user', 'line1': 'SECURE', 'line2': 'SHIPPING'},
+        {'icon': 'schedule', 'line1': 'ON-TIME', 'line2': 'DELIVERY'},
+        {'icon': 'public', 'line1': 'GLOBAL', 'line2': 'NETWORK'},
+        {'icon': 'headset_mic', 'line1': '24/7', 'line2': 'SUPPORT'},
+      ],
     },
     'knutsford': {
       'enabled': true,
@@ -182,6 +206,10 @@ class LandingContent {
     'services': {
       'eyebrow': 'OUR SERVICES',
       'heading': 'Comprehensive Solutions. Delivered.',
+      // Only used on the dedicated Services page banner — the homepage
+      // section uses eyebrow/heading above but has no subtitle of its own.
+      'bannerSubtitle':
+          'Everything One Village Shipping & Freight handles for your cargo, from pickup to your door.',
       'items': [
         {
           'icon': 'directions_boat',
@@ -294,10 +322,14 @@ class LandingContent {
       ],
     },
     'about': {
+      'bannerEyebrow': 'Our Story',
+      'bannerTitle': 'About One Village Shipping & Freight',
       'body':
           'One Village Shipping & Freight is your trusted partner for shipping, freight, and delivery solutions worldwide — connecting the USA to Kingston, Jamaica via sea and air freight, with secure warehousing, door-to-door delivery, and expert customs clearance.',
     },
     'rates': {
+      'bannerEyebrow': 'Pricing',
+      'bannerTitle': 'Rates',
       'body':
           'Create a free account to get instant, personalized rates for sea and air freight, plus door-to-door and customs clearance pricing.',
     },

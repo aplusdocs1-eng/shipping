@@ -56,8 +56,7 @@ class _ServicesPageState extends State<ServicesPage> {
             SitePageBanner(
               eyebrow: _content.str('services', 'eyebrow'),
               title: _content.str('services', 'heading'),
-              subtitle: 'Everything One Village Shipping & Freight handles for '
-                  'your cargo, from pickup to your door.',
+              subtitle: _content.str('services', 'bannerSubtitle'),
             ),
             MaxWidth(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 64),

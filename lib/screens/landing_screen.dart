@@ -390,7 +390,9 @@ class _AnimatedStatValueState extends State<_AnimatedStatValue>
 /// (pexels.com/license). Bundled at assets/videos/hero_background.mp4.
 class _HeroVideoBackground extends StatefulWidget {
   final bool enabled;
-  const _HeroVideoBackground({required this.enabled});
+  // Empty = the bundled clip below.
+  final String videoUrl;
+  const _HeroVideoBackground({required this.enabled, required this.videoUrl});
 
   @override
   State<_HeroVideoBackground> createState() => _HeroVideoBackgroundState();
@@ -406,10 +408,34 @@ class _HeroVideoBackgroundState extends State<_HeroVideoBackground> {
     if (widget.enabled) _init();
   }
 
+  @override
+  void didUpdateWidget(covariant _HeroVideoBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.enabled == oldWidget.enabled && widget.videoUrl == oldWidget.videoUrl) {
+      return;
+    }
+    // This fires in the very common case where the page mounts with
+    // default (empty) content first — see LandingScreen's own doc comment
+    // — then rebuilds once the real site_content override finishes
+    // loading. Without this, initState already ran once with the empty
+    // default URL and would never notice a real video URL arriving later;
+    // the bundled clip would keep playing regardless of what's configured.
+    final oldController = _controller;
+    _controller = null;
+    _ready = false;
+    oldController?.dispose();
+    if (widget.enabled) _init();
+  }
+
   Future<void> _init() async {
-    final controller = VideoPlayerController.asset('assets/videos/hero_background.mp4');
-    _controller = controller;
     try {
+      final url = widget.videoUrl.trim();
+      // An admin-pasted URL could be malformed — Uri.parse throwing belongs
+      // inside this try too, same as every other way loading can fail.
+      final controller = url.isEmpty
+          ? VideoPlayerController.asset('assets/videos/hero_background.mp4')
+          : VideoPlayerController.networkUrl(Uri.parse(url));
+      _controller = controller;
       await controller.initialize();
       if (!mounted) return;
       await controller.setLooping(true);
@@ -516,13 +542,6 @@ class _Hero extends StatelessWidget {
     required this.onKnutsfordTap,
   });
 
-  static const _features = [
-    (Icons.verified_user_outlined, 'SECURE', 'SHIPPING'),
-    (Icons.schedule_outlined, 'ON-TIME', 'DELIVERY'),
-    (Icons.public, 'GLOBAL', 'NETWORK'),
-    (Icons.headset_mic_outlined, '24/7', 'SUPPORT'),
-  ];
-
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.of(context).size.width > 980;
@@ -565,19 +584,24 @@ class _Hero extends StatelessWidget {
           alignment: wide ? WrapAlignment.start : WrapAlignment.center,
           spacing: 28,
           runSpacing: 16,
-          children: _features
+          children: content
+              .list('hero', 'features')
               .map(
                 (f) => Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(f.$1, color: LandingScreen.yellow, size: 22),
+                    Icon(
+                      LandingContent.iconFor((f['icon'] as String?) ?? '', Icons.verified_user_outlined),
+                      color: LandingScreen.yellow,
+                      size: 22,
+                    ),
                     const SizedBox(height: 6),
                     Text(
-                      f.$2,
+                      (f['line1'] as String?) ?? '',
                       style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800),
                     ),
                     Text(
-                      f.$3,
+                      (f['line2'] as String?) ?? '',
                       style: const TextStyle(color: Color(0xFFC7D2E0), fontSize: 11, fontWeight: FontWeight.w700),
                     ),
                   ],
@@ -635,7 +659,7 @@ class _Hero extends StatelessWidget {
             spacing: 10,
             runSpacing: 8,
             children: [
-              const Text('🇺🇸', style: TextStyle(fontSize: 18)),
+              Text(content.str('hero', 'originFlag'), style: const TextStyle(fontSize: 18)),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -645,7 +669,7 @@ class _Hero extends StatelessWidget {
                 ],
               ),
               const Icon(Icons.double_arrow, color: LandingScreen.yellow, size: 16),
-              const Text('🇯🇲', style: TextStyle(fontSize: 18)),
+              Text(content.str('hero', 'destFlag'), style: const TextStyle(fontSize: 18)),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -703,7 +727,14 @@ class _Hero extends StatelessWidget {
         // _HeroVideoBackground has already been caught once rendering
         // outside its intended bounds (see the comment in that class), so
         // don't rely solely on Stack's own default clip to contain it.
-        Positioned.fill(child: ClipRect(child: _HeroVideoBackground(enabled: wide))),
+        Positioned.fill(
+          child: ClipRect(
+            child: _HeroVideoBackground(
+              enabled: wide,
+              videoUrl: content.str('hero', 'backgroundVideoUrl'),
+            ),
+          ),
+        ),
         // Scrim over the video so white text stays readable regardless of
         // the footage underneath — darkest on the left where the text
         // column sits, lighter on the right where the image card already

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/landing_content.dart';
 import '../theme/public_colors.dart';
+import 'adaptive_image.dart';
 
 /// Shared chrome for every public-facing page (the landing page itself,
 /// plus the dedicated About/Services/Rates/Contact pages): a consistent
@@ -149,7 +150,14 @@ class SiteHeader extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Image.asset('assets/images/one_village_logo.png', height: 52),
+                  SizedBox(
+                    height: 52,
+                    child: AdaptiveImage(
+                      url: content.img('header', 'logoUrl'),
+                      assetPath: 'assets/images/one_village_logo.png',
+                      fit: BoxFit.contain,
+                    ),
+                  ),
                   // The logo itself is a busy illustrated badge — its own
                   // lettering reads fine full-size but is illegible at
                   // header height, so the company name is spelled out here
@@ -375,7 +383,7 @@ class SiteFooter extends StatelessWidget {
         ),
         content: Text(
           'Our $platform page is launching soon. Check back shortly to follow '
-          'One Village Shipping & Freight!',
+          '${content.str('header', 'companyName')}!',
           style: const TextStyle(color: PublicColors.charcoal, height: 1.5),
         ),
         actions: [
@@ -417,7 +425,14 @@ class SiteFooter extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Image.asset('assets/images/one_village_logo.png', height: 44),
+                      SizedBox(
+                        height: 44,
+                        child: AdaptiveImage(
+                          url: content.img('header', 'logoUrl'),
+                          assetPath: 'assets/images/one_village_logo.png',
+                          fit: BoxFit.contain,
+                        ),
+                      ),
                       const SizedBox(height: 12),
                       ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 280),

@@ -46,11 +46,10 @@ class _ContactPageState extends State<ContactPage> {
         child: Column(
           children: [
             SiteHeader(content: _content, currentRoute: '/contact'),
-            const SitePageBanner(
-              eyebrow: 'Get In Touch',
-              title: 'Contact Us',
-              subtitle: "Questions about a shipment, a rate, or setting up an "
-                  "account? We're here to help.",
+            SitePageBanner(
+              eyebrow: _content.str('contact', 'bannerEyebrow'),
+              title: _content.str('contact', 'bannerTitle'),
+              subtitle: _content.str('contact', 'bannerSubtitle'),
             ),
             MaxWidth(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 64),

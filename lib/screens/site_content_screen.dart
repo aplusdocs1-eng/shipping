@@ -29,6 +29,7 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
   late List<Key> _whyKeys;
   late List<Key> _statKeys;
   late List<Key> _socialKeys;
+  late List<Key> _heroFeatureKeys;
   int _formVersion = 0;
 
   @override
@@ -48,6 +49,7 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
     _whyKeys = List.generate(_whyItems.length, (_) => UniqueKey());
     _statKeys = List.generate(_statsItems.length, (_) => UniqueKey());
     _socialKeys = List.generate(_socialItems.length, (_) => UniqueKey());
+    _heroFeatureKeys = List.generate(_heroFeatureItems.length, (_) => UniqueKey());
   }
 
   Map<String, dynamic> _sec(String key) =>
@@ -60,6 +62,8 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
       (_sec('stats')['items'] as List).cast<Map<String, dynamic>>();
   List<Map<String, dynamic>> get _socialItems =>
       (_sec('social')['items'] as List).cast<Map<String, dynamic>>();
+  List<Map<String, dynamic>> get _heroFeatureItems =>
+      (_sec('hero')['features'] as List).cast<Map<String, dynamic>>();
 
   Future<void> _load() async {
     setState(() => _loading = true);
@@ -256,8 +260,6 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
     );
   }
 
-  // ─── Hero ──────────────────────────────────────────────────────────────
-
   // ─── Header / branding ─────────────────────────────────────────────────
 
   Widget _headerSection() {
@@ -268,13 +270,25 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
           'Shown next to the logo in the top nav on every public page — the '
           'logo artwork itself is too detailed to read at that size, so this '
           'text is what actually carries the name.',
-      child: _Field(
-        label: 'Company name in header',
-        initial: header['companyName'],
-        onChanged: (v) => header['companyName'] = v,
+      child: Column(
+        children: [
+          _Field(
+            label: 'Company name in header',
+            initial: header['companyName'],
+            onChanged: (v) => header['companyName'] = v,
+          ),
+          _Field(
+            label: 'Logo image URL (blank = default logo)',
+            initial: header['logoUrl'],
+            hint: 'https://…',
+            onChanged: (v) => header['logoUrl'] = v,
+          ),
+        ],
       ),
     );
   }
+
+  // ─── Hero ──────────────────────────────────────────────────────────────
 
   Widget _heroSection() {
     final hero = _sec('hero');
@@ -293,18 +307,70 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
             _Field(label: 'Secondary button text', initial: hero['secondaryButtonText'], onChanged: (v) => hero['secondaryButtonText'] = v),
           ),
           _Field(
-            label: 'Background image URL (blank = default photo)',
+            label: 'Photo card URL (blank = default photo) — the image on the right',
             initial: hero['backgroundImageUrl'],
             hint: 'https://…',
             onChanged: (v) => hero['backgroundImageUrl'] = v,
           ),
-          _fieldRow(
-            _Field(label: 'Origin badge label', initial: hero['originLabel'], onChanged: (v) => hero['originLabel'] = v),
-            _Field(label: 'Origin badge text', initial: hero['originText'], onChanged: (v) => hero['originText'] = v),
+          _Field(
+            label: 'Background video URL (blank = default clip) — full-width, plays behind everything, desktop only',
+            initial: hero['backgroundVideoUrl'],
+            hint: 'https://…/video.mp4',
+            onChanged: (v) => hero['backgroundVideoUrl'] = v,
           ),
           _fieldRow(
+            _Field(label: 'Origin badge flag (emoji)', initial: hero['originFlag'], onChanged: (v) => hero['originFlag'] = v),
+            _Field(label: 'Origin badge label', initial: hero['originLabel'], onChanged: (v) => hero['originLabel'] = v),
+          ),
+          _Field(label: 'Origin badge text', initial: hero['originText'], onChanged: (v) => hero['originText'] = v),
+          _fieldRow(
+            _Field(label: 'Destination badge flag (emoji)', initial: hero['destFlag'], onChanged: (v) => hero['destFlag'] = v),
             _Field(label: 'Destination badge label', initial: hero['destLabel'], onChanged: (v) => hero['destLabel'] = v),
-            _Field(label: 'Destination badge text', initial: hero['destText'], onChanged: (v) => hero['destText'] = v),
+          ),
+          _Field(label: 'Destination badge text', initial: hero['destText'], onChanged: (v) => hero['destText'] = v),
+          const SizedBox(height: 8),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Feature badges (the 4 small icons under the subtext)',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppTheme.textSecondary),
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (var i = 0; i < _heroFeatureItems.length; i++)
+            KeyedSubtree(
+              key: _heroFeatureKeys[i],
+              child: _ItemCard(
+                title: 'Badge ${i + 1}',
+                onRemove: _heroFeatureItems.length > 1
+                    ? () => _removeItem(_heroFeatureItems, _heroFeatureKeys, i)
+                    : null,
+                child: Column(
+                  children: [
+                    _IconPicker(
+                      label: 'Icon',
+                      initial: _heroFeatureItems[i]['icon'] as String? ?? '',
+                      onChanged: (v) => _heroFeatureItems[i]['icon'] = v,
+                    ),
+                    _fieldRow(
+                      _Field(label: 'Line 1', initial: _heroFeatureItems[i]['line1'], onChanged: (v) => _heroFeatureItems[i]['line1'] = v),
+                      _Field(label: 'Line 2', initial: _heroFeatureItems[i]['line2'], onChanged: (v) => _heroFeatureItems[i]['line2'] = v),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _addItem(_heroFeatureItems, _heroFeatureKeys, {
+                'icon': 'star',
+                'line1': 'NEW',
+                'line2': 'BADGE',
+              }),
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('Add badge'),
+            ),
           ),
         ],
       ),
@@ -358,6 +424,12 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
           _fieldRow(
             _Field(label: 'Eyebrow label', initial: services['eyebrow'], onChanged: (v) => services['eyebrow'] = v),
             _Field(label: 'Heading', initial: services['heading'], onChanged: (v) => services['heading'] = v),
+          ),
+          _Field(
+            label: 'Services page banner subtitle',
+            initial: services['bannerSubtitle'],
+            maxLines: 2,
+            onChanged: (v) => services['bannerSubtitle'] = v,
           ),
           const SizedBox(height: 8),
           for (var i = 0; i < items.length; i++)
@@ -538,6 +610,25 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
             _Field(label: 'Email', initial: contact['email'], onChanged: (v) => contact['email'] = v),
           ),
           _Field(label: 'Address', initial: contact['address'], onChanged: (v) => contact['address'] = v),
+          const SizedBox(height: 8),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Contact Us page banner',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppTheme.textSecondary),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _fieldRow(
+            _Field(label: 'Eyebrow', initial: contact['bannerEyebrow'], onChanged: (v) => contact['bannerEyebrow'] = v),
+            _Field(label: 'Title', initial: contact['bannerTitle'], onChanged: (v) => contact['bannerTitle'] = v),
+          ),
+          _Field(
+            label: 'Subtitle',
+            initial: contact['bannerSubtitle'],
+            maxLines: 2,
+            onChanged: (v) => contact['bannerSubtitle'] = v,
+          ),
         ],
       ),
     );
@@ -602,7 +693,16 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
       subtitle: 'Shown on the dedicated "About Us" and "Rates" pages, reachable from the top menu.',
       child: Column(
         children: [
+          _fieldRow(
+            _Field(label: 'About Us banner eyebrow', initial: about['bannerEyebrow'], onChanged: (v) => about['bannerEyebrow'] = v),
+            _Field(label: 'About Us banner title', initial: about['bannerTitle'], onChanged: (v) => about['bannerTitle'] = v),
+          ),
           _Field(label: 'About Us page text', initial: about['body'], maxLines: 3, onChanged: (v) => about['body'] = v),
+          const SizedBox(height: 8),
+          _fieldRow(
+            _Field(label: 'Rates banner eyebrow', initial: rates['bannerEyebrow'], onChanged: (v) => rates['bannerEyebrow'] = v),
+            _Field(label: 'Rates banner title', initial: rates['bannerTitle'], onChanged: (v) => rates['bannerTitle'] = v),
+          ),
           _Field(label: 'Rates page text', initial: rates['body'], maxLines: 3, onChanged: (v) => rates['body'] = v),
         ],
       ),

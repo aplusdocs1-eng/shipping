@@ -44,9 +44,9 @@ class _AboutPageState extends State<AboutPage> {
         child: Column(
           children: [
             SiteHeader(content: _content, currentRoute: '/about'),
-            const SitePageBanner(
-              eyebrow: 'Our Story',
-              title: 'About One Village Shipping & Freight',
+            SitePageBanner(
+              eyebrow: _content.str('about', 'bannerEyebrow'),
+              title: _content.str('about', 'bannerTitle'),
             ),
             MaxWidth(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 64),
