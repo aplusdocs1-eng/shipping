@@ -148,12 +148,26 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     }
   }
 
-  /// Occupied slots as "zoneName|shelf-slot" keys. Compared against real
-  /// StorageLocation identity rather than displayLabel text, since the
-  /// synthetic StorageLocation reconstructed by WarehouseEntry.fromMap
-  /// (from the warehouse_entries.storage_zone/storage_location text
-  /// columns) formats slightly differently than the real one joined from
-  /// the storage_locations table.
+  /// Occupied slots as "zoneName|rawLocationText" keys. The two sides of
+  /// this comparison start from different shapes of the same physical
+  /// location, so they're deliberately built with different formulas:
+  ///
+  /// - A real StorageLocation (from _storageLocations, i.e. the
+  ///   storage_locations table) keeps shelf and slot/bin as separate
+  ///   columns, e.g. shelf="1", slot="1".
+  /// - An entry's StorageLocation is synthesized by WarehouseEntry.fromMap
+  ///   from the single warehouse_entries.storage_location TEXT column, so
+  ///   its .shelf holds that *whole* raw string (e.g. "1-1") and .slot is
+  ///   always ''.
+  ///
+  /// _assignLocation writes that column as '${shelf}-${slot}', so
+  /// reconstructing the same join on the real side, and using the raw
+  /// text as-is (no slot suffix) on the entry side, gives both a matching
+  /// key for the same physical location. Appending "-${slot}" on the
+  /// entry side too (slot is always '') would tack on a phantom trailing
+  /// "-" that was never written, so the two sides would never match —
+  /// which is exactly what silently made every location look available
+  /// before this fix.
   List<StorageLocation> get _availableLocations {
     final occupied = _entries
         .where((e) => e.status != WarehouseEntryStatus.pickedUp)
@@ -167,6 +181,25 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     return _storageLocations
         .where((l) => !occupied.contains('${l.zoneName}|${l.shelf}-${l.slot}'))
         .toList();
+  }
+
+  /// Finds the real StorageLocation (separate shelf/slot, from
+  /// _storageLocations) that a synthetic one — reconstructed by
+  /// WarehouseEntry.fromMap from the raw warehouse_entries.storage_location
+  /// text — actually refers to. _assignLocation uses this so re-opening it
+  /// for an already-stored entry and saving without touching the dropdown
+  /// re-writes the same clean 'shelf-slot' text instead of joining the
+  /// already-combined synthetic text a second time (how a couple of
+  /// entries ended up with a stray trailing "-" in storage_location).
+  StorageLocation? _resolveRealLocation(StorageLocation? synthetic) {
+    if (synthetic == null) return null;
+    for (final l in _storageLocations) {
+      if (l.zoneName == synthetic.zoneName &&
+          '${l.shelf}-${l.slot}' == synthetic.shelf) {
+        return l;
+      }
+    }
+    return null;
   }
 
   List<WarehouseEntry> get _filteredEntries {
@@ -232,6 +265,20 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                   ],
                 ),
               ),
+              OutlinedButton.icon(
+                onPressed: () => _showScanOutDialog(context),
+                icon: const Icon(Icons.local_shipping_outlined, size: 18),
+                label: const Text('Confirm Pickup'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.primary,
+                  side: const BorderSide(color: AppTheme.primary),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 14,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
               FilledButton.icon(
                 onPressed: () => _showScanInDialog(context),
                 icon: const Icon(Icons.qr_code_scanner, size: 18),
@@ -1340,8 +1387,363 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     );
   }
 
+  /// A fast, scan-driven pickup queue: every matched tracking number is
+  /// confirmed picked up immediately (no separate confirm click), so a
+  /// courier rep can clear a stack of packages scan-scan-scan. A "Picked up
+  /// by" name applies to the whole session instead of being re-typed per
+  /// item, and each confirmation gets an inline Undo for mis-scans.
+  void _showScanOutDialog(BuildContext context) {
+    final trackingController = TextEditingController();
+    final pickedUpByController = TextEditingController();
+    // Explicitly managed (not just autofocus:true) so focus can be put
+    // straight back after every scan — success or failure — without the
+    // operator needing to click the field again before the next scan.
+    final trackingFocusNode = FocusNode();
+    String? scanFeedback;
+    bool scanFeedbackIsError = false;
+    bool busy = false;
+    final List<_PickupLogEntry> confirmed = [];
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            // requestFocus() called synchronously right after a
+            // setState-triggered rebuild can race that rebuild — the new
+            // frame (and the fresh platform text-input connection that
+            // comes with it) isn't necessarily ready yet, so the next
+            // keystroke (the next scan) can silently go nowhere even
+            // though the field looks focused. Deferring to a post-frame
+            // callback runs it once the rebuild has actually landed.
+            void refocusTracking() {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                trackingFocusNode.requestFocus();
+              });
+            }
+
+            // Fired by the scanner's Enter keystroke, the arrow button, or
+            // pressing Enter after typing by hand.
+            Future<void> confirmPickup(String raw) async {
+              final tracking = raw.trim();
+              if (tracking.isEmpty || busy) return;
+              WarehouseEntry? found;
+              for (final e in _entries) {
+                if (e.trackingNumber.toUpperCase() ==
+                    tracking.toUpperCase()) {
+                  found = e;
+                  break;
+                }
+              }
+              if (found == null) {
+                setDialogState(() {
+                  scanFeedback = 'No package found for "$tracking".';
+                  scanFeedbackIsError = true;
+                });
+                trackingController.clear();
+                refocusTracking();
+                return;
+              }
+              final previous = found;
+              if (previous.status == WarehouseEntryStatus.pickedUp) {
+                final when = previous.pickedUpAt;
+                setDialogState(() {
+                  scanFeedback =
+                      '${previous.trackingNumber} was already picked up'
+                      '${when != null ? ' at ${DateFormat('h:mm a').format(when)}' : ''}'
+                      '${previous.pickedUpBy != null ? ' by ${previous.pickedUpBy}' : ''}.';
+                  scanFeedbackIsError = true;
+                });
+                trackingController.clear();
+                refocusTracking();
+                return;
+              }
+
+              final idx = _entries.indexOf(previous);
+              final now = DateTime.now();
+              // If this package belongs to a courier tenant (by tracking
+              // prefix), default "picked up by" to that courier's name
+              // rather than the customer — it's the courier's rep signing
+              // for it, not the end customer.
+              final courierTenant = _matchPartnerAccountByTracking(
+                previous.trackingNumber,
+              );
+              final pickedUpByName =
+                  pickedUpByController.text.trim().isNotEmpty
+                  ? pickedUpByController.text.trim()
+                  : (courierTenant?['company_name'] as String?) ??
+                        previous.customerName;
+
+              setDialogState(() => busy = true);
+              try {
+                await _db.updateWarehouseEntry(previous.id, {
+                  'status': 'picked_up',
+                  'picked_up_at': now.toIso8601String(),
+                  'picked_up_by': pickedUpByName,
+                });
+              } catch (e) {
+                setDialogState(() {
+                  busy = false;
+                  scanFeedback = 'Failed to confirm pickup: $e';
+                  scanFeedbackIsError = true;
+                });
+                refocusTracking();
+                return;
+              }
+              if (!mounted) return;
+              if (idx != -1) {
+                setState(() {
+                  _entries[idx] = previous.copyWith(
+                    status: WarehouseEntryStatus.pickedUp,
+                    pickedUpAt: now,
+                    pickedUpBy: pickedUpByName,
+                  );
+                });
+              }
+              setDialogState(() {
+                busy = false;
+                confirmed.insert(
+                  0,
+                  _PickupLogEntry(
+                    previous: previous,
+                    pickedUpByName: pickedUpByName,
+                    pickedUpAt: now,
+                  ),
+                );
+                scanFeedback =
+                    '${previous.trackingNumber} confirmed picked up.';
+                scanFeedbackIsError = false;
+              });
+              trackingController.clear();
+              refocusTracking();
+            }
+
+            // Reverses a mis-scan: restores the entry's exact prior state
+            // (status, picked_up_at, picked_up_by) in the database and on
+            // screen, and drops it from the session log.
+            Future<void> undoPickup(_PickupLogEntry log) async {
+              if (busy) return;
+              setDialogState(() => busy = true);
+              try {
+                await _db.updateWarehouseEntry(log.previous.id, {
+                  'status': _statusDbValue(log.previous.status),
+                  'picked_up_at': log.previous.pickedUpAt?.toIso8601String(),
+                  'picked_up_by': log.previous.pickedUpBy,
+                });
+              } catch (e) {
+                setDialogState(() {
+                  busy = false;
+                  scanFeedback = 'Failed to undo: $e';
+                  scanFeedbackIsError = true;
+                });
+                refocusTracking();
+                return;
+              }
+              if (!mounted) return;
+              final idx = _entries.indexWhere(
+                (e) => e.id == log.previous.id,
+              );
+              if (idx != -1) {
+                setState(() => _entries[idx] = log.previous);
+              }
+              setDialogState(() {
+                busy = false;
+                confirmed.remove(log);
+                scanFeedback = '${log.previous.trackingNumber} pickup undone.';
+                scanFeedbackIsError = false;
+              });
+              refocusTracking();
+            }
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.local_shipping_outlined, color: AppTheme.primary),
+                  const SizedBox(width: 8),
+                  const Text('Confirm Pickup'),
+                ],
+              ),
+              content: SizedBox(
+                width: 480,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Scan each package as the courier takes it — every '
+                      'match is confirmed picked up immediately, no extra '
+                      'click needed.',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: pickedUpByController,
+                      textInputAction: TextInputAction.next,
+                      decoration: InputDecoration(
+                        labelText: 'Picked up by (optional)',
+                        hintText: "Courier rep's name for this batch",
+                        prefixIcon: const Icon(Icons.badge_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: trackingController,
+                      focusNode: trackingFocusNode,
+                      autofocus: true,
+                      enabled: !busy,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: confirmPickup,
+                      decoration: InputDecoration(
+                        labelText: 'Tracking Number',
+                        hintText: 'Scan barcode or type tracking number',
+                        prefixIcon: const Icon(Icons.qr_code_scanner),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        suffixIcon: busy
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                            : IconButton(
+                                icon: const Icon(Icons.arrow_forward),
+                                onPressed: () =>
+                                    confirmPickup(trackingController.text),
+                              ),
+                      ),
+                    ),
+                    if (scanFeedback != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: scanFeedbackIsError
+                              ? AppTheme.danger.withValues(alpha: 0.08)
+                              : AppTheme.success.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              scanFeedbackIsError
+                                  ? Icons.error_outline
+                                  : Icons.check_circle_outline,
+                              size: 18,
+                              color: scanFeedbackIsError
+                                  ? AppTheme.danger
+                                  : AppTheme.success,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                scanFeedback!,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: scanFeedbackIsError
+                                      ? AppTheme.danger
+                                      : AppTheme.textPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    Text(
+                      'Confirmed this session (${confirmed.length})',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 220),
+                      child: confirmed.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 16,
+                              ),
+                              child: Text(
+                                'Nothing scanned yet.',
+                                style: TextStyle(
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: confirmed.length,
+                              itemBuilder: (context, i) {
+                                final log = confirmed[i];
+                                return ListTile(
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: Icon(
+                                    Icons.check_circle,
+                                    color: AppTheme.success,
+                                    size: 20,
+                                  ),
+                                  title: Text(
+                                    log.previous.trackingNumber,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    '${log.previous.customerName} • by '
+                                    '${log.pickedUpByName} • '
+                                    '${DateFormat('h:mm a').format(log.pickedUpAt)}',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  trailing: TextButton(
+                                    onPressed: busy
+                                        ? null
+                                        : () => undoPickup(log),
+                                    child: const Text('Undo'),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _assignLocation(WarehouseEntry entry) {
-    StorageLocation? selectedLocation = entry.storageLocation;
+    // Resolve to the real storage_locations row (separate shelf/slot) up
+    // front, not the synthetic one on `entry` — see _resolveRealLocation.
+    StorageLocation? selectedLocation =
+        _resolveRealLocation(entry.storageLocation) ?? entry.storageLocation;
 
     showDialog(
       context: context,
@@ -1381,8 +1783,12 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                         ),
                       ),
                       items: {
-                        if (entry.storageLocation != null)
-                          entry.storageLocation!,
+                        // The resolved *real* current location (not
+                        // entry.storageLocation directly — see
+                        // _resolveRealLocation) so re-saving without
+                        // touching the dropdown writes clean shelf/slot
+                        // text instead of re-joining the synthetic one.
+                        if (selectedLocation != null) selectedLocation!,
                         ..._availableLocations,
                       }
                           .toList()
@@ -1571,6 +1977,36 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
       }
     }
     return null;
+  }
+}
+
+/// One pickup confirmed during a Confirm Pickup scan session — keeps the
+/// entry's exact state from just before the scan, so an Undo can put it
+/// straight back rather than guess at what it used to be.
+class _PickupLogEntry {
+  final WarehouseEntry previous;
+  final String pickedUpByName;
+  final DateTime pickedUpAt;
+
+  _PickupLogEntry({
+    required this.previous,
+    required this.pickedUpByName,
+    required this.pickedUpAt,
+  });
+}
+
+/// Reverse of the status switch in [WarehouseEntry.fromMap] — needed to
+/// write the exact prior status back to the database when a scan is undone.
+String _statusDbValue(WarehouseEntryStatus status) {
+  switch (status) {
+    case WarehouseEntryStatus.scannedIn:
+      return 'scanned_in';
+    case WarehouseEntryStatus.stored:
+      return 'stored';
+    case WarehouseEntryStatus.readyForPickup:
+      return 'ready_for_pickup';
+    case WarehouseEntryStatus.pickedUp:
+      return 'picked_up';
   }
 }
 

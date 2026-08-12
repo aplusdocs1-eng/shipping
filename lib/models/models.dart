@@ -827,7 +827,15 @@ class StorageLocation {
     required this.branchName,
   });
 
-  String get displayLabel => '$zoneName / $shelf-$slot';
+  // A StorageLocation reconstructed from a warehouse_entries row (see
+  // WarehouseEntry.fromMap) always has an empty slot — its shelf already
+  // holds the whole raw "shelf-slot" text stored in that row's single
+  // storage_location column. Appending "-$slot" unconditionally would tack
+  // on a phantom trailing "-" for every one of those (e.g. "Zone A / 1-1-"
+  // instead of "Zone A / 1-1"); only append it when slot actually is a
+  // separate, non-empty value, as it is for a real storage_locations row.
+  String get displayLabel =>
+      slot.isEmpty ? '$zoneName / $shelf' : '$zoneName / $shelf-$slot';
 }
 
 enum WarehouseEntryStatus { scannedIn, stored, readyForPickup, pickedUp }
