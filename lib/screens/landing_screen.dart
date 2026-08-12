@@ -141,24 +141,31 @@ class _LandingScreenState extends State<LandingScreen> {
               onHome: _scrollToTop,
               onGetStarted: () => _scrollToKey(_ctaKey),
             ),
-            _Hero(
-              content: _content,
-              onGetStarted: () => _scrollToKey(_ctaKey),
-              onTrackShipment: _goToCustomerSignIn,
-              onKnutsfordTap: _showKnutsfordDialog,
+            _RevealOnScroll(
+              scrollController: _scrollController,
+              child: _Hero(
+                content: _content,
+                onGetStarted: () => _scrollToKey(_ctaKey),
+                onTrackShipment: _goToCustomerSignIn,
+                onKnutsfordTap: _showKnutsfordDialog,
+              ),
             ),
             _Services(
               key: _servicesKey,
               content: _content,
+              scrollController: _scrollController,
               onLearnMore: () => Navigator.of(context).pushNamed('/services'),
             ),
-            _WhyChooseUs(content: _content),
-            _StatsBar(content: _content),
-            _CtaSignup(
+            _WhyChooseUs(content: _content, scrollController: _scrollController),
+            _StatsBar(content: _content, scrollController: _scrollController),
+            _RevealOnScroll(
               key: _ctaKey,
-              content: _content,
-              onCourierSignUp: _goToPartnerSignUp,
-              onCustomerSignUp: _goToCustomerSignUp,
+              scrollController: _scrollController,
+              child: _CtaSignup(
+                content: _content,
+                onCourierSignUp: _goToPartnerSignUp,
+                onCustomerSignUp: _goToCustomerSignUp,
+              ),
             ),
             SiteFooter(content: _content),
           ],
@@ -192,6 +199,178 @@ class _MaxWidth extends StatelessWidget {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Scroll animation helpers
+// ---------------------------------------------------------------------------
+
+/// Fades and slides its child up once the child has scrolled into (or
+/// already starts in) view, then never animates again. Shared across the
+/// page's sections and individual cards via the same ScrollController the
+/// page's own SingleChildScrollView uses — each instance listens for
+/// itself and unsubscribes the moment it fires, so scrolling doesn't
+/// trigger a rebuild of anything already revealed.
+class _RevealOnScroll extends StatefulWidget {
+  final Widget child;
+  final ScrollController scrollController;
+  final Duration delay;
+  const _RevealOnScroll({
+    required this.child,
+    required this.scrollController,
+    this.delay = Duration.zero,
+    super.key,
+  });
+
+  @override
+  State<_RevealOnScroll> createState() => _RevealOnScrollState();
+}
+
+class _RevealOnScrollState extends State<_RevealOnScroll>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fade;
+  late final Animation<Offset> _slide;
+  bool _triggered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 550),
+    );
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _slide = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    widget.scrollController.addListener(_checkVisibility);
+    // Catches content that's already on screen at first frame (the hero,
+    // on a tall viewport) without needing a scroll event to fire first.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkVisibility());
+  }
+
+  void _checkVisibility() {
+    if (_triggered || !mounted) return;
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) return;
+    final position = renderObject.localToGlobal(Offset.zero);
+    final screenHeight = MediaQuery.of(context).size.height;
+    if (position.dy < screenHeight * 0.88) {
+      _triggered = true;
+      widget.scrollController.removeListener(_checkVisibility);
+      if (widget.delay == Duration.zero) {
+        _controller.forward();
+      } else {
+        Future.delayed(widget.delay, () {
+          if (mounted) _controller.forward();
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.scrollController.removeListener(_checkVisibility);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(position: _slide, child: widget.child),
+    );
+  }
+}
+
+/// Counts up from 0 to the numeric value baked into a stat string like
+/// "50,000+" the moment it scrolls into view, then re-appends whatever
+/// wasn't a digit or comma ("+", "%", etc.) unchanged.
+class _AnimatedStatValue extends StatefulWidget {
+  final String value;
+  final TextStyle style;
+  final ScrollController scrollController;
+  const _AnimatedStatValue({
+    required this.value,
+    required this.style,
+    required this.scrollController,
+  });
+
+  @override
+  State<_AnimatedStatValue> createState() => _AnimatedStatValueState();
+}
+
+class _AnimatedStatValueState extends State<_AnimatedStatValue>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _animation;
+  bool _triggered = false;
+  int _target = 0;
+  String _suffix = '';
+
+  static final _leadingNumber = RegExp(r'^([\d,]+)(.*)$');
+
+  @override
+  void initState() {
+    super.initState();
+    final match = _leadingNumber.firstMatch(widget.value);
+    if (match != null) {
+      _target = int.tryParse(match.group(1)!.replaceAll(',', '')) ?? 0;
+      _suffix = match.group(2)!;
+    } else {
+      _suffix = widget.value;
+    }
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    widget.scrollController.addListener(_checkVisibility);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkVisibility());
+  }
+
+  void _checkVisibility() {
+    if (_triggered || !mounted) return;
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) return;
+    final position = renderObject.localToGlobal(Offset.zero);
+    final screenHeight = MediaQuery.of(context).size.height;
+    if (position.dy < screenHeight * 0.92) {
+      _triggered = true;
+      widget.scrollController.removeListener(_checkVisibility);
+      _controller.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.scrollController.removeListener(_checkVisibility);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  static String _withCommas(int n) {
+    final s = n.toString();
+    final buffer = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buffer.write(',');
+      buffer.write(s[i]);
+    }
+    return buffer.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_target == 0) return Text(widget.value, style: widget.style);
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, _) {
+        final current = (_target * _animation.value).round();
+        return Text('${_withCommas(current)}$_suffix', style: widget.style);
+      },
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Hero
@@ -498,7 +677,13 @@ class _KnutsfordCard extends StatelessWidget {
 class _Services extends StatelessWidget {
   final LandingContent content;
   final VoidCallback onLearnMore;
-  const _Services({super.key, required this.content, required this.onLearnMore});
+  final ScrollController scrollController;
+  const _Services({
+    super.key,
+    required this.content,
+    required this.onLearnMore,
+    required this.scrollController,
+  });
 
   static const _fallbackAssets = [
     'assets/images/sea_freight.jpg',
@@ -540,16 +725,20 @@ class _Services extends StatelessWidget {
                   childAspectRatio: 0.72,
                   children: [
                     for (var i = 0; i < items.length; i++)
-                      _ServiceCard(
-                        imageUrl: (items[i]['imageUrl'] as String?) ?? '',
-                        fallbackAsset: _fallbackAssets[i % _fallbackAssets.length],
-                        icon: LandingContent.iconFor(
-                          (items[i]['icon'] as String?) ?? '',
-                          Icons.local_shipping_outlined,
+                      _RevealOnScroll(
+                        scrollController: scrollController,
+                        delay: Duration(milliseconds: 80 * (i % 5)),
+                        child: _ServiceCard(
+                          imageUrl: (items[i]['imageUrl'] as String?) ?? '',
+                          fallbackAsset: _fallbackAssets[i % _fallbackAssets.length],
+                          icon: LandingContent.iconFor(
+                            (items[i]['icon'] as String?) ?? '',
+                            Icons.local_shipping_outlined,
+                          ),
+                          title: (items[i]['title'] as String?) ?? '',
+                          desc: (items[i]['description'] as String?) ?? '',
+                          onTap: onLearnMore,
                         ),
-                        title: (items[i]['title'] as String?) ?? '',
-                        desc: (items[i]['description'] as String?) ?? '',
-                        onTap: onLearnMore,
                       ),
                   ],
                 );
@@ -562,7 +751,7 @@ class _Services extends StatelessWidget {
   }
 }
 
-class _ServiceCard extends StatelessWidget {
+class _ServiceCard extends StatefulWidget {
   final String imageUrl;
   final String fallbackAsset;
   final IconData icon;
@@ -579,12 +768,38 @@ class _ServiceCard extends StatelessWidget {
   });
 
   @override
+  State<_ServiceCard> createState() => _ServiceCardState();
+}
+
+class _ServiceCardState extends State<_ServiceCard> {
+  bool _hovering = false;
+
+  @override
   Widget build(BuildContext context) {
-    return Material(
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        transform: Matrix4.translationValues(0, _hovering ? -6 : 0, 0),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: _hovering
+              ? [
+                  BoxShadow(
+                    color: LandingScreen.navy.withValues(alpha: 0.16),
+                    blurRadius: 22,
+                    offset: const Offset(0, 12),
+                  ),
+                ]
+              : const [],
+        ),
+        child: Material(
       color: LandingScreen.iceGray,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
-      onTap: onTap,
+      onTap: widget.onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
       decoration: BoxDecoration(
@@ -601,7 +816,7 @@ class _ServiceCard extends StatelessWidget {
                 borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), topRight: Radius.circular(14)),
                 child: AspectRatio(
                   aspectRatio: 3 / 2,
-                  child: AdaptiveImage(url: imageUrl, assetPath: fallbackAsset, fit: BoxFit.cover),
+                  child: AdaptiveImage(url: widget.imageUrl, assetPath: widget.fallbackAsset, fit: BoxFit.cover),
                 ),
               ),
               Positioned(
@@ -616,7 +831,7 @@ class _ServiceCard extends StatelessWidget {
                     border: Border.all(color: LandingScreen.iceGray, width: 3),
                   ),
                   alignment: Alignment.center,
-                  child: Icon(icon, color: LandingScreen.navy, size: 22),
+                  child: Icon(widget.icon, color: LandingScreen.navy, size: 22),
                 ),
               ),
             ],
@@ -627,12 +842,12 @@ class _ServiceCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  widget.title,
                   style: const TextStyle(color: LandingScreen.navy, fontWeight: FontWeight.w800, fontSize: 15),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  desc,
+                  widget.desc,
                   style: const TextStyle(color: LandingScreen.charcoalSoft, fontSize: 12.5, height: 1.5),
                 ),
                 const SizedBox(height: 12),
@@ -651,6 +866,8 @@ class _ServiceCard extends StatelessWidget {
       ),
       ),
       ),
+    ),
+      ),
     );
   }
 }
@@ -661,7 +878,8 @@ class _ServiceCard extends StatelessWidget {
 
 class _WhyChooseUs extends StatelessWidget {
   final LandingContent content;
-  const _WhyChooseUs({required this.content});
+  final ScrollController scrollController;
+  const _WhyChooseUs({required this.content, required this.scrollController});
 
   @override
   Widget build(BuildContext context) {
@@ -694,28 +912,32 @@ class _WhyChooseUs extends StatelessWidget {
                   crossAxisSpacing: 20,
                   childAspectRatio: cols == 1 ? 3.4 : 1.0,
                   children: [
-                    for (final w in items)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Icon(
-                            LandingContent.iconFor((w['icon'] as String?) ?? '', Icons.star_outline),
-                            color: LandingScreen.yellow,
-                            size: 28,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            (w['title'] as String?) ?? '',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            (w['description'] as String?) ?? '',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 11.5, height: 1.4),
-                          ),
-                        ],
+                    for (var i = 0; i < items.length; i++)
+                      _RevealOnScroll(
+                        scrollController: scrollController,
+                        delay: Duration(milliseconds: 80 * i),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Icon(
+                              LandingContent.iconFor((items[i]['icon'] as String?) ?? '', Icons.star_outline),
+                              color: LandingScreen.yellow,
+                              size: 28,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              (items[i]['title'] as String?) ?? '',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              (items[i]['description'] as String?) ?? '',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 11.5, height: 1.4),
+                            ),
+                          ],
+                        ),
                       ),
                   ],
                 );
@@ -734,7 +956,8 @@ class _WhyChooseUs extends StatelessWidget {
 
 class _StatsBar extends StatelessWidget {
   final LandingContent content;
-  const _StatsBar({required this.content});
+  final ScrollController scrollController;
+  const _StatsBar({required this.content, required this.scrollController});
 
   static const _icons = [
     Icons.directions_boat_filled_outlined,
@@ -772,7 +995,11 @@ class _StatsBar extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text((stats[i]['value'] as String?) ?? '', style: const TextStyle(color: LandingScreen.navy, fontSize: 20, fontWeight: FontWeight.w900)),
+                          _AnimatedStatValue(
+                            value: (stats[i]['value'] as String?) ?? '',
+                            style: const TextStyle(color: LandingScreen.navy, fontSize: 20, fontWeight: FontWeight.w900),
+                            scrollController: scrollController,
+                          ),
                           Text((stats[i]['label'] as String?) ?? '', style: const TextStyle(color: LandingScreen.navy, fontSize: 10, fontWeight: FontWeight.w700)),
                         ],
                       ),
@@ -795,7 +1022,7 @@ class _CtaSignup extends StatelessWidget {
   final LandingContent content;
   final VoidCallback onCourierSignUp;
   final VoidCallback onCustomerSignUp;
-  const _CtaSignup({super.key, required this.content, required this.onCourierSignUp, required this.onCustomerSignUp});
+  const _CtaSignup({required this.content, required this.onCourierSignUp, required this.onCustomerSignUp});
 
   @override
   Widget build(BuildContext context) {
