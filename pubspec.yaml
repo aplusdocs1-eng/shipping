@@ -22,6 +22,7 @@ dependencies:
   printing: ^5.13.4
   csv: ^6.0.0
   barcode: ^2.2.9
+  video_player: ^2.9.2
 
 dev_dependencies:
   flutter_test:
@@ -48,6 +49,7 @@ flutter:
     - assets/images/door_to_door.jpg
     - assets/images/customs_clearance.jpg
     - assets/images/forklift_warehouse.jpg
+    - assets/videos/hero_background.mp4
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

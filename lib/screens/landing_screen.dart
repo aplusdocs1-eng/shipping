@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 import '../models/landing_content.dart';
 import '../services/database_service.dart';
 import '../theme/public_colors.dart';
@@ -376,6 +377,100 @@ class _AnimatedStatValueState extends State<_AnimatedStatValue>
 // Hero
 // ---------------------------------------------------------------------------
 
+/// Full-bleed looping background video for the hero section.
+///
+/// [enabled] gates this to desktop-width viewports only (set by the caller)
+/// so phones/tablets never pay the download cost — mobile keeps the plain
+/// navy gradient it always had.
+///
+/// Footage: "Dynamic aerial footage of cargo ship operations in a bustling
+/// port" by Tom Fisk, via Pexels (videos.pexels.com/video/3840442) — free
+/// for commercial use, no attribution required under the Pexels License
+/// (pexels.com/license). Bundled at assets/videos/hero_background.mp4.
+class _HeroVideoBackground extends StatefulWidget {
+  final bool enabled;
+  const _HeroVideoBackground({required this.enabled});
+
+  @override
+  State<_HeroVideoBackground> createState() => _HeroVideoBackgroundState();
+}
+
+class _HeroVideoBackgroundState extends State<_HeroVideoBackground> {
+  VideoPlayerController? _controller;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.enabled) _init();
+  }
+
+  Future<void> _init() async {
+    final controller = VideoPlayerController.asset('assets/videos/hero_background.mp4');
+    _controller = controller;
+    try {
+      await controller.initialize();
+      if (!mounted) return;
+      await controller.setLooping(true);
+      await controller.setVolume(0); // muted — required for autoplay in every browser
+      await controller.play();
+      if (!mounted) return;
+      // Mount the video layer at opacity 0 first, then flip it to 1 on the
+      // next frame so AnimatedOpacity below has an actual transition to
+      // animate instead of just appearing at full opacity on first build.
+      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _ready = true);
+      });
+    } catch (e) {
+      // Slow connection, codec issue, whatever — the gradient fallback
+      // just stays up. A background video is decoration, never load-bearing.
+      // ignore: avoid_print
+      print('[HeroVideoBackground] failed to load: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  static const _fallback = DecoratedBox(
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: [LandingScreen.navy, LandingScreen.secondaryNavy],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _fallback,
+        if (controller != null && controller.value.isInitialized)
+          AnimatedOpacity(
+            opacity: _ready ? 1 : 0,
+            duration: const Duration(milliseconds: 500),
+            child: FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: controller.value.size.width,
+                height: controller.value.size.height,
+                child: VideoPlayer(controller),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _Hero extends StatelessWidget {
   final LandingContent content;
   final VoidCallback onGetStarted;
@@ -564,34 +659,53 @@ class _Hero extends StatelessWidget {
       ],
     );
 
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [LandingScreen.navy, LandingScreen.secondaryNavy],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: _MaxWidth(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 64),
-        child: wide
-            ? Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(flex: 6, child: copy),
-                  const SizedBox(width: 40),
-                  Expanded(flex: 5, child: visual),
+    // Stack, not Container-with-decoration: the video + scrim are
+    // Positioned.fill so they never dictate this section's size — the
+    // non-positioned _MaxWidth content below still does that, exactly as
+    // the plain gradient Container did before. Only non-positioned children
+    // participate in a Stack's own sizing, so this is a drop-in swap.
+    return Stack(
+      children: [
+        Positioned.fill(child: _HeroVideoBackground(enabled: wide)),
+        // Scrim over the video so white text stays readable regardless of
+        // the footage underneath — darkest on the left where the text
+        // column sits, lighter on the right where the image card already
+        // has its own opaque background doing that job.
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  LandingScreen.navy.withValues(alpha: 0.88),
+                  LandingScreen.secondaryNavy.withValues(alpha: 0.62),
                 ],
-              )
-            : Column(
-                children: [
-                  copy,
-                  const SizedBox(height: 40),
-                  visual,
-                  const SizedBox(height: 32),
-                ],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
               ),
-      ),
+            ),
+          ),
+        ),
+        _MaxWidth(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 64),
+          child: wide
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(flex: 6, child: copy),
+                    const SizedBox(width: 40),
+                    Expanded(flex: 5, child: visual),
+                  ],
+                )
+              : Column(
+                  children: [
+                    copy,
+                    const SizedBox(height: 40),
+                    visual,
+                    const SizedBox(height: 32),
+                  ],
+                ),
+        ),
+      ],
     );
   }
 }
