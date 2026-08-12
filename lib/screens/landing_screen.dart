@@ -457,12 +457,44 @@ class _HeroVideoBackgroundState extends State<_HeroVideoBackground> {
           AnimatedOpacity(
             opacity: _ready ? 1 : 0,
             duration: const Duration(milliseconds: 500),
-            child: FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: controller.value.size.width,
-                height: controller.value.size.height,
-                child: VideoPlayer(controller),
+            // Deliberately not FittedBox here: FittedBox achieves BoxFit via
+            // a scale Transform, and platform views (this <video> is a real
+            // embedded DOM element, not canvas-painted) don't reliably
+            // support being wrapped in one on Flutter web — it rendered the
+            // video oversized and shifted, bleeding up over the header
+            // above the hero. ClipRect + OverflowBox gets the same
+            // "cover" result through plain sizing/positioning instead of a
+            // transform, which platform views do handle correctly.
+            child: ClipRect(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final videoSize = controller.value.size;
+                  final containerW = constraints.maxWidth;
+                  final containerH = constraints.maxHeight;
+                  if (videoSize.width <= 0 ||
+                      videoSize.height <= 0 ||
+                      !containerW.isFinite ||
+                      !containerH.isFinite ||
+                      containerW <= 0 ||
+                      containerH <= 0) {
+                    return const SizedBox.shrink();
+                  }
+                  final videoAspect = videoSize.width / videoSize.height;
+                  final containerAspect = containerW / containerH;
+                  final double w, h;
+                  if (containerAspect > videoAspect) {
+                    w = containerW;
+                    h = w / videoAspect;
+                  } else {
+                    h = containerH;
+                    w = h * videoAspect;
+                  }
+                  return OverflowBox(
+                    maxWidth: w,
+                    maxHeight: h,
+                    child: SizedBox(width: w, height: h, child: VideoPlayer(controller)),
+                  );
+                },
               ),
             ),
           ),
@@ -666,7 +698,11 @@ class _Hero extends StatelessWidget {
     // participate in a Stack's own sizing, so this is a drop-in swap.
     return Stack(
       children: [
-        Positioned.fill(child: _HeroVideoBackground(enabled: wide)),
+        // Belt-and-suspenders ClipRect: the platform-view <video> inside
+        // _HeroVideoBackground has already been caught once rendering
+        // outside its intended bounds (see the comment in that class), so
+        // don't rely solely on Stack's own default clip to contain it.
+        Positioned.fill(child: ClipRect(child: _HeroVideoBackground(enabled: wide))),
         // Scrim over the video so white text stays readable regardless of
         // the footage underneath — darkest on the left where the text
         // column sits, lighter on the right where the image card already
