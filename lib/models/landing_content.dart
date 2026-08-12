@@ -149,6 +149,9 @@ class LandingContent {
   // stay in sync in spirit (not necessarily every literal string) with
   // what landing_screen.dart renders when a field is left uncustomized.
   static const Map<String, dynamic> defaults = {
+    'header': {
+      'companyName': 'One Village',
+    },
     'contact': {
       'phone': '267-844-5155',
       'address': 'Hollywood, Florida',

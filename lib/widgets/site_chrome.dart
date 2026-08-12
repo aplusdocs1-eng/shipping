@@ -118,11 +118,13 @@ void _goTo(BuildContext context, String route) {
 /// to a section instead of navigating (there's nowhere else to go from
 /// there); every other page falls back to real navigation.
 class SiteHeader extends StatelessWidget {
+  final LandingContent content;
   final String currentRoute;
   final VoidCallback? onHome;
   final VoidCallback? onGetStarted;
   const SiteHeader({
     super.key,
+    required this.content,
     this.currentRoute = '/',
     this.onHome,
     this.onGetStarted,
@@ -157,9 +159,9 @@ class SiteHeader extends StatelessWidget {
                   // for it once Sign In and Get Started are accounted for.
                   if (wide) ...[
                     const SizedBox(width: 10),
-                    const Text(
-                      'One Village',
-                      style: TextStyle(
+                    Text(
+                      content.str('header', 'companyName'),
+                      style: const TextStyle(
                         color: PublicColors.navy,
                         fontSize: 20,
                         fontWeight: FontWeight.w900,

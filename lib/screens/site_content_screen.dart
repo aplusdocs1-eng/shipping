@@ -182,6 +182,8 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    _headerSection(),
+                    const SizedBox(height: 20),
                     _heroSection(),
                     const SizedBox(height: 20),
                     _knutsfordSection(),
@@ -255,6 +257,24 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
   }
 
   // ─── Hero ──────────────────────────────────────────────────────────────
+
+  // ─── Header / branding ─────────────────────────────────────────────────
+
+  Widget _headerSection() {
+    final header = _sec('header');
+    return _Section(
+      title: 'Header / branding',
+      subtitle:
+          'Shown next to the logo in the top nav on every public page — the '
+          'logo artwork itself is too detailed to read at that size, so this '
+          'text is what actually carries the name.',
+      child: _Field(
+        label: 'Company name in header',
+        initial: header['companyName'],
+        onChanged: (v) => header['companyName'] = v,
+      ),
+    );
+  }
 
   Widget _heroSection() {
     final hero = _sec('hero');

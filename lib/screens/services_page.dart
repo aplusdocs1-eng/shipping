@@ -52,7 +52,7 @@ class _ServicesPageState extends State<ServicesPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            const SiteHeader(currentRoute: '/services'),
+            SiteHeader(content: _content, currentRoute: '/services'),
             SitePageBanner(
               eyebrow: _content.str('services', 'eyebrow'),
               title: _content.str('services', 'heading'),

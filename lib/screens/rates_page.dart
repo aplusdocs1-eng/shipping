@@ -41,7 +41,7 @@ class _RatesPageState extends State<RatesPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            const SiteHeader(currentRoute: '/rates'),
+            SiteHeader(content: _content, currentRoute: '/rates'),
             const SitePageBanner(
               eyebrow: 'Pricing',
               title: 'Rates',

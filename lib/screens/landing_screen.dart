@@ -139,6 +139,7 @@ class _LandingScreenState extends State<LandingScreen> {
         child: Column(
           children: [
             SiteHeader(
+              content: _content,
               onHome: _scrollToTop,
               onGetStarted: () => _scrollToKey(_ctaKey),
             ),

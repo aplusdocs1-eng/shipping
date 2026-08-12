@@ -45,7 +45,7 @@ class _ContactPageState extends State<ContactPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            const SiteHeader(currentRoute: '/contact'),
+            SiteHeader(content: _content, currentRoute: '/contact'),
             const SitePageBanner(
               eyebrow: 'Get In Touch',
               title: 'Contact Us',

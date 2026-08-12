@@ -43,7 +43,7 @@ class _AboutPageState extends State<AboutPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            const SiteHeader(currentRoute: '/about'),
+            SiteHeader(content: _content, currentRoute: '/about'),
             const SitePageBanner(
               eyebrow: 'Our Story',
               title: 'About One Village Shipping & Freight',
