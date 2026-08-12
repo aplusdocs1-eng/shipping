@@ -38,14 +38,14 @@ class AppNavDrawer extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Logo header — the palette's signature soft blush/lavender
-            // gradient, matching the identity banner atop the app bar, so
-            // the sidebar reads as part of the same brand surface rather
-            // than a plain white panel bolted on beside it.
+            // Logo header — solid sidebarBg, seamless with the nav body
+            // below it. The wordmark fallback picks up the blush accent
+            // color so the brand mark still reads as a warm highlight
+            // against the dark panel.
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(20, 18, 12, 18),
-              decoration: const BoxDecoration(gradient: AppTheme.heroGradient),
+              decoration: const BoxDecoration(color: AppTheme.sidebarBg),
               child: Row(
                 children: [
                   Image.asset(
@@ -57,7 +57,7 @@ class AppNavDrawer extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
-                          color: AppTheme.textPrimary,
+                          color: AppTheme.sidebarActive,
                         ),
                       );
                     },
@@ -65,7 +65,7 @@ class AppNavDrawer extends StatelessWidget {
                   const Spacer(),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close, size: 22, color: AppTheme.textPrimary),
+                    icon: const Icon(Icons.close, size: 22, color: AppTheme.sidebarText),
                   ),
                 ],
               ),
@@ -148,9 +148,12 @@ class AppNavDrawer extends StatelessWidget {
                       Navigator.of(context).pop();
                     },
                   ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Divider(color: AppTheme.border, height: 1),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Divider(
+                      color: AppTheme.border.withValues(alpha: 0.35),
+                      height: 1,
+                    ),
                   ),
                   _DrawerTile(
                     label: 'Customers',
@@ -179,9 +182,12 @@ class AppNavDrawer extends StatelessWidget {
                       Navigator.of(context).pop();
                     },
                   ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Divider(color: AppTheme.border, height: 1),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Divider(
+                      color: AppTheme.border.withValues(alpha: 0.35),
+                      height: 1,
+                    ),
                   ),
                   _DrawerTile(
                     label: 'Manifest',
@@ -269,13 +275,18 @@ class _DrawerTile extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          hoverColor: AppTheme.primary.withValues(alpha: 0.04),
+          // Sidebar-local accent (blush pink on the dark panel) rather
+          // than the global AppTheme.primary (soft black) used for
+          // selection everywhere else — primary would be invisible here.
+          hoverColor: AppTheme.sidebarActive.withValues(alpha: 0.06),
           onTap: () => onTap(index),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
             decoration: BoxDecoration(
-              color: isSelected ? AppTheme.primary.withValues(alpha: 0.08) : Colors.transparent,
+              color: isSelected
+                  ? AppTheme.sidebarActive.withValues(alpha: 0.14)
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
               border: Border(
                 left: BorderSide(
@@ -289,7 +300,7 @@ class _DrawerTile extends StatelessWidget {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
-                color: isSelected ? AppTheme.primary : AppTheme.sidebarText,
+                color: isSelected ? AppTheme.sidebarActive : AppTheme.sidebarText,
               ),
             ),
           ),

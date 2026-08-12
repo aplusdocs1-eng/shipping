@@ -43,9 +43,15 @@ class AppTheme {
   static const Color textPrimary = softBlack;
   static const Color textSecondary = mutedGrayText;
   static const Color border = paleRose;
-  static const Color sidebarBg = Color(0xFFFFFFFF);
-  static const Color sidebarText = mutedGrayText;
-  static const Color sidebarActive = softBlack;
+  // The sidebar deliberately breaks from the light surface/card tokens
+  // above: a solid soft-black panel (the darkest tone the given palette
+  // already names) with blush pink as its one accent color, so the nav
+  // reads as a grounded, high-end editorial panel next to the pale
+  // blush/lavender content area instead of blending into it as a plain
+  // white strip.
+  static const Color sidebarBg = softBlack;
+  static const Color sidebarText = Color(0xFFC5BFC7); // muted warm-lavender-gray, legible on sidebarBg
+  static const Color sidebarActive = blushPink; // selected item + accent color on the dark sidebar
   static const Color topBarBg = Color(0xFFFFFFFF);
 
   // Logo URL for network image
@@ -109,7 +115,7 @@ class AppTheme {
         ),
       ),
       drawerTheme: const DrawerThemeData(
-        backgroundColor: Colors.white,
+        backgroundColor: sidebarBg,
         surfaceTintColor: Colors.transparent,
       ),
     );
