@@ -38,7 +38,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _db.getPackages(),
         _db.getCustomers(),
         _db.getShipments(),
-        _db.getInvoices(),
+        // getInvoices() only returns invoice_type == 'partner_billing',
+        // which silently excludes every customer_billing invoice (all of
+        // them, in real data) from this dashboard's headline revenue
+        // figure. getAllInvoices() is unscoped by type.
+        _db.getAllInvoices(),
         _db.getCompanySettings(),
       ]);
       if (!mounted) return;

@@ -47,7 +47,12 @@ class _AccountingScreenState extends State<AccountingScreen> {
     });
     try {
       final results = await Future.wait([
-        _db.getInvoices(),
+        // getInvoices() only returns invoice_type == 'partner_billing' —
+        // wrong for a revenue dashboard, since it silently excludes every
+        // customer_billing invoice (all of them, in real data right now).
+        // getAllInvoices() is unscoped by type, which is what "total
+        // revenue" actually needs to mean here.
+        _db.getAllInvoices(),
         _db.getAllPaymentSubmissions(),
         _db.getWarehouseEntries(),
         _db.getAllPartnerAccounts(),
@@ -159,6 +164,9 @@ class _AccountingScreenState extends State<AccountingScreen> {
 
   double get _courierOutstanding =>
       _courierBilling.fold(0.0, (s, c) => s + c.billed);
+
+  double get _courierRevenueCollected =>
+      _courierBilling.fold(0.0, (s, c) => s + c.paid);
 
   List<MapEntry<DateTime, double>> get _monthlyRevenue {
     final now = DateTime.now();
@@ -423,6 +431,72 @@ class _AccountingScreenState extends State<AccountingScreen> {
           const SizedBox(height: 20),
           LayoutBuilder(
             builder: (context, c) {
+              final isWide = c.maxWidth > 760;
+              final revenueSources = _AccountingSection(
+                title: 'Revenue Sources',
+                subtitle: 'Where collected money actually came from',
+                child: _DonutChart(
+                  currency: _currency,
+                  slices: [
+                    _ChartSlice(
+                      label: 'Invoice payments',
+                      value: _totalRevenue,
+                      color: AppTheme.primary,
+                    ),
+                    _ChartSlice(
+                      label: 'Courier billing',
+                      value: _courierRevenueCollected,
+                      color: AppTheme.accent,
+                    ),
+                  ],
+                ),
+              );
+              final collectionsHealth = _AccountingSection(
+                title: 'Collections Health',
+                subtitle: 'All invoiced amounts, by where they stand',
+                child: _DonutChart(
+                  currency: _currency,
+                  slices: [
+                    _ChartSlice(
+                      label: 'Paid',
+                      value: _totalRevenue,
+                      color: AppTheme.success,
+                    ),
+                    _ChartSlice(
+                      label: 'Outstanding',
+                      value: _outstandingAR - _overdueTotal,
+                      color: AppTheme.warning,
+                    ),
+                    _ChartSlice(
+                      label: 'Overdue',
+                      value: _overdueTotal,
+                      color: AppTheme.danger,
+                    ),
+                  ],
+                ),
+              );
+              return isWide
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: revenueSources),
+                        const SizedBox(width: 20),
+                        Expanded(child: collectionsHealth),
+                      ],
+                    )
+                  : Column(
+                      children: [
+                        revenueSources,
+                        const SizedBox(height: 20),
+                        collectionsHealth,
+                      ],
+                    );
+            },
+          ),
+
+          const SizedBox(height: 20),
+          LayoutBuilder(
+            builder: (context, c) {
               final isWide = c.maxWidth > 900;
               final left = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -470,6 +544,14 @@ class _AccountingScreenState extends State<AccountingScreen> {
                         ? const _EmptyRow('No courier charges billed yet.')
                         : Column(
                             children: [
+                              _CourierBarChart(
+                                billing: _courierBilling,
+                                currency: _currency,
+                              ),
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 14),
+                                child: Divider(height: 1, color: AppTheme.border),
+                              ),
                               for (final c in _courierBilling)
                                 _CourierBillingRow(billing: c, currency: _currency),
                             ],
@@ -824,6 +906,223 @@ class _RevenueBarChart extends StatelessWidget {
             )
             .toList(),
       ),
+    );
+  }
+}
+
+class _ChartSlice {
+  final String label;
+  final double value;
+  final Color color;
+  const _ChartSlice({required this.label, required this.value, required this.color});
+}
+
+/// A small donut + legend, built from whatever real $ amounts the caller
+/// passes in (revenue by source, invoices by collection status, etc.).
+/// Zero-value slices are dropped from the ring and legend entirely rather
+/// than drawn as a sliver, and an all-zero total shows a plain empty
+/// state instead of a chart with nothing in it.
+class _DonutChart extends StatelessWidget {
+  final List<_ChartSlice> slices;
+  final NumberFormat currency;
+  const _DonutChart({required this.slices, required this.currency});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = slices.fold(0.0, (s, x) => s + x.value);
+    if (total <= 0) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Text(
+          'No data yet.',
+          style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
+        ),
+      );
+    }
+    final nonZero = slices.where((s) => s.value > 0).toList();
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 110,
+          height: 110,
+          child: PieChart(
+            PieChartData(
+              sectionsSpace: 2,
+              centerSpaceRadius: 30,
+              sections: nonZero
+                  .map(
+                    (s) => PieChartSectionData(
+                      value: s.value,
+                      color: s.color,
+                      radius: 24,
+                      showTitle: false,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ),
+        const SizedBox(width: 18),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final s in nonZero)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(color: s.color, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          s.label,
+                          style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${currency.format(s.value)} · ${(s.value / total * 100).round()}%',
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 4),
+              Text(
+                'Total: ${currency.format(total)}',
+                style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Grouped billed-vs-paid bars, one pair per courier — the visual
+/// complement to the exact-figures list rendered right below it.
+class _CourierBarChart extends StatelessWidget {
+  final List<_CourierBilling> billing;
+  final NumberFormat currency;
+  const _CourierBarChart({required this.billing, required this.currency});
+
+  @override
+  Widget build(BuildContext context) {
+    final maxVal = billing.fold(
+      0.0,
+      (m, c) => [m, c.billed, c.paid].reduce((a, b) => a > b ? a : b),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 170,
+          child: BarChart(
+            BarChartData(
+              alignment: BarChartAlignment.spaceAround,
+              maxY: maxVal <= 0 ? 10 : maxVal * 1.25,
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                getDrawingHorizontalLine: (v) => FlLine(color: AppTheme.border, strokeWidth: 1),
+              ),
+              titlesData: FlTitlesData(
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 48,
+                    getTitlesWidget: (value, meta) => Text(
+                      currency.format(value),
+                      style: const TextStyle(fontSize: 9, color: AppTheme.textSecondary),
+                    ),
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 34,
+                    getTitlesWidget: (value, meta) {
+                      final idx = value.toInt();
+                      if (idx < 0 || idx >= billing.length) return const SizedBox.shrink();
+                      final name = billing[idx].name;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          name.length > 12 ? '${name.substring(0, 11)}…' : name,
+                          style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              ),
+              borderData: FlBorderData(show: false),
+              barGroups: billing
+                  .asMap()
+                  .entries
+                  .map(
+                    (e) => BarChartGroupData(
+                      x: e.key,
+                      barsSpace: 4,
+                      barRods: [
+                        BarChartRodData(
+                          toY: e.value.billed,
+                          color: AppTheme.warning,
+                          width: 11,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                        ),
+                        BarChartRodData(
+                          toY: e.value.paid,
+                          color: AppTheme.success,
+                          width: 11,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                        ),
+                      ],
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Row(
+          children: [
+            _LegendDot(color: AppTheme.warning, label: 'Billed (due)'),
+            SizedBox(width: 16),
+            _LegendDot(color: AppTheme.success, label: 'Paid'),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary)),
+      ],
     );
   }
 }
