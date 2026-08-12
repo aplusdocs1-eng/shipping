@@ -6,6 +6,10 @@ import 'services/tenant_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/sidebar.dart';
 import 'screens/landing_screen.dart';
+import 'screens/about_page.dart';
+import 'screens/services_page.dart';
+import 'screens/rates_page.dart';
+import 'screens/contact_page.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/packages_screen.dart';
@@ -49,6 +53,10 @@ class CourierWarehouseApp extends StatelessWidget {
       initialRoute: TenantService().isAdminHost ? '/' : '/partner-login',
       routes: {
         '/': (context) => const LandingScreen(),
+        '/about': (context) => const AboutPage(),
+        '/services': (context) => const ServicesPage(),
+        '/rates': (context) => const RatesPage(),
+        '/contact': (context) => const ContactPage(),
         '/team': (context) => const _TeamPortalRoot(),
         '/partner-login': (context) => const PartnerLoginScreen(),
         '/partner-home': (context) => const PartnerDashboardScreen(),

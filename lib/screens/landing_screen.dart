@@ -1,9 +1,9 @@
-import 'dart:html' as html;
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/landing_content.dart';
 import '../services/database_service.dart';
+import '../theme/public_colors.dart';
 import '../widgets/adaptive_image.dart';
+import '../widgets/site_chrome.dart';
 
 /// Public marketing home page for One Village Shipping & Freight.
 /// All copy, numbers, icons, and images below are the *defaults* — an
@@ -11,20 +11,28 @@ import '../widgets/adaptive_image.dart';
 /// admin dashboard (site_content_screen.dart). This screen always renders
 /// defaults immediately (so the page is never blank/loading), then swaps
 /// in any saved overrides once fetched.
+///
+/// The header/footer nav (SiteHeader/SiteFooter, lib/widgets/site_chrome.dart)
+/// is shared with the dedicated About/Services/Rates/Contact pages so the
+/// whole public site reads as one continuous site, not this page plus four
+/// bolted-on ones.
 class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key});
 
-  static const navy = Color(0xFF071B33);
-  static const secondaryNavy = Color(0xFF123A68);
-  static const yellow = Color(0xFFFFC400);
-  static const gold = Color(0xFFD9A514);
-  static const white = Color(0xFFFFFFFF);
-  static const iceGray = Color(0xFFF5F7FA);
-  static const borderGray = Color(0xFFDCE3EA);
-  static const charcoal = Color(0xFF263442);
-  static const green = Color(0xFF16845B);
-  static const red = Color(0xFFB83A3A);
-  static const charcoalSoft = Color(0xFF5B6B7A);
+  // Thin aliases — every other reference to LandingScreen.xxx in this file
+  // (there are many) keeps working unchanged; PublicColors is the actual
+  // source of truth, shared with site_chrome.dart and the dedicated pages.
+  static const navy = PublicColors.navy;
+  static const secondaryNavy = PublicColors.secondaryNavy;
+  static const yellow = PublicColors.yellow;
+  static const gold = PublicColors.gold;
+  static const white = PublicColors.white;
+  static const iceGray = PublicColors.iceGray;
+  static const borderGray = PublicColors.borderGray;
+  static const charcoal = PublicColors.charcoal;
+  static const green = PublicColors.green;
+  static const red = PublicColors.red;
+  static const charcoalSoft = PublicColors.charcoalSoft;
 
   @override
   State<LandingScreen> createState() => _LandingScreenState();
@@ -108,49 +116,11 @@ class _LandingScreenState extends State<LandingScreen> {
     Navigator.of(context).pushNamed('/partner-login', arguments: {'signup': true});
   }
 
-  void _goToPartnerSignIn() {
-    Navigator.of(context).pushNamed('/partner-login');
-  }
-
-  void _showServiceDialog(String title) {
-    final match = _content
-        .list('services', 'items')
-        .where((s) => s['title'] == title)
-        .toList();
-    final detail = match.isNotEmpty ? (match.first['detail'] as String?) : null;
-    _showInfoDialog(title, detail ?? '');
-  }
-
   void _showKnutsfordDialog() {
     _showInfoDialog(
       'Knutsford Express Partnership',
       _content.str('knutsford', 'dialogBody'),
     );
-  }
-
-  String _contactBody() {
-    final phone = _content.str('contact', 'phone');
-    final address = _content.str('contact', 'address');
-    final email = _content.str('contact', 'email');
-    return 'Phone: $phone\n$address\n$email';
-  }
-
-  void _showSocialComingSoon(String platform) {
-    _showInfoDialog(
-      platform,
-      'Our $platform page is launching soon. Check back shortly to follow One Village Shipping & Freight!',
-    );
-  }
-
-  /// A social icon with a real URL set opens it in a new tab; one left
-  /// blank (the default, until an admin fills it in on the Site Content
-  /// page) falls back to the "coming soon" popup instead of a dead link.
-  void _handleSocialTap(String label, String url) {
-    if (url.trim().isEmpty) {
-      _showSocialComingSoon(label.isEmpty ? 'Social' : label);
-      return;
-    }
-    html.window.open(url, '_blank');
   }
 
   @override
@@ -167,18 +137,9 @@ class _LandingScreenState extends State<LandingScreen> {
         controller: _scrollController,
         child: Column(
           children: [
-            _Header(
+            SiteHeader(
               onHome: _scrollToTop,
-              onServices: () => _scrollToKey(_servicesKey),
-              onRates: () => _showInfoDialog('Rates', _content.str('rates', 'body')),
-              onAbout: () => _showInfoDialog(
-                'About One Village Shipping & Freight',
-                _content.str('about', 'body'),
-              ),
-              onContact: () => _showInfoDialog('Contact Us', _contactBody()),
               onGetStarted: () => _scrollToKey(_ctaKey),
-              onCustomerSignIn: _goToCustomerSignIn,
-              onPartnerSignIn: _goToPartnerSignIn,
             ),
             _Hero(
               content: _content,
@@ -186,7 +147,11 @@ class _LandingScreenState extends State<LandingScreen> {
               onTrackShipment: _goToCustomerSignIn,
               onKnutsfordTap: _showKnutsfordDialog,
             ),
-            _Services(key: _servicesKey, content: _content, onLearnMore: _showServiceDialog),
+            _Services(
+              key: _servicesKey,
+              content: _content,
+              onLearnMore: () => Navigator.of(context).pushNamed('/services'),
+            ),
             _WhyChooseUs(content: _content),
             _StatsBar(content: _content),
             _CtaSignup(
@@ -195,14 +160,7 @@ class _LandingScreenState extends State<LandingScreen> {
               onCourierSignUp: _goToPartnerSignUp,
               onCustomerSignUp: _goToCustomerSignUp,
             ),
-            _Footer(
-              content: _content,
-              onHome: _scrollToTop,
-              onServices: () => _scrollToKey(_servicesKey),
-              onContact: () => _showInfoDialog('Contact Us', _contactBody()),
-              onServiceTap: _showServiceDialog,
-              onSocialTap: _handleSocialTap,
-            ),
+            SiteFooter(content: _content),
           ],
         ),
       ),
@@ -234,209 +192,6 @@ class _MaxWidth extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Header
-// ---------------------------------------------------------------------------
-
-class _Header extends StatelessWidget {
-  final VoidCallback onHome;
-  final VoidCallback onServices;
-  final VoidCallback onRates;
-  final VoidCallback onAbout;
-  final VoidCallback onContact;
-  final VoidCallback onGetStarted;
-  final VoidCallback onCustomerSignIn;
-  final VoidCallback onPartnerSignIn;
-
-  const _Header({
-    required this.onHome,
-    required this.onServices,
-    required this.onRates,
-    required this.onAbout,
-    required this.onContact,
-    required this.onGetStarted,
-    required this.onCustomerSignIn,
-    required this.onPartnerSignIn,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final wide = MediaQuery.of(context).size.width > 900;
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: LandingScreen.borderGray)),
-      ),
-      child: _MaxWidth(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-        child: Row(
-          children: [
-            InkWell(
-              onTap: onHome,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset('assets/images/one_village_logo.png', height: 52),
-                ],
-              ),
-            ),
-            const Spacer(),
-            if (wide) ...[
-              _NavLink('Home', onHome, active: true),
-              const SizedBox(width: 26),
-              _NavLink('About Us', onAbout),
-              const SizedBox(width: 26),
-              _NavLink('Services', onServices),
-              const SizedBox(width: 26),
-              _NavLink('Rates', onRates),
-              const SizedBox(width: 26),
-              _NavLink('Contact', onContact),
-              const SizedBox(width: 26),
-            ],
-            _SignInMenu(
-              onCustomer: onCustomerSignIn,
-              onPartner: onPartnerSignIn,
-            ),
-            const SizedBox(width: 14),
-            ElevatedButton(
-              onPressed: onGetStarted,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: LandingScreen.yellow,
-                foregroundColor: LandingScreen.navy,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-              ),
-              child: const Text('GET STARTED'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _NavLink extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-  final bool active;
-  const _NavLink(this.label, this.onTap, {this.active = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label.toUpperCase(),
-            style: TextStyle(
-              color: active ? LandingScreen.gold : LandingScreen.charcoal,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.4,
-            ),
-          ),
-          if (active) ...[
-            const SizedBox(height: 4),
-            Container(width: 18, height: 2, color: LandingScreen.gold),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _SignInMenu extends StatelessWidget {
-  final VoidCallback onCustomer;
-  final VoidCallback onPartner;
-  const _SignInMenu({required this.onCustomer, required this.onPartner});
-
-  @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      color: Colors.white,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: const BorderSide(color: LandingScreen.borderGray),
-      ),
-      offset: const Offset(0, 40),
-      onSelected: (v) {
-        switch (v) {
-          case 'customer':
-            onCustomer();
-            break;
-          case 'partner':
-            onPartner();
-            break;
-        }
-      },
-      itemBuilder: (context) => const [
-        PopupMenuItem(
-          value: 'customer',
-          child: _SignInMenuItem(
-            icon: Icons.person_outline,
-            title: 'Customer',
-            subtitle: 'Track your shipments',
-          ),
-        ),
-        PopupMenuItem(
-          value: 'partner',
-          child: _SignInMenuItem(
-            icon: Icons.local_shipping_outlined,
-            title: 'Courier',
-            subtitle: 'Manage your shipments',
-          ),
-        ),
-      ],
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'SIGN IN',
-            style: TextStyle(
-              color: LandingScreen.charcoal,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.4,
-            ),
-          ),
-          SizedBox(width: 2),
-          Icon(Icons.keyboard_arrow_down, size: 18, color: LandingScreen.charcoal),
-        ],
-      ),
-    );
-  }
-}
-
-class _SignInMenuItem extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  const _SignInMenuItem({required this.icon, required this.title, required this.subtitle});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: LandingScreen.secondaryNavy),
-        const SizedBox(width: 10),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(color: LandingScreen.navy, fontSize: 13, fontWeight: FontWeight.w700),
-            ),
-            Text(subtitle, style: const TextStyle(color: LandingScreen.charcoalSoft, fontSize: 11)),
-          ],
-        ),
-      ],
-    );
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Hero
@@ -742,7 +497,7 @@ class _KnutsfordCard extends StatelessWidget {
 
 class _Services extends StatelessWidget {
   final LandingContent content;
-  final ValueChanged<String> onLearnMore;
+  final VoidCallback onLearnMore;
   const _Services({super.key, required this.content, required this.onLearnMore});
 
   static const _fallbackAssets = [
@@ -794,7 +549,7 @@ class _Services extends StatelessWidget {
                         ),
                         title: (items[i]['title'] as String?) ?? '',
                         desc: (items[i]['description'] as String?) ?? '',
-                        onTap: () => onLearnMore((items[i]['title'] as String?) ?? ''),
+                        onTap: onLearnMore,
                       ),
                   ],
                 );
@@ -1205,279 +960,3 @@ class _SignupCard extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Footer
-// ---------------------------------------------------------------------------
-
-class _Footer extends StatelessWidget {
-  final LandingContent content;
-  final VoidCallback onHome;
-  final VoidCallback onServices;
-  final VoidCallback onContact;
-  final ValueChanged<String> onServiceTap;
-  final void Function(String label, String url) onSocialTap;
-  const _Footer({
-    required this.content,
-    required this.onHome,
-    required this.onServices,
-    required this.onContact,
-    required this.onServiceTap,
-    required this.onSocialTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final wide = MediaQuery.of(context).size.width > 900;
-    return Container(
-      color: LandingScreen.navy,
-      child: Column(
-        children: [
-          _MaxWidth(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
-            child: Flex(
-              direction: wide ? Axis.horizontal : Axis.vertical,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: wide ? 3 : 0,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Image.asset('assets/images/one_village_logo.png', height: 44),
-                      const SizedBox(height: 12),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 280),
-                        child: Text(
-                          content.str('footer', 'tagline'),
-                          style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 12.5, height: 1.6),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (!wide) const SizedBox(height: 32),
-                Expanded(
-                  flex: wide ? 2 : 0,
-                  child: _FooterColumn(
-                    'QUICK LINKS',
-                    [('Home', onHome), ('Services', onServices), ('Contact', onContact)],
-                  ),
-                ),
-                if (!wide) const SizedBox(height: 32),
-                Expanded(
-                  flex: 2,
-                  child: _FooterColumn(
-                    'SERVICES',
-                    [
-                      for (final s in content.list('services', 'items'))
-                        (
-                          (s['title'] as String?) ?? '',
-                          () => onServiceTap((s['title'] as String?) ?? ''),
-                        ),
-                    ],
-                  ),
-                ),
-                if (!wide) const SizedBox(height: 32),
-                Expanded(
-                  flex: wide ? 3 : 0,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'CONTACT US',
-                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6),
-                      ),
-                      const SizedBox(height: 14),
-                      _FooterContactRow(Icons.phone_outlined, content.str('contact', 'phone')),
-                      const SizedBox(height: 10),
-                      _FooterContactRow(Icons.location_on_outlined, content.str('contact', 'address')),
-                      const SizedBox(height: 10),
-                      _FooterContactRow(Icons.email_outlined, content.str('contact', 'email')),
-                      const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 8,
-                        children: [
-                          for (final s in content.list('social', 'items'))
-                            _SocialIcon(
-                              LandingContent.iconFor((s['icon'] as String?) ?? '', Icons.public),
-                              label: (s['label'] as String?) ?? '',
-                              onTap: () => onSocialTap(
-                                (s['label'] as String?) ?? '',
-                                (s['url'] as String?) ?? '',
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                if (wide) const SizedBox(width: 24),
-                if (wide)
-                  const Expanded(
-                    flex: 3,
-                    child: Align(alignment: Alignment.centerRight, child: _FooterRouteMap()),
-                  ),
-              ],
-            ),
-          ),
-          const Divider(color: Color(0xFF1E3556), height: 1),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 18),
-            child: Text(
-              '© ${DateTime.now().year} ${content.str('footer', 'copyrightName')}. All Rights Reserved.',
-              style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 11.5),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FooterRouteMap extends StatelessWidget {
-  const _FooterRouteMap();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 240,
-      height: 150,
-      child: CustomPaint(painter: _RouteMapPainter()),
-    );
-  }
-}
-
-class _RouteMapPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final dotPaint = Paint()..color = Colors.white.withValues(alpha: 0.10);
-    const spacing = 11.0;
-    for (double y = 0; y < size.height; y += spacing) {
-      for (double x = 0; x < size.width; x += spacing) {
-        final n = math.sin(x * 0.19) * math.cos(y * 0.24) + math.sin((x + y) * 0.06);
-        if (n > 0.15) {
-          canvas.drawCircle(Offset(x, y), 1.1, dotPaint);
-        }
-      }
-    }
-
-    final points = [
-      Offset(size.width * 0.10, size.height * 0.30),
-      Offset(size.width * 0.52, size.height * 0.68),
-      Offset(size.width * 0.88, size.height * 0.38),
-    ];
-
-    final path = Path()..moveTo(points[0].dx, points[0].dy);
-    path.quadraticBezierTo(
-      size.width * 0.30, size.height * 0.85,
-      points[1].dx, points[1].dy,
-    );
-    path.quadraticBezierTo(
-      size.width * 0.70, size.height * 0.90,
-      points[2].dx, points[2].dy,
-    );
-
-    final routePaint = Paint()
-      ..color = LandingScreen.gold
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6
-      ..strokeCap = StrokeCap.round;
-    _drawDashedPath(canvas, path, routePaint);
-
-    for (final p in points) {
-      canvas.drawCircle(p, 5, Paint()..color = LandingScreen.gold.withValues(alpha: 0.22));
-      canvas.drawCircle(p, 3, Paint()..color = LandingScreen.yellow);
-      canvas.drawCircle(p, 1.2, Paint()..color = LandingScreen.navy);
-    }
-  }
-
-  void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
-    const dashWidth = 5.0;
-    const dashGap = 4.0;
-    for (final metric in path.computeMetrics()) {
-      double distance = 0;
-      while (distance < metric.length) {
-        final next = math.min(distance + dashWidth, metric.length);
-        canvas.drawPath(metric.extractPath(distance, next), paint);
-        distance = next + dashGap;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RouteMapPainter oldDelegate) => false;
-}
-
-class _FooterContactRow extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  const _FooterContactRow(this.icon, this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: LandingScreen.yellow, size: 15),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(text, style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 12.5)),
-        ),
-      ],
-    );
-  }
-}
-
-class _SocialIcon extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  const _SocialIcon(this.icon, {this.label = '', required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: label,
-      child: Material(
-      color: LandingScreen.yellow,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: 32,
-          height: 32,
-          alignment: Alignment.center,
-          child: Icon(icon, size: 16, color: LandingScreen.navy),
-        ),
-      ),
-      ),
-    );
-  }
-}
-
-class _FooterColumn extends StatelessWidget {
-  final String title;
-  final List<(String, VoidCallback)> links;
-  const _FooterColumn(this.title, this.links);
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6)),
-        const SizedBox(height: 14),
-        for (final l in links)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: InkWell(
-              onTap: l.$2,
-              child: Text(l.$1, style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 12.5)),
-            ),
-          ),
-      ],
-    );
-  }
-}

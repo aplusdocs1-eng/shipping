@@ -5,11 +5,12 @@ import '../models/landing_content.dart';
 import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 
-/// Admin editor for every customizable piece of the public landing page —
-/// hero copy, service cards, "why choose us" features, stats, the sign-up
-/// CTA, footer/contact info, and the About/Rates popup text. Saving here
-/// writes straight to `site_content` and takes effect on the live site
-/// immediately (LandingScreen fetches it fresh on every load).
+/// Admin editor for every customizable piece of the public site — hero
+/// copy, service cards (also the dedicated Services page), "why choose us"
+/// features, stats, the sign-up CTA, footer/contact info, and the
+/// About/Rates page text. Saving here writes straight to `site_content`
+/// and takes effect on the live site immediately (the landing page and the
+/// About/Services/Rates/Contact pages all fetch it fresh on every load).
 class SiteContentScreen extends StatefulWidget {
   const SiteContentScreen({super.key});
 
@@ -197,7 +198,7 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
                     const SizedBox(height: 20),
                     _socialSection(),
                     const SizedBox(height: 20),
-                    _dialogsSection(),
+                    _aboutRatesSection(),
                     const SizedBox(height: 40),
                   ],
                 ),
@@ -330,7 +331,8 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
     final items = _servicesItems;
     return _Section(
       title: 'Services',
-      subtitle: 'The service cards grid, and the "Learn more" popup for each.',
+      subtitle: 'The service cards grid on the homepage, and the full '
+          'Services page each "Learn more" leads to.',
       child: Column(
         children: [
           _fieldRow(
@@ -351,7 +353,7 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
                       _Field(label: 'Title', initial: items[i]['title'], onChanged: (v) => items[i]['title'] = v),
                     ),
                     _Field(label: 'Card description', initial: items[i]['description'], maxLines: 2, onChanged: (v) => items[i]['description'] = v),
-                    _Field(label: '"Learn more" popup text', initial: items[i]['detail'], maxLines: 3, onChanged: (v) => items[i]['detail'] = v),
+                    _Field(label: 'Full detail text (shown on the Services page)', initial: items[i]['detail'], maxLines: 3, onChanged: (v) => items[i]['detail'] = v),
                     _Field(
                       label: 'Card image URL (blank = default photo)',
                       initial: items[i]['imageUrl'],
@@ -504,7 +506,7 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
     final contact = _sec('contact');
     return _Section(
       title: 'Footer & contact info',
-      subtitle: 'Also used by the "Contact Us" popup from the top menu.',
+      subtitle: 'Also used by the dedicated "Contact Us" page from the top menu.',
       child: Column(
         children: [
           _fieldRow(
@@ -570,18 +572,18 @@ class _SiteContentScreenState extends State<SiteContentScreen> {
     );
   }
 
-  // ─── About / Rates popups ──────────────────────────────────────────────
+  // ─── About / Rates pages ────────────────────────────────────────────────
 
-  Widget _dialogsSection() {
+  Widget _aboutRatesSection() {
     final about = _sec('about');
     final rates = _sec('rates');
     return _Section(
-      title: 'About & Rates popups',
-      subtitle: 'Shown when a visitor clicks "About Us" or "Rates" in the top menu.',
+      title: 'About Us & Rates pages',
+      subtitle: 'Shown on the dedicated "About Us" and "Rates" pages, reachable from the top menu.',
       child: Column(
         children: [
-          _Field(label: 'About Us popup text', initial: about['body'], maxLines: 3, onChanged: (v) => about['body'] = v),
-          _Field(label: 'Rates popup text', initial: rates['body'], maxLines: 3, onChanged: (v) => rates['body'] = v),
+          _Field(label: 'About Us page text', initial: about['body'], maxLines: 3, onChanged: (v) => about['body'] = v),
+          _Field(label: 'Rates page text', initial: rates['body'], maxLines: 3, onChanged: (v) => rates['body'] = v),
         ],
       ),
     );
