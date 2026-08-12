@@ -82,6 +82,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  // Once a shipment has arrived at the Jamaican warehouse (or moved past
+  // that into customs clearance / closed), it's no longer "in progress" —
+  // Recent Shipments is meant to show what's still moving, not a
+  // permanent log of everything ever shipped.
+  List<Shipment> get _activeShipments => _shipments
+      .where(
+        (s) =>
+            s.status == ShipmentStatus.preparing ||
+            s.status == ShipmentStatus.inTransit,
+      )
+      .toList();
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
@@ -255,7 +267,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 12),
                   _RecentShipmentsTable(
-                    shipments: _shipments.take(10).toList(),
+                    shipments: _activeShipments.take(10).toList(),
+                    onView: widget.onViewShipments ?? () {},
                   ),
                 ],
               ),
@@ -344,15 +357,28 @@ class _DashStatCard extends StatelessWidget {
 
 class _RecentShipmentsTable extends StatelessWidget {
   final List<Shipment> shipments;
+  final VoidCallback onView;
 
-  const _RecentShipmentsTable({required this.shipments});
+  const _RecentShipmentsTable({required this.shipments, required this.onView});
 
   @override
   Widget build(BuildContext context) {
+    if (shipments.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 28),
+        child: Center(
+          child: Text(
+            'No shipments in progress right now — anything preparing or '
+            'in transit will show up here.',
+            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+          ),
+        ),
+      );
+    }
     return Table(
       columnWidths: const {
         0: FlexColumnWidth(3),
-        1: FlexColumnWidth(2),
+        1: FlexColumnWidth(3),
         2: FlexColumnWidth(1),
       },
       children: [
@@ -360,7 +386,7 @@ class _RecentShipmentsTable extends StatelessWidget {
           decoration: const BoxDecoration(
             border: Border(bottom: BorderSide(color: AppTheme.border)),
           ),
-          children: ['Shipment Number', 'Description', 'Edit']
+          children: ['Shipment Number', 'Route', '']
               .map(
                 (h) => Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -408,22 +434,64 @@ class _RecentShipmentsTable extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  s.shipmentNumber,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.textPrimary,
-                  ),
+                child: Row(
+                  children: [
+                    Icon(
+                      s.type == ShipmentType.air
+                          ? Icons.flight_outlined
+                          : Icons.directions_boat_outlined,
+                      size: 14,
+                      color: AppTheme.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            (s.origin.isEmpty && s.destination.isEmpty)
+                                ? 'No route set'
+                                : '${s.origin.isEmpty ? '—' : s.origin} → '
+                                      '${s.destination.isEmpty ? '—' : s.destination}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppTheme.textPrimary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            '${s.packageCount} pkg${s.packageCount == 1 ? '' : 's'} · '
+                                '${s.totalWeight.toStringAsFixed(0)} lbs',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  'View',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: AppTheme.textPrimary,
+                child: InkWell(
+                  onTap: onView,
+                  borderRadius: BorderRadius.circular(6),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'View',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.primary,
+                        ),
+                      ),
+                      SizedBox(width: 2),
+                      Icon(Icons.arrow_forward, size: 13, color: AppTheme.primary),
+                    ],
                   ),
                 ),
               ),
