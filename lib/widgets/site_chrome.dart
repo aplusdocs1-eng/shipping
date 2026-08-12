@@ -148,6 +148,25 @@ class SiteHeader extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Image.asset('assets/images/one_village_logo.png', height: 52),
+                  // The logo itself is a busy illustrated badge — its own
+                  // lettering reads fine full-size but is illegible at
+                  // header height, so the company name is spelled out here
+                  // in real, crisp text instead of relying on the artwork.
+                  // Hidden below the `wide` breakpoint, same as the nav
+                  // links below — at mobile widths there's no room left
+                  // for it once Sign In and Get Started are accounted for.
+                  if (wide) ...[
+                    const SizedBox(width: 10),
+                    const Text(
+                      'One Village',
+                      style: TextStyle(
+                        color: PublicColors.navy,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
