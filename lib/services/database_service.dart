@@ -631,6 +631,17 @@ class DatabaseService {
     return List<Map<String, dynamic>>.from(data);
   }
 
+  /// Every payment submission platform-wide — the admin Accounting
+  /// screen's review queue and transaction ledger, not scoped to one
+  /// customer/invoice/partner the way the other getters here are.
+  Future<List<Map<String, dynamic>>> getAllPaymentSubmissions() async {
+    final data = await _db
+        .from('payment_submissions')
+        .select()
+        .order('submitted_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
   Future<List<Map<String, dynamic>>> getPendingPaymentSubmissionsByPartner(
     String partnerId,
   ) async {

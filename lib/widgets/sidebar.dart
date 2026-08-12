@@ -18,6 +18,7 @@ import '../theme/app_theme.dart';
 // 13 Warehouse
 // 14 Shipping Partners
 // 15 Site Content
+// 16 Accounting
 
 class AppNavDrawer extends StatelessWidget {
   final int selectedIndex;
@@ -37,13 +38,14 @@ class AppNavDrawer extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Logo header — solid navy, matching the identity banner atop
-            // the app bar, so the sidebar reads as part of the same brand
-            // surface rather than a plain white panel bolted on beside it.
+            // Logo header — the palette's signature soft blush/lavender
+            // gradient, matching the identity banner atop the app bar, so
+            // the sidebar reads as part of the same brand surface rather
+            // than a plain white panel bolted on beside it.
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(20, 18, 12, 18),
-              color: AppTheme.primary,
+              decoration: const BoxDecoration(gradient: AppTheme.heroGradient),
               child: Row(
                 children: [
                   Image.asset(
@@ -55,7 +57,7 @@ class AppNavDrawer extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
-                          color: Colors.white,
+                          color: AppTheme.textPrimary,
                         ),
                       );
                     },
@@ -63,7 +65,7 @@ class AppNavDrawer extends StatelessWidget {
                   const Spacer(),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close, size: 22, color: Colors.white),
+                    icon: const Icon(Icons.close, size: 22, color: AppTheme.textPrimary),
                   ),
                 ],
               ),
@@ -77,6 +79,15 @@ class AppNavDrawer extends StatelessWidget {
                   _DrawerTile(
                     label: 'Home',
                     index: 0,
+                    selectedIndex: selectedIndex,
+                    onTap: (i) {
+                      onItemSelected(i);
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                  _DrawerTile(
+                    label: 'Accounting',
+                    index: 16,
                     selectedIndex: selectedIndex,
                     onTap: (i) {
                       onItemSelected(i);

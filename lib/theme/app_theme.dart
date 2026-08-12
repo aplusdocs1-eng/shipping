@@ -2,36 +2,50 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // One Village Shipping & Freight brand colors. These values are meant
-  // to be numerically identical to their counterparts in LandingScreen
-  // (lib/screens/landing_screen.dart) — the public marketing site is the
-  // reference for the brand; this file exists so ~900 usage sites across
-  // the admin dashboard don't have to hardcode it themselves. If you
-  // change one, change the other, or the two will drift apart again.
-  static const Color primary = Color(0xFF071B33); // = LandingScreen.navy
-  static const Color primaryDark = Color(0xFF04101F);
-  static const Color secondaryNavy = Color(0xFF123A68); // = LandingScreen.secondaryNavy
-  static const Color gold = Color(0xFFD9A514); // = LandingScreen.gold
-  static const Color yellow = Color(0xFFFFC400); // = LandingScreen.yellow (the landing page's CTA color)
-  // Was sky blue (0xFF0EA5E9) — didn't exist anywhere in the landing
-  // page's palette. Reusing secondaryNavy keeps the "second color" this
-  // was providing (distinguishing things like Air vs Sea freight badges)
-  // while staying inside the brand's own navy family instead of an
-  // unrelated hue.
-  static const Color accent = Color(0xFF123A68);
-  static const Color success = Color(0xFF16845B); // = LandingScreen.green
-  // No direct landing-page equivalent — kept as its own warm amber,
-  // deliberately close to but distinguishable from `gold`.
-  static const Color warning = Color(0xFFF59E0B);
-  static const Color danger = Color(0xFFB83A3A); // = LandingScreen.red
-  static const Color surface = Color(0xFFF5F7FA); // = LandingScreen.iceGray
+  // "Soft Blush + Lavender Luxury" — the admin/warehouse dashboard's own
+  // palette, deliberately distinct from the public site's navy/gold
+  // brand (LandingScreen). Feminine, minimal, editorial: soft black text
+  // and CTAs against warm off-white and pastel blush/lavender surfaces,
+  // not a saturated color on every element.
+  static const Color blushPink = Color(0xFFF6C4D4);
+  static const Color paleRose = Color(0xFFF8DCE5);
+  static const Color softLavender = Color(0xFFE8DDF8);
+  static const Color periwinkleMist = Color(0xFFDDE4FA);
+  static const Color warmOffWhite = Color(0xFFFFF9FA);
+  static const Color softBlack = Color(0xFF171519);
+  static const Color mutedGrayText = Color(0xFF69636D);
+
+  /// The palette's signature header/hero treatment — used on the sidebar
+  /// header and the dashboard-identity banner, not spread across every
+  /// surface (kept minimal per the "clean, editorial" brief).
+  static const heroGradient = LinearGradient(
+    begin: Alignment(-0.94, -0.34), // CSS linear-gradient(110deg, ...)
+    end: Alignment(0.94, 0.34),
+    stops: [0.0, 0.48, 1.0],
+    colors: [Color(0xFFFBE1E7), Color(0xFFF7ECF5), Color(0xFFDFE6FA)],
+  );
+
+  static const Color primary = softBlack; // CTAs, active nav, strong icons
+  static const Color primaryDark = softBlack;
+  static const Color secondaryNavy = mutedGrayText; // secondary emphasis
+  static const Color gold = blushPink; // primary accent/highlight
+  static const Color yellow = softLavender; // secondary accent/highlight
+  static const Color accent = periwinkleMist; // tertiary accent
+  // Status colors deliberately stay conventional (green/amber/red) rather
+  // than drawn from the blush/lavender family — the brief covers
+  // branding and surfaces, and diluting "paid" or "overdue" into a pink
+  // tone would cost real clarity for no requested benefit.
+  static const Color success = Color(0xFF3C9A5F);
+  static const Color warning = Color(0xFFD97706);
+  static const Color danger = Color(0xFFD64550);
+  static const Color surface = warmOffWhite;
   static const Color card = Color(0xFFFFFFFF);
-  static const Color textPrimary = Color(0xFF263442); // = LandingScreen.charcoal
-  static const Color textSecondary = Color(0xFF5B6B7A); // = LandingScreen.charcoalSoft
-  static const Color border = Color(0xFFDCE3EA); // = LandingScreen.borderGray
+  static const Color textPrimary = softBlack;
+  static const Color textSecondary = mutedGrayText;
+  static const Color border = paleRose;
   static const Color sidebarBg = Color(0xFFFFFFFF);
-  static const Color sidebarText = Color(0xFF5B6B7A);
-  static const Color sidebarActive = Color(0xFF071B33);
+  static const Color sidebarText = mutedGrayText;
+  static const Color sidebarActive = softBlack;
   static const Color topBarBg = Color(0xFFFFFFFF);
 
   // Logo URL for network image
