@@ -109,7 +109,7 @@ class _StaffScreenState extends State<StaffScreen> {
                     ),
                     const Spacer(),
                     ElevatedButton.icon(
-                      onPressed: () => _showInviteDialog(context),
+                      onPressed: () => _showStaffFormDialog(context),
                       icon: const Icon(Icons.person_add_outlined, size: 16),
                       label: const Text('Add Staff'),
                     ),
@@ -252,37 +252,70 @@ class _StaffScreenState extends State<StaffScreen> {
             member: _selected!,
             onClose: () => setState(() => _selected = null),
             onToggleActive: () => _setActive(_selected!, !_selected!.isActive),
+            onEdit: () => _showStaffFormDialog(context, existing: _selected),
           ),
       ],
     );
   }
 
-  Future<void> _showInviteDialog(BuildContext context) async {
-    final firstName = TextEditingController();
-    final lastName = TextEditingController();
-    final email = TextEditingController();
-    StaffRole role = StaffRole.agent;
-    String? branchId = _branches.isNotEmpty ? _branches.first['id'] as String : null;
+  Future<void> _showStaffFormDialog(
+    BuildContext context, {
+    StaffMember? existing,
+  }) async {
+    final isEdit = existing != null;
+    final nameParts = (existing?.name ?? '').split(' ');
+    final firstName = TextEditingController(
+      text: nameParts.isNotEmpty ? nameParts.first : '',
+    );
+    final lastName = TextEditingController(
+      text: nameParts.length > 1 ? nameParts.skip(1).join(' ') : '',
+    );
+    final email = TextEditingController(text: existing?.email ?? '');
+    final phone = TextEditingController(text: existing?.phone ?? '');
+    final address = TextEditingController(text: existing?.address ?? '');
+    final salary = TextEditingController(
+      text: existing?.monthlySalary != null
+          ? existing!.monthlySalary!.toStringAsFixed(2)
+          : '',
+    );
+    final bankName = TextEditingController(text: existing?.bankName ?? '');
+    final bankAccountName = TextEditingController(
+      text: existing?.bankAccountName ?? '',
+    );
+    final bankAccountNumber = TextEditingController(
+      text: existing?.bankAccountNumber ?? '',
+    );
+    final bankRoutingNumber = TextEditingController(
+      text: existing?.bankRoutingNumber ?? '',
+    );
+    StaffRole role = existing?.role ?? StaffRole.agent;
+    String? branchId =
+        existing?.branchId.isNotEmpty == true
+            ? existing!.branchId
+            : (_branches.isNotEmpty ? _branches.first['id'] as String : null);
     bool saving = false;
     String? error;
 
-    final created = await showDialog<bool>(
+    final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => Dialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: Container(
-            width: 480,
+            width: 520,
             padding: const EdgeInsets.all(24),
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    const Text(
-                      'Add Staff Member',
-                      style: TextStyle(
+                    Text(
+                      isEdit ? 'Edit Staff Member' : 'Add Staff Member',
+                      style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
                         color: AppTheme.textPrimary,
@@ -295,45 +328,141 @@ class _StaffScreenState extends State<StaffScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(child: _DField('First Name', 'John', controller: firstName)),
-                    const SizedBox(width: 12),
-                    Expanded(child: _DField('Last Name', 'Smith', controller: lastName)),
-                  ],
-                ),
                 const SizedBox(height: 12),
-                _DField('Email Address', 'john.smith@company.com', controller: email),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _DDrop<StaffRole>(
-                        'Role',
-                        StaffRole.values,
-                        (r) => r.label,
-                        value: role,
-                        onChanged: (v) => setDialogState(() => role = v ?? StaffRole.agent),
-                      ),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _DField(
+                                'First Name',
+                                'John',
+                                controller: firstName,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _DField(
+                                'Last Name',
+                                'Smith',
+                                controller: lastName,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _DField(
+                          'Email Address',
+                          'john.smith@company.com',
+                          controller: email,
+                        ),
+                        const SizedBox(height: 12),
+                        _DField(
+                          'Phone',
+                          '+1 (876) 555-0100',
+                          controller: phone,
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _DDrop<StaffRole>(
+                                'Role',
+                                StaffRole.values,
+                                (r) => r.label,
+                                value: role,
+                                onChanged: (v) => setDialogState(
+                                  () => role = v ?? StaffRole.agent,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _DDrop<String>(
+                                'Branch',
+                                _branches.map((b) => b['id'] as String).toList(),
+                                (id) => _branches.firstWhere(
+                                  (b) => b['id'] == id,
+                                )['name'] as String,
+                                value: branchId,
+                                onChanged: (v) =>
+                                    setDialogState(() => branchId = v),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _DField(
+                          'Address',
+                          '12 Hope Road, Kingston',
+                          controller: address,
+                        ),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'PAYROLL',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.textSecondary,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _DField(
+                          'Monthly Salary (USD)',
+                          '0.00',
+                          controller: salary,
+                        ),
+                        const SizedBox(height: 12),
+                        _DField(
+                          'Bank Name',
+                          'National Commercial Bank',
+                          controller: bankName,
+                        ),
+                        const SizedBox(height: 12),
+                        _DField(
+                          'Account Holder Name',
+                          'As it appears on the account',
+                          controller: bankAccountName,
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _DField(
+                                'Account Number',
+                                '000123456789',
+                                controller: bankAccountNumber,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _DField(
+                                'Routing / Branch Number',
+                                '',
+                                controller: bankRoutingNumber,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _DDrop<String>(
-                        'Branch',
-                        _branches.map((b) => b['id'] as String).toList(),
-                        (id) => _branches.firstWhere((b) => b['id'] == id)['name'] as String,
-                        value: branchId,
-                        onChanged: (v) => setDialogState(() => branchId = v),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
                 if (error != null) ...[
                   const SizedBox(height: 12),
-                  Text(error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
+                  Text(
+                    error!,
+                    style: const TextStyle(
+                      color: AppTheme.danger,
+                      fontSize: 12.5,
+                    ),
+                  ),
                 ],
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
@@ -346,11 +475,24 @@ class _StaffScreenState extends State<StaffScreen> {
                       onPressed: saving
                           ? null
                           : () async {
-                              final name = '${firstName.text.trim()} ${lastName.text.trim()}'
-                                  .trim();
+                              final name =
+                                  '${firstName.text.trim()} ${lastName.text.trim()}'
+                                      .trim();
                               if (name.isEmpty || email.text.trim().isEmpty) {
                                 setDialogState(
-                                  () => error = 'Name and email are required.',
+                                  () =>
+                                      error = 'Name and email are required.',
+                                );
+                                return;
+                              }
+                              final salaryValue = salary.text.trim().isEmpty
+                                  ? null
+                                  : double.tryParse(salary.text.trim());
+                              if (salary.text.trim().isNotEmpty &&
+                                  salaryValue == null) {
+                                setDialogState(
+                                  () => error =
+                                      'Enter a valid monthly salary, or leave it blank.',
                                 );
                                 return;
                               }
@@ -358,20 +500,38 @@ class _StaffScreenState extends State<StaffScreen> {
                                 saving = true;
                                 error = null;
                               });
+                              final payload = {
+                                'name': name,
+                                'email': email.text.trim(),
+                                'phone': phone.text.trim(),
+                                'role': role.name,
+                                'branch_id': branchId,
+                                'address': address.text.trim(),
+                                'monthly_salary': salaryValue,
+                                'bank_name': bankName.text.trim(),
+                                'bank_account_name': bankAccountName.text
+                                    .trim(),
+                                'bank_account_number': bankAccountNumber.text
+                                    .trim(),
+                                'bank_routing_number': bankRoutingNumber.text
+                                    .trim(),
+                              };
                               try {
-                                await _db.insertStaff({
-                                  'name': name,
-                                  'email': email.text.trim(),
-                                  'role': role.name,
-                                  'branch_id': branchId,
-                                  'is_active': true,
-                                });
+                                if (isEdit) {
+                                  await _db.updateStaff(existing.id, payload);
+                                } else {
+                                  await _db.insertStaff({
+                                    ...payload,
+                                    'is_active': true,
+                                  });
+                                }
                                 if (!ctx.mounted) return;
                                 Navigator.pop(ctx, true);
                               } catch (e) {
                                 setDialogState(() {
                                   saving = false;
-                                  error = 'Failed to add staff member: $e';
+                                  error =
+                                      'Failed to save staff member: $e';
                                 });
                               }
                             },
@@ -381,8 +541,13 @@ class _StaffScreenState extends State<StaffScreen> {
                               height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.person_add_outlined, size: 14),
-                      label: const Text('Add Staff'),
+                          : Icon(
+                              isEdit
+                                  ? Icons.save_outlined
+                                  : Icons.person_add_outlined,
+                              size: 14,
+                            ),
+                      label: Text(isEdit ? 'Save Changes' : 'Add Staff'),
                     ),
                   ],
                 ),
@@ -392,7 +557,7 @@ class _StaffScreenState extends State<StaffScreen> {
         ),
       ),
     );
-    if (created == true) _load();
+    if (saved == true) _load();
   }
 }
 
@@ -562,7 +727,13 @@ class _StaffDetail extends StatelessWidget {
   final StaffMember member;
   final VoidCallback onClose;
   final VoidCallback onToggleActive;
-  const _StaffDetail({required this.member, required this.onClose, required this.onToggleActive});
+  final VoidCallback onEdit;
+  const _StaffDetail({
+    required this.member,
+    required this.onClose,
+    required this.onToggleActive,
+    required this.onEdit,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -591,6 +762,14 @@ class _StaffDetail extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
+                IconButton(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  tooltip: 'Edit',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 12),
                 IconButton(
                   onPressed: onClose,
                   icon: const Icon(Icons.close, size: 18),
@@ -650,6 +829,40 @@ class _StaffDetail extends StatelessWidget {
                         : 'Never',
                   ),
                   _KV('Status', member.isActive ? 'Active' : 'Inactive'),
+                  if (member.address.isNotEmpty)
+                    _KV('Address', member.address),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'PAYROLL',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textSecondary,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _KV(
+                    'Monthly Pay',
+                    member.monthlySalary != null
+                        ? NumberFormat.currency(
+                            symbol: '\$',
+                          ).format(member.monthlySalary)
+                        : 'Not set',
+                  ),
+                  if (member.hasBankingInfo) ...[
+                    _KV(
+                      'Bank',
+                      member.bankName.isEmpty ? '—' : member.bankName,
+                    ),
+                    _KV(
+                      'Account',
+                      member.bankAccountNumber.isEmpty
+                          ? '—'
+                          : '${member.bankAccountName.isEmpty ? '' : '${member.bankAccountName} · '}${member.maskedAccountNumber}',
+                    ),
+                  ] else
+                    _KV('Banking', 'Not set'),
                   const SizedBox(height: 20),
                   const SizedBox(height: 8),
                   SizedBox(

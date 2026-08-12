@@ -1341,4 +1341,83 @@ class DatabaseService {
     }
     return Map<String, dynamic>.from(txn);
   }
+
+  // ─── Payroll ─────────────────────────────────────────────────────────
+  // Record-keeping only — there's no payment integration behind this
+  // (see the migration's own comment). "Mark Paid" records that a
+  // transfer happened; it doesn't send one.
+
+  Future<List<Map<String, dynamic>>> getPayrollRuns() async {
+    final data = await _db
+        .from('payroll_runs')
+        .select()
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<List<Map<String, dynamic>>> getPayrollEntries(String runId) async {
+    final data = await _db
+        .from('payroll_entries')
+        .select()
+        .eq('payroll_run_id', runId)
+        .order('staff_name', ascending: true);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<Map<String, dynamic>> createPayrollRun({
+    required String periodLabel,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+    required List<Map<String, dynamic>> entries,
+  }) async {
+    double total = 0;
+    for (final e in entries) {
+      total += (e['amount'] as num?)?.toDouble() ?? 0.0;
+    }
+    final run = await _db
+        .from('payroll_runs')
+        .insert({
+          'period_label': periodLabel,
+          'period_start': periodStart.toIso8601String().split('T').first,
+          'period_end': periodEnd.toIso8601String().split('T').first,
+          'total_amount': total,
+        })
+        .select()
+        .single();
+    final runId = run['id'] as String;
+    if (entries.isNotEmpty) {
+      await _db.from('payroll_entries').insert([
+        for (final e in entries) {...e, 'payroll_run_id': runId},
+      ]);
+    }
+    return Map<String, dynamic>.from(run);
+  }
+
+  Future<void> markPayrollEntryPaid(
+    String entryId, {
+    required String paymentMethod,
+    String? reference,
+  }) async {
+    await _db
+        .from('payroll_entries')
+        .update({
+          'status': 'paid',
+          'payment_method': paymentMethod,
+          'reference': reference,
+          'paid_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', entryId);
+  }
+
+  Future<void> markPayrollRunPaid(String runId) async {
+    await _db
+        .from('payroll_runs')
+        .update({'status': 'paid', 'paid_at': DateTime.now().toIso8601String()})
+        .eq('id', runId);
+  }
+
+  Future<void> deletePayrollRun(String runId) async {
+    // payroll_entries cascades via ON DELETE CASCADE.
+    await _db.from('payroll_runs').delete().eq('id', runId);
+  }
 }

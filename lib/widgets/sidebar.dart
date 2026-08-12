@@ -19,6 +19,7 @@ import '../theme/app_theme.dart';
 // 14 Shipping Partners
 // 15 Site Content
 // 16 Accounting
+// 17 Payroll
 
 class AppNavDrawer extends StatelessWidget {
   final int selectedIndex;
@@ -210,6 +211,15 @@ class AppNavDrawer extends StatelessWidget {
                   _DrawerTile(
                     label: 'Staff',
                     index: 10,
+                    selectedIndex: selectedIndex,
+                    onTap: (i) {
+                      onItemSelected(i);
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                  _DrawerTile(
+                    label: 'Payroll',
+                    index: 17,
                     selectedIndex: selectedIndex,
                     onTap: (i) {
                       onItemSelected(i);

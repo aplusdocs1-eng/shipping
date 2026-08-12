@@ -641,6 +641,12 @@ class StaffMember {
   final bool isActive;
   final DateTime joinedAt;
   final DateTime? lastLogin;
+  final String address;
+  final double? monthlySalary;
+  final String bankName;
+  final String bankAccountName;
+  final String bankAccountNumber;
+  final String bankRoutingNumber;
 
   StaffMember({
     required this.id,
@@ -653,7 +659,23 @@ class StaffMember {
     required this.isActive,
     required this.joinedAt,
     this.lastLogin,
+    this.address = '',
+    this.monthlySalary,
+    this.bankName = '',
+    this.bankAccountName = '',
+    this.bankAccountNumber = '',
+    this.bankRoutingNumber = '',
   });
+
+  /// Last 4 digits only — the full number is only ever shown inside the
+  /// edit form itself, not in any list/detail/summary view.
+  String get maskedAccountNumber {
+    if (bankAccountNumber.length <= 4) return bankAccountNumber;
+    return '•••• ${bankAccountNumber.substring(bankAccountNumber.length - 4)}';
+  }
+
+  bool get hasBankingInfo =>
+      bankName.isNotEmpty || bankAccountNumber.isNotEmpty;
 
   factory StaffMember.fromMap(Map<String, dynamic> m) {
     StaffRole role = StaffRole.agent;
@@ -680,6 +702,12 @@ class StaffMember {
       joinedAt:
           DateTime.tryParse(m['created_at']?.toString() ?? '') ??
           DateTime.now(),
+      address: m['address']?.toString() ?? '',
+      monthlySalary: (m['monthly_salary'] as num?)?.toDouble(),
+      bankName: m['bank_name']?.toString() ?? '',
+      bankAccountName: m['bank_account_name']?.toString() ?? '',
+      bankAccountNumber: m['bank_account_number']?.toString() ?? '',
+      bankRoutingNumber: m['bank_routing_number']?.toString() ?? '',
     );
   }
 }

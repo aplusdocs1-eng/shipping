@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/database_service.dart';
+import 'services/font_scale_controller.dart';
 import 'services/supabase_config.dart';
 import 'services/live_data_service.dart';
 import 'services/tenant_service.dart';
@@ -28,6 +29,7 @@ import 'screens/warehouse_screen.dart';
 import 'screens/shipping_partners_screen.dart';
 import 'screens/site_content_screen.dart';
 import 'screens/accounting_screen.dart';
+import 'screens/payroll_screen.dart';
 import 'screens/partner_login_screen.dart';
 import 'screens/partner_dashboard_screen.dart';
 import 'screens/customer_login_screen.dart';
@@ -38,6 +40,7 @@ void main() async {
   await SupabaseConfig.init();
   // Resolve current hostname -> tenant (partner) before rendering UI.
   await TenantService().init();
+  await FontScaleController().load();
   runApp(const CourierWarehouseApp());
 }
 
@@ -46,23 +49,39 @@ class CourierWarehouseApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'One Village Shipping & Freight — Courier Portal',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      initialRoute: TenantService().isAdminHost ? '/' : '/partner-login',
-      routes: {
-        '/': (context) => const LandingScreen(),
-        '/about': (context) => const AboutPage(),
-        '/services': (context) => const ServicesPage(),
-        '/rates': (context) => const RatesPage(),
-        '/contact': (context) => const ContactPage(),
-        '/team': (context) => const _TeamPortalRoot(),
-        '/partner-login': (context) => const PartnerLoginScreen(),
-        '/partner-home': (context) => const PartnerDashboardScreen(),
-        '/customer-login': (context) => const CustomerLoginScreen(),
-        '/customer-home': (context) => const CustomerPortalScreen(),
-      },
+    // Rebuilds the whole app (cheap — just a text-scale multiplier, not
+    // reloading any data) whenever the admin changes the font-size
+    // control, so every screen picks up the new scale immediately.
+    return ListenableBuilder(
+      listenable: FontScaleController(),
+      builder: (context, _) => MaterialApp(
+        title: 'One Village Shipping & Freight — Courier Portal',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light,
+        // MediaQuery's textScaler applies to every widget in the tree
+        // below it — this is the one place a single setting reaches the
+        // "entire website" rather than needing to be wired into each
+        // screen individually.
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(FontScaleController().scale)),
+          child: child!,
+        ),
+        initialRoute: TenantService().isAdminHost ? '/' : '/partner-login',
+        routes: {
+          '/': (context) => const LandingScreen(),
+          '/about': (context) => const AboutPage(),
+          '/services': (context) => const ServicesPage(),
+          '/rates': (context) => const RatesPage(),
+          '/contact': (context) => const ContactPage(),
+          '/team': (context) => const _TeamPortalRoot(),
+          '/partner-login': (context) => const PartnerLoginScreen(),
+          '/partner-home': (context) => const PartnerDashboardScreen(),
+          '/customer-login': (context) => const CustomerLoginScreen(),
+          '/customer-home': (context) => const CustomerPortalScreen(),
+        },
+      ),
     );
   }
 }
@@ -183,6 +202,7 @@ class _MainShellState extends State<MainShell> {
     const ShippingPartnersScreen(), // 14
     const SiteContentScreen(), // 15
     const AccountingScreen(), // 16
+    const PayrollScreen(), // 17
   ];
 
   @override
@@ -212,6 +232,8 @@ class _MainShellState extends State<MainShell> {
         ),
         centerTitle: true,
         actions: [
+          const _FontSizeControl(),
+          const SizedBox(width: 4),
           IconButton(
             onPressed: widget.onLogout,
             icon: Container(
@@ -246,6 +268,47 @@ class _MainShellState extends State<MainShell> {
         onItemSelected: (index) => setState(() => _selectedIndex = index),
       ),
       body: _screens[_selectedIndex],
+    );
+  }
+}
+
+/// A- / A+ in the admin app bar — always visible, one tap, no digging
+/// through Settings to find it. Reads the current step from
+/// FontScaleController so the button greys out at the top/bottom of the
+/// range instead of doing nothing silently.
+class _FontSizeControl extends StatelessWidget {
+  const _FontSizeControl();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: FontScaleController(),
+      builder: (context, _) {
+        final controller = FontScaleController();
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              onPressed: controller.canDecrease ? controller.decrease : null,
+              icon: const Icon(Icons.text_decrease, size: 20),
+              tooltip: 'Decrease text size',
+            ),
+            Text(
+              controller.label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppTheme.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            IconButton(
+              onPressed: controller.canIncrease ? controller.increase : null,
+              icon: const Icon(Icons.text_increase, size: 20),
+              tooltip: 'Increase text size',
+            ),
+          ],
+        );
+      },
     );
   }
 }
