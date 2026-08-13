@@ -1457,6 +1457,30 @@ class DatabaseService {
     throw Exception('process-package-scan returned an unexpected response');
   }
 
+  /// Courier-facing scan OUT: marks a package picked up. Goes through the
+  /// scan_out_package SECURITY DEFINER RPC rather than a direct
+  /// warehouse_entries update — the RPC resolves the caller's own
+  /// tracking_prefix server-side (never trusts a client-supplied partner
+  /// id) and only ever touches the pickup fields, matching why
+  /// process-package-scan is an Edge Function rather than a raw client
+  /// insert. See 20260813010000_courier_scan_out.sql.
+  ///
+  /// Returns the RPC's JSON result as-is: {ok, error?} or
+  /// {ok: true, already_picked_up, entry}. Callers branch on `ok` and
+  /// `already_picked_up` rather than a thrown exception, since
+  /// "not found" / "already picked up" are expected outcomes of normal
+  /// scanning, not failures.
+  Future<Map<String, dynamic>> scanOutPackage({
+    required String code,
+    String? pickedUpBy,
+  }) async {
+    final data = await _db.rpc(
+      'scan_out_package',
+      params: {'p_code': code, 'p_picked_up_by': pickedUpBy},
+    );
+    return Map<String, dynamic>.from(data as Map);
+  }
+
   Future<Map<String, dynamic>> getScannerSettings() async {
     final data = await _db.from('scanner_settings').select().eq('id', true).single();
     return Map<String, dynamic>.from(data);

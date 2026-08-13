@@ -3,6 +3,7 @@ import 'dart:html' as html;
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/database_service.dart';
 import '../services/export_service.dart';
@@ -447,6 +448,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
       _NavItem('Packages', Icons.inventory_2_outlined),
       _NavItem('Shipments', Icons.local_shipping_outlined),
       _NavItem('Receivals', Icons.move_to_inbox_outlined),
+      _NavItem('Scan Out', Icons.qr_code_scanner),
       _NavItem('Unk Packages', Icons.help_outline),
       _NavItem('Pre-Alerts', Icons.notifications_active_outlined),
     ]),
@@ -894,6 +896,12 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
         return _ShipmentsPage(db: _db, partnerId: partnerId);
       case 'Receivals':
         return _ReceivalsPage(db: _db, prefix: prefix, partnerId: partnerId);
+      case 'Scan Out':
+        return _ScanOutPage(
+          db: _db,
+          prefix: prefix,
+          companyName: (account['company_name'] as String?) ?? '',
+        );
       case 'Unk Packages':
         return _UnknownPackagesPage(db: _db, prefix: prefix, partnerId: partnerId);
       case 'Pre-Alerts':
@@ -3947,6 +3955,365 @@ class _ReceivalsPageState extends State<_ReceivalsPage> {
         },
       ),
     );
+  }
+}
+
+// ─── Scan Out Page (courier pickup scanning) ────────────────────────────
+// Same camera/barcode technology as the admin Package Scanner
+// (WarehouseScannerScreen), but far simpler: nothing to OCR or match —
+// the package and its customer are already known from receiving. This
+// screen just needs to confirm "this specific package is now leaving
+// with this courier" and flip it, via the scan_out_package RPC (see
+// 20260813010000_courier_scan_out.sql), which resolves the caller's own
+// tracking prefix server-side rather than trusting anything from the
+// client.
+enum _ScanOutResultKind { success, alreadyPickedUp, notFound, error }
+
+class _ScanOutPage extends StatefulWidget {
+  final DatabaseService db;
+  final String prefix;
+  final String companyName;
+  const _ScanOutPage({
+    required this.db,
+    required this.prefix,
+    required this.companyName,
+  });
+
+  @override
+  State<_ScanOutPage> createState() => _ScanOutPageState();
+}
+
+class _ScanOutPageState extends State<_ScanOutPage> {
+  MobileScannerController? _controller;
+  final _manualCtrl = TextEditingController();
+  bool _paused = false;
+  bool _processing = false;
+  bool _rapidScan = true;
+  int _sessionCount = 0;
+
+  _ScanOutResultKind? _resultKind;
+  Map<String, dynamic>? _resultEntry;
+  String? _resultMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    // No point requesting camera permission on an account with nothing to
+    // scope scans to — build() shows the "contact support" panel instead.
+    if (widget.prefix.isNotEmpty) {
+      _controller = MobileScannerController(
+        formats: const [
+          BarcodeFormat.code128,
+          BarcodeFormat.code39,
+          BarcodeFormat.ean13,
+          BarcodeFormat.ean8,
+          BarcodeFormat.upcA,
+          BarcodeFormat.upcE,
+          BarcodeFormat.itf,
+          BarcodeFormat.qrCode,
+          BarcodeFormat.dataMatrix,
+        ],
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    _manualCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_paused || _processing || _resultKind != null || capture.barcodes.isEmpty) return;
+    final value = capture.barcodes.first.rawValue;
+    if (value == null || value.trim().isEmpty) return;
+    _scanOut(value.trim());
+  }
+
+  void _submitManual() {
+    final code = _manualCtrl.text.trim();
+    if (code.isEmpty || _processing) return;
+    _manualCtrl.clear();
+    _scanOut(code);
+  }
+
+  Future<void> _scanOut(String code) async {
+    setState(() {
+      _processing = true;
+      _resultKind = null;
+      _resultEntry = null;
+      _resultMessage = null;
+    });
+    try {
+      final result = await widget.db.scanOutPackage(code: code);
+      if (result['ok'] != true) {
+        final error = result['error']?.toString() ?? 'unknown_error';
+        setState(() {
+          _processing = false;
+          _resultKind = error == 'not_found' ? _ScanOutResultKind.notFound : _ScanOutResultKind.error;
+          _resultMessage = switch (error) {
+            'not_found' => 'No package found in your account matching "$code".',
+            'no_tracking_prefix' => 'No tracking prefix is configured for this account — contact support.',
+            'empty_code' => 'Enter or scan a tracking number or barcode.',
+            _ => 'Could not scan out this package ($error).',
+          };
+        });
+        return;
+      }
+      final already = result['already_picked_up'] == true;
+      setState(() {
+        _processing = false;
+        _resultKind = already ? _ScanOutResultKind.alreadyPickedUp : _ScanOutResultKind.success;
+        _resultEntry = Map<String, dynamic>.from(result['entry'] as Map);
+        if (!already) _sessionCount++;
+      });
+      // Only a clean outcome auto-advances — a courier mid-rapid-scan
+      // should never have a "not found"/error banner disappear on its own
+      // before they've actually seen it.
+      if (_rapidScan) {
+        await Future.delayed(const Duration(milliseconds: 1600));
+        if (mounted) _resetForNextScan();
+      }
+    } catch (e) {
+      setState(() {
+        _processing = false;
+        _resultKind = _ScanOutResultKind.error;
+        _resultMessage = 'Something went wrong: $e';
+      });
+    }
+  }
+
+  void _resetForNextScan() {
+    setState(() {
+      _resultKind = null;
+      _resultEntry = null;
+      _resultMessage = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.prefix.isEmpty) {
+      return _PagePanel(
+        title: 'Scan Out',
+        subtitle: 'Scan a package to record pickup from the warehouse.',
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _border),
+          ),
+          padding: const EdgeInsets.all(40),
+          alignment: Alignment.center,
+          child: Text(
+            'No tracking prefix is configured for this account yet — '
+            'contact support to have one assigned before packages can be '
+            'scanned out.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: _muted),
+          ),
+        ),
+      );
+    }
+    return _PagePanel(
+      title: 'Scan Out',
+      subtitle: 'Scan a package barcode to record pickup from the warehouse.',
+      actions: [
+        Text(
+          'Scanned out: $_sessionCount',
+          style: TextStyle(fontSize: 12, color: _muted, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(width: 16),
+        const Text('Rapid Scan', style: TextStyle(fontSize: 12)),
+        Switch(
+          value: _rapidScan,
+          onChanged: (v) => setState(() => _rapidScan = v),
+          activeThumbColor: AppTheme.primary,
+        ),
+      ],
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (_controller != null) MobileScanner(controller: _controller, onDetect: _onDetect),
+                  if (_paused)
+                    Container(
+                      color: Colors.black87,
+                      alignment: Alignment.center,
+                      child: const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.pause_circle_outline, color: Colors.white, size: 48),
+                          SizedBox(height: 8),
+                          Text('Scanning Paused', style: TextStyle(color: Colors.white, fontSize: 18)),
+                        ],
+                      ),
+                    )
+                  else if (_resultKind == null && !_processing)
+                    Align(
+                      alignment: Alignment.center,
+                      child: Container(
+                        width: 260,
+                        height: 160,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white, width: 3),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  if (_processing)
+                    Container(
+                      color: Colors.black54,
+                      alignment: Alignment.center,
+                      child: const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: Colors.white),
+                          SizedBox(height: 12),
+                          Text('Scanning out…', style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                  if (_resultKind != null) _buildResultOverlay(),
+                ],
+              ),
+            ),
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _manualCtrl,
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            hintText: 'Or type tracking number / barcode',
+                            border: OutlineInputBorder(),
+                          ),
+                          onSubmitted: (_) => _submitManual(),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      FilledButton(
+                        onPressed: _processing ? null : _submitManual,
+                        child: const Text('Scan Out'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () => setState(() => _paused = !_paused),
+                    icon: Icon(_paused ? Icons.play_arrow : Icons.pause, size: 18),
+                    label: Text(_paused ? 'Resume Scanning' : 'Pause Scanning'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResultOverlay() {
+    final kind = _resultKind!;
+    final color = switch (kind) {
+      _ScanOutResultKind.success => AppTheme.success,
+      _ScanOutResultKind.alreadyPickedUp => AppTheme.warning,
+      _ScanOutResultKind.notFound => AppTheme.warning,
+      _ScanOutResultKind.error => AppTheme.danger,
+    };
+    final icon = switch (kind) {
+      _ScanOutResultKind.success => Icons.check_circle,
+      _ScanOutResultKind.alreadyPickedUp => Icons.history,
+      _ScanOutResultKind.notFound => Icons.search_off,
+      _ScanOutResultKind.error => Icons.error_outline,
+    };
+    final title = switch (kind) {
+      _ScanOutResultKind.success => '✓ PICKED UP',
+      _ScanOutResultKind.alreadyPickedUp => 'ALREADY PICKED UP',
+      _ScanOutResultKind.notFound => 'NOT FOUND',
+      _ScanOutResultKind.error => 'ERROR',
+    };
+    final entry = _resultEntry;
+    final autoResets = _rapidScan &&
+        (kind == _ScanOutResultKind.success || kind == _ScanOutResultKind.alreadyPickedUp);
+    return Container(
+      color: Colors.black.withValues(alpha: 0.82),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 56),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 0.5),
+          ),
+          const SizedBox(height: 10),
+          if (entry != null) ...[
+            Text(
+              entry['tracking_number']?.toString() ?? '—',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+            ),
+            if ((entry['customer_name'] as String?)?.isNotEmpty == true)
+              Text(entry['customer_name'].toString(), style: const TextStyle(color: Colors.white70)),
+            if ((entry['description'] as String?)?.isNotEmpty == true)
+              Text(
+                entry['description'].toString(),
+                style: const TextStyle(color: Colors.white70, fontSize: 12.5),
+              ),
+            if (kind == _ScanOutResultKind.alreadyPickedUp) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Picked up ${_formatTs(entry['picked_up_at'])} by ${entry['picked_up_by'] ?? 'unknown'}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontSize: 12.5),
+              ),
+            ],
+          ] else if (_resultMessage != null)
+            Text(_resultMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70)),
+          const SizedBox(height: 16),
+          if (autoResets)
+            const Text('Ready for next scan…', style: TextStyle(color: Colors.white54, fontSize: 12.5))
+          else
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white54),
+              ),
+              onPressed: _resetForNextScan,
+              child: Text(
+                kind == _ScanOutResultKind.notFound || kind == _ScanOutResultKind.error
+                    ? 'Try Again'
+                    : 'Scan Next Package',
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTs(dynamic v) {
+    if (v == null) return '—';
+    final t = DateTime.tryParse(v.toString())?.toLocal();
+    if (t == null) return v.toString();
+    return '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')} '
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
   }
 }
 
