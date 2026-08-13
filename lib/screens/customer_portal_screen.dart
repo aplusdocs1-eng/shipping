@@ -1527,7 +1527,9 @@ class _ShippingAddressesPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mailbox = (customer['mailbox_number'] as String?) ?? '—';
+    final rawMailbox = (customer['mailbox_number'] as String?)?.trim();
+    final hasMailbox = rawMailbox != null && rawMailbox.isNotEmpty;
+    final mailbox = hasMailbox ? rawMailbox : '';
     final name = (customer['name'] as String?) ?? 'Customer';
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -1612,8 +1614,45 @@ class _ShippingAddressesPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          LayoutBuilder(
-            builder: (context, c) {
+          if (!hasMailbox)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.error_outline, color: Color(0xFFD97706)),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Mailbox number not yet assigned',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Your account doesn\'t have a unique mailbox number '
+                          'yet, so a shipping address can\'t be shown safely — '
+                          'without it, packages can\'t be matched to you at the '
+                          'warehouse. Contact support and we\'ll get one '
+                          'assigned.',
+                          style: TextStyle(fontSize: 12.5, color: Color(0xFF6B7280)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, c) {
               final wide = c.maxWidth > 800;
               final air = _WarehouseAddressCard(
                 title: 'AIR Warehouse',
