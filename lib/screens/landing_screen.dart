@@ -89,10 +89,7 @@ class _LandingScreenState extends State<LandingScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Text(
           title,
-          style: const TextStyle(
-            color: LandingScreen.navy,
-            fontWeight: FontWeight.w800,
-          ),
+          style: const TextStyle(color: LandingScreen.navy, fontWeight: FontWeight.w800),
         ),
         content: Text(
           body,
@@ -101,10 +98,7 @@ class _LandingScreenState extends State<LandingScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text(
-              'Close',
-              style: TextStyle(color: LandingScreen.secondaryNavy),
-            ),
+            child: const Text('Close', style: TextStyle(color: LandingScreen.secondaryNavy)),
           ),
         ],
       ),
@@ -112,9 +106,7 @@ class _LandingScreenState extends State<LandingScreen> {
   }
 
   void _goToCustomerSignUp() {
-    Navigator.of(
-      context,
-    ).pushNamed('/customer-login', arguments: {'signup': true});
+    Navigator.of(context).pushNamed('/customer-login', arguments: {'signup': true});
   }
 
   void _goToCustomerSignIn() {
@@ -122,9 +114,7 @@ class _LandingScreenState extends State<LandingScreen> {
   }
 
   void _goToPartnerSignUp() {
-    Navigator.of(
-      context,
-    ).pushNamed('/partner-login', arguments: {'signup': true});
+    Navigator.of(context).pushNamed('/partner-login', arguments: {'signup': true});
   }
 
   void _showKnutsfordDialog() {
@@ -168,10 +158,7 @@ class _LandingScreenState extends State<LandingScreen> {
               scrollController: _scrollController,
               onLearnMore: () => Navigator.of(context).pushNamed('/services'),
             ),
-            _WhyChooseUs(
-              content: _content,
-              scrollController: _scrollController,
-            ),
+            _WhyChooseUs(content: _content, scrollController: _scrollController),
             _StatsBar(content: _content, scrollController: _scrollController),
             _RevealOnScroll(
               key: _ctaKey,
@@ -214,6 +201,7 @@ class _MaxWidth extends StatelessWidget {
   }
 }
 
+
 // ---------------------------------------------------------------------------
 // Scroll animation helpers
 // ---------------------------------------------------------------------------
@@ -254,10 +242,8 @@ class _RevealOnScrollState extends State<_RevealOnScroll>
       duration: const Duration(milliseconds: 550),
     );
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
-    _slide = Tween<Offset>(
-      begin: const Offset(0, 0.06),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    _slide = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     widget.scrollController.addListener(_checkVisibility);
     // Catches content that's already on screen at first frame (the hero,
     // on a tall viewport) without needing a scroll event to fire first.
@@ -340,10 +326,7 @@ class _AnimatedStatValueState extends State<_AnimatedStatValue>
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
-    _animation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    );
+    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
     widget.scrollController.addListener(_checkVisibility);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkVisibility());
   }
@@ -430,9 +413,7 @@ class _Hero extends StatelessWidget {
   Widget build(BuildContext context) {
     final wide = MediaQuery.of(context).size.width > 980;
     final copy = Column(
-      crossAxisAlignment: wide
-          ? CrossAxisAlignment.start
-          : CrossAxisAlignment.center,
+      crossAxisAlignment: wide ? CrossAxisAlignment.start : CrossAxisAlignment.center,
       children: [
         Text(
           content.str('hero', 'titleLine1'),
@@ -462,11 +443,7 @@ class _Hero extends StatelessWidget {
           child: Text(
             content.str('hero', 'subtitle'),
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFFC7D2E0),
-              fontSize: 16,
-              height: 1.5,
-            ),
+            style: const TextStyle(color: Color(0xFFC7D2E0), fontSize: 16, height: 1.5),
           ),
         ),
         const SizedBox(height: 28),
@@ -481,29 +458,18 @@ class _Hero extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      LandingContent.iconFor(
-                        (f['icon'] as String?) ?? '',
-                        Icons.verified_user_outlined,
-                      ),
+                      LandingContent.iconFor((f['icon'] as String?) ?? '', Icons.verified_user_outlined),
                       color: LandingScreen.yellow,
                       size: 22,
                     ),
                     const SizedBox(height: 6),
                     Text(
                       (f['line1'] as String?) ?? '',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
+                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800),
                     ),
                     Text(
                       (f['line2'] as String?) ?? '',
-                      style: const TextStyle(
-                        color: Color(0xFFC7D2E0),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: const TextStyle(color: Color(0xFFC7D2E0), fontSize: 11, fontWeight: FontWeight.w700),
                     ),
                   ],
                 ),
@@ -521,17 +487,9 @@ class _Hero extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: LandingScreen.yellow,
                 foregroundColor: LandingScreen.navy,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 26,
-                  vertical: 16,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                textStyle: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -547,17 +505,9 @@ class _Hero extends StatelessWidget {
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.white,
                 side: const BorderSide(color: Colors.white, width: 1.4),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 26,
-                  vertical: 16,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                textStyle: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
               ),
               child: Text(content.str('hero', 'secondaryButtonText')),
             ),
@@ -576,61 +526,23 @@ class _Hero extends StatelessWidget {
             spacing: 10,
             runSpacing: 8,
             children: [
-              Text(
-                content.str('hero', 'originFlag'),
-                style: const TextStyle(fontSize: 18),
-              ),
+              Text(content.str('hero', 'originFlag'), style: const TextStyle(fontSize: 18)),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    content.str('hero', 'originLabel'),
-                    style: const TextStyle(
-                      color: Color(0xFFC7D2E0),
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    content.str('hero', 'originText'),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  Text(content.str('hero', 'originLabel'), style: const TextStyle(color: Color(0xFFC7D2E0), fontSize: 9, fontWeight: FontWeight.w700)),
+                  Text(content.str('hero', 'originText'), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
                 ],
               ),
-              const Icon(
-                Icons.double_arrow,
-                color: LandingScreen.yellow,
-                size: 16,
-              ),
-              Text(
-                content.str('hero', 'destFlag'),
-                style: const TextStyle(fontSize: 18),
-              ),
+              const Icon(Icons.double_arrow, color: LandingScreen.yellow, size: 16),
+              Text(content.str('hero', 'destFlag'), style: const TextStyle(fontSize: 18)),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    content.str('hero', 'destLabel'),
-                    style: const TextStyle(
-                      color: Color(0xFFC7D2E0),
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    content.str('hero', 'destText'),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  Text(content.str('hero', 'destLabel'), style: const TextStyle(color: Color(0xFFC7D2E0), fontSize: 9, fontWeight: FontWeight.w700)),
+                  Text(content.str('hero', 'destText'), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
                 ],
               ),
             ],
@@ -647,11 +559,7 @@ class _Hero extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
             boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                blurRadius: 30,
-                offset: const Offset(0, 16),
-              ),
+              BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 30, offset: const Offset(0, 16)),
             ],
           ),
           child: ClipRRect(
@@ -753,77 +661,60 @@ class _KnutsfordCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          width: 220,
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.25),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: content.str('knutsford', 'titlePrefix'),
-                      style: const TextStyle(
-                        color: Color(0xFFD6006E),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                    TextSpan(
-                      text: content.str('knutsford', 'titleSuffix'),
-                      style: const TextStyle(
-                        color: LandingScreen.navy,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                content.str('knutsford', 'subtitle'),
-                style: const TextStyle(
-                  color: LandingScreen.charcoal,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: LandingScreen.yellow,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  content.str('knutsford', 'badge'),
+      width: 220,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 18, offset: const Offset(0, 8)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: content.str('knutsford', 'titlePrefix'),
                   style: const TextStyle(
-                    color: LandingScreen.navy,
-                    fontSize: 11,
+                    color: Color(0xFFD6006E),
+                    fontSize: 18,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: 0.4,
+                    fontStyle: FontStyle.italic,
                   ),
                 ),
-              ),
-            ],
+                TextSpan(
+                  text: content.str('knutsford', 'titleSuffix'),
+                  style: const TextStyle(
+                    color: LandingScreen.navy,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
           ),
+          const SizedBox(height: 8),
+          Text(
+            content.str('knutsford', 'subtitle'),
+            style: const TextStyle(color: LandingScreen.charcoal, fontSize: 10.5, fontWeight: FontWeight.w700, height: 1.4),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(color: LandingScreen.yellow, borderRadius: BorderRadius.circular(6)),
+            alignment: Alignment.center,
+            child: Text(
+              content.str('knutsford', 'badge'),
+              style: const TextStyle(color: LandingScreen.navy, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.4),
+            ),
+          ),
+        ],
+      ),
         ),
       ),
     );
@@ -864,30 +755,18 @@ class _Services extends StatelessWidget {
           children: [
             Text(
               content.str('services', 'eyebrow'),
-              style: const TextStyle(
-                color: LandingScreen.gold,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.2,
-              ),
+              style: const TextStyle(color: LandingScreen.gold, fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1.2),
             ),
             const SizedBox(height: 10),
             Text(
               content.str('services', 'heading'),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: LandingScreen.navy,
-                fontSize: 30,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-              ),
+              style: const TextStyle(color: LandingScreen.navy, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: -0.5),
             ),
             const SizedBox(height: 44),
             LayoutBuilder(
               builder: (context, c) {
-                final cols = c.maxWidth > 1000
-                    ? 5
-                    : (c.maxWidth > 700 ? 3 : (c.maxWidth > 420 ? 2 : 1));
+                final cols = c.maxWidth > 1000 ? 5 : (c.maxWidth > 700 ? 3 : (c.maxWidth > 420 ? 2 : 1));
                 return GridView.count(
                   crossAxisCount: cols,
                   shrinkWrap: true,
@@ -902,8 +781,7 @@ class _Services extends StatelessWidget {
                         delay: Duration(milliseconds: 80 * (i % 5)),
                         child: _ServiceCard(
                           imageUrl: (items[i]['imageUrl'] as String?) ?? '',
-                          fallbackAsset:
-                              _fallbackAssets[i % _fallbackAssets.length],
+                          fallbackAsset: _fallbackAssets[i % _fallbackAssets.length],
                           icon: LandingContent.iconFor(
                             (items[i]['icon'] as String?) ?? '',
                             Icons.local_shipping_outlined,
@@ -969,110 +847,77 @@ class _ServiceCardState extends State<_ServiceCard> {
               : const [],
         ),
         child: Material(
-          color: LandingScreen.iceGray,
-          borderRadius: BorderRadius.circular(14),
-          child: InkWell(
-            onTap: widget.onTap,
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: LandingScreen.borderGray),
+      color: LandingScreen.iceGray,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+      onTap: widget.onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: LandingScreen.borderGray),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), topRight: Radius.circular(14)),
+                child: AspectRatio(
+                  aspectRatio: 3 / 2,
+                  child: AdaptiveImage(url: widget.imageUrl, assetPath: widget.fallbackAsset, fit: BoxFit.cover),
+                ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      ClipRRect(
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(14),
-                          topRight: Radius.circular(14),
-                        ),
-                        child: AspectRatio(
-                          aspectRatio: 3 / 2,
-                          child: AdaptiveImage(
-                            url: widget.imageUrl,
-                            assetPath: widget.fallbackAsset,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        bottom: -23,
-                        left: 16,
-                        child: Container(
-                          width: 46,
-                          height: 46,
-                          decoration: BoxDecoration(
-                            color: LandingScreen.yellow,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: LandingScreen.iceGray,
-                              width: 3,
-                            ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Icon(
-                            widget.icon,
-                            color: LandingScreen.navy,
-                            size: 22,
-                          ),
-                        ),
-                      ),
-                    ],
+              Positioned(
+                bottom: -23,
+                left: 16,
+                child: Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: LandingScreen.yellow,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: LandingScreen.iceGray, width: 3),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 32, 16, 18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.title,
-                          style: const TextStyle(
-                            color: LandingScreen.navy,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          widget.desc,
-                          style: const TextStyle(
-                            color: LandingScreen.charcoalSoft,
-                            fontSize: 12.5,
-                            height: 1.5,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'LEARN MORE',
-                              style: TextStyle(
-                                color: LandingScreen.secondaryNavy,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            SizedBox(width: 4),
-                            Icon(
-                              Icons.arrow_forward,
-                              size: 12,
-                              color: LandingScreen.secondaryNavy,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                  alignment: Alignment.center,
+                  child: Icon(widget.icon, color: LandingScreen.navy, size: 22),
+                ),
               ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 32, 16, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.title,
+                  style: const TextStyle(color: LandingScreen.navy, fontWeight: FontWeight.w800, fontSize: 15),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  widget.desc,
+                  style: const TextStyle(color: LandingScreen.charcoalSoft, fontSize: 12.5, height: 1.5),
+                ),
+                const SizedBox(height: 12),
+                const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('LEARN MORE', style: TextStyle(color: LandingScreen.secondaryNavy, fontSize: 11, fontWeight: FontWeight.w800)),
+                    SizedBox(width: 4),
+                    Icon(Icons.arrow_forward, size: 12, color: LandingScreen.secondaryNavy),
+                  ],
+                ),
+              ],
             ),
           ),
-        ),
+        ],
+      ),
+      ),
+      ),
+    ),
       ),
     );
   }
@@ -1098,23 +943,13 @@ class _WhyChooseUs extends StatelessWidget {
           children: [
             Text(
               content.str('whyChooseUs', 'eyebrow'),
-              style: const TextStyle(
-                color: LandingScreen.gold,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.2,
-              ),
+              style: const TextStyle(color: LandingScreen.gold, fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1.2),
             ),
             const SizedBox(height: 10),
             Text(
               content.str('whyChooseUs', 'heading'),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 26,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.3,
-              ),
+              style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.3),
             ),
             const SizedBox(height: 44),
             LayoutBuilder(
@@ -1136,10 +971,7 @@ class _WhyChooseUs extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Icon(
-                              LandingContent.iconFor(
-                                (items[i]['icon'] as String?) ?? '',
-                                Icons.star_outline,
-                              ),
+                              LandingContent.iconFor((items[i]['icon'] as String?) ?? '', Icons.star_outline),
                               color: LandingScreen.yellow,
                               size: 28,
                             ),
@@ -1147,21 +979,13 @@ class _WhyChooseUs extends StatelessWidget {
                             Text(
                               (items[i]['title'] as String?) ?? '',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                              ),
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
                             ),
                             const SizedBox(height: 6),
                             Text(
                               (items[i]['description'] as String?) ?? '',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Color(0xFFA9B8CC),
-                                fontSize: 11.5,
-                                height: 1.4,
-                              ),
+                              style: const TextStyle(color: Color(0xFFA9B8CC), fontSize: 11.5, height: 1.4),
                             ),
                           ],
                         ),
@@ -1216,11 +1040,7 @@ class _StatsBar extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        _icons[i % _icons.length],
-                        color: LandingScreen.navy,
-                        size: 26,
-                      ),
+                      Icon(_icons[i % _icons.length], color: LandingScreen.navy, size: 26),
                       const SizedBox(width: 10),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1228,21 +1048,10 @@ class _StatsBar extends StatelessWidget {
                         children: [
                           _AnimatedStatValue(
                             value: (stats[i]['value'] as String?) ?? '',
-                            style: const TextStyle(
-                              color: LandingScreen.navy,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900,
-                            ),
+                            style: const TextStyle(color: LandingScreen.navy, fontSize: 20, fontWeight: FontWeight.w900),
                             scrollController: scrollController,
                           ),
-                          Text(
-                            (stats[i]['label'] as String?) ?? '',
-                            style: const TextStyle(
-                              color: LandingScreen.navy,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                          Text((stats[i]['label'] as String?) ?? '', style: const TextStyle(color: LandingScreen.navy, fontSize: 10, fontWeight: FontWeight.w700)),
                         ],
                       ),
                     ],
@@ -1264,47 +1073,29 @@ class _CtaSignup extends StatelessWidget {
   final LandingContent content;
   final VoidCallback onCourierSignUp;
   final VoidCallback onCustomerSignUp;
-  const _CtaSignup({
-    required this.content,
-    required this.onCourierSignUp,
-    required this.onCustomerSignUp,
-  });
+  const _CtaSignup({required this.content, required this.onCourierSignUp, required this.onCustomerSignUp});
 
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.of(context).size.width > 900;
     final intro = Column(
-      crossAxisAlignment: wide
-          ? CrossAxisAlignment.start
-          : CrossAxisAlignment.center,
+      crossAxisAlignment: wide ? CrossAxisAlignment.start : CrossAxisAlignment.center,
       children: [
         Text(
           content.str('cta', 'eyebrow'),
-          style: const TextStyle(
-            color: LandingScreen.gold,
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-          ),
+          style: const TextStyle(color: LandingScreen.gold, fontSize: 22, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 6),
         Text(
           content.str('cta', 'heading'),
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: LandingScreen.navy,
-            fontSize: 26,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.3,
-          ),
+          style: const TextStyle(color: LandingScreen.navy, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.3),
         ),
         const SizedBox(height: 10),
         Text(
           content.str('cta', 'subtitle'),
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: LandingScreen.charcoalSoft,
-            fontSize: 14,
-          ),
+          style: const TextStyle(color: LandingScreen.charcoalSoft, fontSize: 14),
         ),
       ],
     );
@@ -1393,18 +1184,12 @@ class _SignupCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: filled ? LandingScreen.navy : Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: filled ? LandingScreen.navy : LandingScreen.borderGray,
-        ),
+        border: Border.all(color: filled ? LandingScreen.navy : LandingScreen.borderGray),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            icon,
-            color: filled ? LandingScreen.yellow : LandingScreen.navy,
-            size: 28,
-          ),
+          Icon(icon, color: filled ? LandingScreen.yellow : LandingScreen.navy, size: 28),
           const SizedBox(height: 14),
           Text(
             title,
@@ -1419,9 +1204,7 @@ class _SignupCard extends StatelessWidget {
           Text(
             desc,
             style: TextStyle(
-              color: filled
-                  ? const Color(0xFFC7D2E0)
-                  : LandingScreen.charcoalSoft,
+              color: filled ? const Color(0xFFC7D2E0) : LandingScreen.charcoalSoft,
               fontSize: 12.5,
               height: 1.5,
             ),
@@ -1432,18 +1215,11 @@ class _SignupCard extends StatelessWidget {
             child: ElevatedButton(
               onPressed: onTap,
               style: ElevatedButton.styleFrom(
-                backgroundColor: filled
-                    ? LandingScreen.yellow
-                    : LandingScreen.navy,
+                backgroundColor: filled ? LandingScreen.yellow : LandingScreen.navy,
                 foregroundColor: filled ? LandingScreen.navy : Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                textStyle: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
               ),
               child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1461,3 +1237,4 @@ class _SignupCard extends StatelessWidget {
     );
   }
 }
+

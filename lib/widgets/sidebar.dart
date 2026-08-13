@@ -56,14 +56,9 @@ class AppNavDrawer extends StatelessWidget {
           // of the page's light one — nav text stays exactly as readable
           // as it was against the old solid sidebarBg.
           const Positioned.fill(
-            child: ColoredBox(
-              color: Color(0xE6171519),
-            ), // AppTheme.sidebarBg @ ~90% alpha
+            child: ColoredBox(color: Color(0xE6171519)), // AppTheme.sidebarBg @ ~90% alpha
           ),
-          _DrawerContent(
-            selectedIndex: selectedIndex,
-            onItemSelected: onItemSelected,
-          ),
+          _DrawerContent(selectedIndex: selectedIndex, onItemSelected: onItemSelected),
         ],
       ),
     );
@@ -73,10 +68,7 @@ class AppNavDrawer extends StatelessWidget {
 class _DrawerContent extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onItemSelected;
-  const _DrawerContent({
-    required this.selectedIndex,
-    required this.onItemSelected,
-  });
+  const _DrawerContent({required this.selectedIndex, required this.onItemSelected});
 
   @override
   Widget build(BuildContext context) {
@@ -108,11 +100,7 @@ class _DrawerContent extends StatelessWidget {
                 const Spacer(),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(
-                    Icons.close,
-                    size: 22,
-                    color: AppTheme.sidebarText,
-                  ),
+                  icon: const Icon(Icons.close, size: 22, color: AppTheme.sidebarText),
                 ),
               ],
             ),
@@ -355,9 +343,7 @@ class _DrawerTile extends StatelessWidget {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
-                color: isSelected
-                    ? AppTheme.sidebarActive
-                    : AppTheme.sidebarText,
+                color: isSelected ? AppTheme.sidebarActive : AppTheme.sidebarText,
               ),
             ),
           ),
