@@ -289,7 +289,11 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
       case 'Mobile App':
         return const _MobileAppPage();
       case 'Settings':
-        return _SettingsPage(customer: _customer!, onLogout: _logout);
+        return _SettingsPage(
+          customer: _customer!,
+          onLogout: _logout,
+          onProfileUpdated: (updated) => setState(() => _customer = updated),
+        );
       default:
         return const SizedBox.shrink();
     }
@@ -2620,14 +2624,118 @@ class _MobileAppPage extends StatelessWidget {
 
 // ═════ Settings ══════════════════════════════════════════════════════════
 
-class _SettingsPage extends StatelessWidget {
+class _SettingsPage extends StatefulWidget {
   final Map<String, dynamic> customer;
   final VoidCallback onLogout;
-  const _SettingsPage({required this.customer, required this.onLogout});
+  final ValueChanged<Map<String, dynamic>> onProfileUpdated;
+  const _SettingsPage({
+    required this.customer,
+    required this.onLogout,
+    required this.onProfileUpdated,
+  });
+
+  @override
+  State<_SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<_SettingsPage> {
+  final _db = DatabaseService();
+  late final _nameCtl = TextEditingController(
+    text: (widget.customer['name'] as String?) ?? '',
+  );
+  late final _phoneCtl = TextEditingController(
+    text: (widget.customer['phone'] as String?) ?? '',
+  );
+  late final _addressCtl = TextEditingController(
+    text: (widget.customer['address'] as String?) ?? '',
+  );
+  bool _saving = false;
+  String? _saveError;
+  bool _requestingDeletion = false;
+
+  @override
+  void dispose() {
+    _nameCtl.dispose();
+    _phoneCtl.dispose();
+    _addressCtl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveProfile() async {
+    if (_nameCtl.text.trim().isEmpty) {
+      setState(() => _saveError = 'Name is required.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
+    try {
+      final updated = await _db.updateOwnCustomerProfile(
+        name: _nameCtl.text.trim(),
+        phone: _phoneCtl.text.trim(),
+        address: _addressCtl.text.trim(),
+      );
+      widget.onProfileUpdated(updated);
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profile saved.'),
+          backgroundColor: Color(0xFF16A34A),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _saveError = 'Failed to save: $e';
+      });
+    }
+  }
+
+  Future<void> _confirmDeletion() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Request account deletion?'),
+        content: const Text(
+          'This submits a real request to One Village staff to delete your '
+          'account. Nothing is deleted immediately — your request will be '
+          'reviewed and processed according to policy. You\'ll be signed '
+          'out now.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+            onPressed: () => Navigator.of(dctx).pop(true),
+            child: const Text('Request Deletion'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _requestingDeletion = true);
+    try {
+      await _db.requestOwnAccountDeletion();
+      widget.onLogout();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _requestingDeletion = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to submit request: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final address = (customer['address'] as String?) ?? '';
+    final email = (widget.customer['email'] as String?) ?? '';
+    final deletionRequestedAt = widget.customer['deletion_requested_at'] as String?;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -2639,7 +2747,7 @@ class _SettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           const Text(
-            'Manage your account settings and delivery addresses',
+            'Manage your account profile and delivery address',
             style: TextStyle(color: Color(0xFF6B7280)),
           ),
           const SizedBox(height: 20),
@@ -2654,86 +2762,88 @@ class _SettingsPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
+                const Row(
                   children: [
-                    const Icon(Icons.location_on_outlined, size: 18),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'Delivery Addresses',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const Spacer(),
-                    ElevatedButton.icon(
-                      onPressed: () {},
-                      icon: const Icon(Icons.add, size: 14),
-                      label: const Text('Add Address'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        textStyle: const TextStyle(fontSize: 12),
-                      ),
+                    Icon(Icons.person_outline, size: 18),
+                    SizedBox(width: 6),
+                    Text(
+                      'Profile',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Manage your delivery addresses for package deliveries',
+                  'Your name, phone, and delivery address.',
                   style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
                 ),
                 const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
-                    borderRadius: BorderRadius.circular(10),
+                _SettingsField(label: 'Full Name', controller: _nameCtl),
+                const SizedBox(height: 12),
+                _SettingsField(label: 'Phone', controller: _phoneCtl),
+                const SizedBox(height: 12),
+                _SettingsField(
+                  label: 'Delivery Address',
+                  controller: _addressCtl,
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Email',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Text(
+                        email.isEmpty ? 'No email on file' : email,
+                        style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Contact support to change the email you sign in with.',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+                    ),
+                  ],
+                ),
+                if (_saveError != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _saveError!,
+                    style: const TextStyle(color: Color(0xFFDC2626), fontSize: 12.5),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'Address',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.edit_outlined,
-                              size: 16,
-                              color: Color(0xFF6366F1),
-                            ),
-                            onPressed: () {},
-                          ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              size: 16,
-                              color: Color(0xFFEF4444),
-                            ),
-                            onPressed: () {},
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        address.isEmpty
-                            ? 'No delivery address saved.'
-                            : address,
-                        style: const TextStyle(
-                          color: Color(0xFF374151),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
+                ],
+                const SizedBox(height: 16),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ElevatedButton(
+                    onPressed: _saving ? null : _saveProfile,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    ),
+                    child: _saving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Save Changes'),
                   ),
                 ),
               ],
@@ -2769,22 +2879,31 @@ class _SettingsPage extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  'Permanently request deletion of your account. Once submitted you will be signed out and your request will be processed according to our policy.',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF7F1D1D)),
+                Text(
+                  deletionRequestedAt != null
+                      ? 'Your deletion request was submitted and is awaiting review by staff.'
+                      : 'Permanently request deletion of your account. Once submitted you will be signed out and your request will be processed according to our policy.',
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF7F1D1D)),
                 ),
                 const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: ElevatedButton(
-                    onPressed: () {},
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFEF4444),
-                      foregroundColor: Colors.white,
+                if (deletionRequestedAt == null)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: ElevatedButton(
+                      onPressed: _requestingDeletion ? null : _confirmDeletion,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFEF4444),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: _requestingDeletion
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Request account deletion'),
                     ),
-                    child: const Text('Request account deletion'),
                   ),
-                ),
               ],
             ),
           ),
@@ -2792,13 +2911,52 @@ class _SettingsPage extends StatelessWidget {
           Align(
             alignment: Alignment.centerLeft,
             child: OutlinedButton.icon(
-              onPressed: onLogout,
+              onPressed: widget.onLogout,
               icon: const Icon(Icons.logout, size: 16),
               label: const Text('Sign out'),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SettingsField extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final int maxLines;
+  const _SettingsField({
+    required this.label,
+    required this.controller,
+    this.maxLines = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF6B7280),
+          ),
+        ),
+        const SizedBox(height: 4),
+        TextField(
+          controller: controller,
+          maxLines: maxLines,
+          style: const TextStyle(fontSize: 13),
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+      ],
     );
   }
 }

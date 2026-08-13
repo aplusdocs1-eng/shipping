@@ -264,6 +264,38 @@ class DatabaseService {
     return Map<String, dynamic>.from(data);
   }
 
+  /// Customer-portal Settings: lets the *currently signed-in* customer edit
+  /// their own name/phone/address. Goes through a SECURITY DEFINER RPC
+  /// rather than a raw client update — there's no RLS policy letting a
+  /// customer UPDATE their own row anymore (see
+  /// 20260813040000_customer_self_service.sql for why a blanket one was
+  /// actively dangerous), and this RPC only ever touches these 3 columns
+  /// regardless of what's passed, resolving *which* row via auth.uid()
+  /// server-side rather than a client-supplied id.
+  Future<Map<String, dynamic>> updateOwnCustomerProfile({
+    required String name,
+    required String phone,
+    required String address,
+  }) async {
+    final data = await _db.rpc(
+      'update_own_customer_profile',
+      params: {'p_name': name, 'p_phone': phone, 'p_address': address},
+    );
+    final list = List<Map<String, dynamic>>.from(data as List);
+    if (list.isEmpty) {
+      throw Exception('No customer row found for the current session.');
+    }
+    return list.first;
+  }
+
+  /// Records a real, persisted request — does not delete anything itself.
+  /// Staff review and action it same as the button's own copy promises;
+  /// surfaced as a badge on the admin Customers screen, which already
+  /// loads every column via getCustomers()'s plain select().
+  Future<void> requestOwnAccountDeletion() async {
+    await _db.rpc('request_own_account_deletion');
+  }
+
   /// Self-serve customer sign-up, scoped to the partner whose domain the
   /// customer registered on. Goes through a SECURITY DEFINER RPC because
   /// a brand-new customer has no row yet to satisfy the RLS insert check.

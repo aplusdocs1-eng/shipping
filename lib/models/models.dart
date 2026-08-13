@@ -175,6 +175,10 @@ class Customer {
   // strongest signal (see CustomerMatchService): if this code appears
   // printed anywhere on a label, it's about as certain a match as exists.
   final String mailboxNumber;
+  // Set when the customer submits "Request account deletion" from their
+  // own portal Settings page — a request for staff to review, not an
+  // actual deletion (see request_own_account_deletion()).
+  final DateTime? deletionRequestedAt;
 
   Customer({
     required this.id,
@@ -190,6 +194,7 @@ class Customer {
     required this.isActive,
     this.partnerId,
     this.mailboxNumber = '',
+    this.deletionRequestedAt,
   });
 
   factory Customer.fromMap(Map<String, dynamic> m) => Customer(
@@ -207,6 +212,9 @@ class Customer {
     isActive: (m['status']?.toString() ?? 'active') != 'inactive',
     partnerId: m['partner_id']?.toString(),
     mailboxNumber: m['mailbox_number']?.toString() ?? '',
+    deletionRequestedAt: DateTime.tryParse(
+      m['deletion_requested_at']?.toString() ?? '',
+    ),
   );
 
   Customer copyWith({int? totalPackages, double? balance}) => Customer(
@@ -223,6 +231,7 @@ class Customer {
     isActive: isActive,
     partnerId: partnerId,
     mailboxNumber: mailboxNumber,
+    deletionRequestedAt: deletionRequestedAt,
   );
 }
 

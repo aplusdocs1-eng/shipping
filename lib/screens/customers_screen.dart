@@ -17,6 +17,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
   bool? _filterActive;
+  bool _filterDeletionRequested = false;
   // null = every courier/tenant; otherwise a partner_accounts.id, including
   // the seeded "00000000-0000-0000-0000-000000000001" One Village direct
   // bucket — customers who signed up on the main site rather than through
@@ -110,9 +111,14 @@ class _CustomersScreenState extends State<CustomersScreen> {
           _filterActive == null || c.isActive == _filterActive;
       final matchesPartner =
           _filterPartnerId == null || c.partnerId == _filterPartnerId;
-      return matchesSearch && matchesActive && matchesPartner;
+      final matchesDeletion =
+          !_filterDeletionRequested || c.deletionRequestedAt != null;
+      return matchesSearch && matchesActive && matchesPartner && matchesDeletion;
     }).toList();
   }
+
+  int get _pendingDeletionCount =>
+      _allCustomers.where((c) => c.deletionRequestedAt != null).length;
 
   String partnerLabel(String? partnerId) =>
       partnerId == null ? 'Unassigned' : (_partnerNames[partnerId] ?? 'Unknown');
@@ -211,6 +217,17 @@ class _CustomersScreenState extends State<CustomersScreen> {
                             : false,
                       ),
                     ),
+                    if (_pendingDeletionCount > 0) ...[
+                      const SizedBox(width: 8),
+                      _StatusFilterChip(
+                        label: 'Deletion Requests ($_pendingDeletionCount)',
+                        selected: _filterDeletionRequested,
+                        danger: true,
+                        onTap: () => setState(
+                          () => _filterDeletionRequested = !_filterDeletionRequested,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -341,24 +358,27 @@ class _StatusFilterChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final bool danger;
 
   const _StatusFilterChip({
     required this.label,
     required this.selected,
     required this.onTap,
+    this.danger = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final activeColor = danger ? AppTheme.danger : AppTheme.primary;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         decoration: BoxDecoration(
-          color: selected ? AppTheme.primary : Colors.white,
+          color: selected ? activeColor : Colors.white,
           border: Border.all(
-            color: selected ? AppTheme.primary : AppTheme.border,
+            color: selected ? activeColor : (danger ? AppTheme.danger : AppTheme.border),
           ),
           borderRadius: BorderRadius.circular(8),
         ),
@@ -367,7 +387,7 @@ class _StatusFilterChip extends StatelessWidget {
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: selected ? Colors.white : AppTheme.textSecondary,
+            color: selected ? Colors.white : (danger ? activeColor : AppTheme.textSecondary),
           ),
         ),
       ),
@@ -474,6 +494,31 @@ class _CustomerCard extends StatelessWidget {
                   ),
                 ],
               ),
+              if (customer.deletionRequestedAt != null) ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppTheme.danger.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.warning_amber_rounded, size: 12, color: AppTheme.danger),
+                      SizedBox(width: 4),
+                      Text(
+                        'Deletion requested',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.danger,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const Divider(height: 16, color: AppTheme.border),
               Row(
                 children: [
@@ -641,6 +686,40 @@ class _CustomerDetailPanelState extends State<_CustomerDetailPanel> {
                         ? AppTheme.success
                         : AppTheme.textSecondary,
                   ),
+                  if (widget.customer.deletionRequestedAt != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.danger.withValues(alpha: 0.08),
+                        border: Border.all(color: AppTheme.danger.withValues(alpha: 0.3)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, size: 16, color: AppTheme.danger),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Account deletion requested',
+                                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: AppTheme.danger),
+                                ),
+                                Text(
+                                  DateFormat('MMM d, yyyy').format(widget.customer.deletionRequestedAt!),
+                                  style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
 
                   _InfoCard(
