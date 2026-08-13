@@ -222,6 +222,7 @@ class Customer {
     balance: balance ?? this.balance,
     isActive: isActive,
     partnerId: partnerId,
+    mailboxNumber: mailboxNumber,
   );
 }
 

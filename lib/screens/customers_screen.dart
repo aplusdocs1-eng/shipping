@@ -17,9 +17,19 @@ class _CustomersScreenState extends State<CustomersScreen> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
   bool? _filterActive;
+  // null = every courier/tenant; otherwise a partner_accounts.id, including
+  // the seeded "00000000-0000-0000-0000-000000000001" One Village direct
+  // bucket — customers who signed up on the main site rather than through
+  // a third-party courier's own branded portal.
+  String? _filterPartnerId;
   Customer? _selectedCustomer;
   bool _loading = true;
   List<Customer> _allCustomers = [];
+  // partner_accounts.id -> company_name, for every partner that actually
+  // has at least one customer today — not the full partner_accounts table,
+  // which can carry unused/duplicate rows (e.g. a second, customer-less
+  // "One Village Shipping" row) that would only clutter the filter.
+  Map<String, String> _partnerNames = {};
 
   @override
   void initState() {
@@ -34,10 +44,12 @@ class _CustomersScreenState extends State<CustomersScreen> {
         _db.getCustomers(),
         _db.getPackages(),
         _db.getCustomerBillingInvoices(),
+        _db.getPartnerAccounts(),
       ]);
       final customerRows = (results[0] as List).cast<Map<String, dynamic>>();
       final packageRows = (results[1] as List).cast<Map<String, dynamic>>();
       final invoiceRows = (results[2] as List).cast<Map<String, dynamic>>();
+      final partnerRows = (results[3] as List).cast<Map<String, dynamic>>();
 
       final packageCounts = <String, int>{};
       for (final p in packageRows) {
@@ -52,6 +64,10 @@ class _CustomersScreenState extends State<CustomersScreen> {
         final total = (inv['total'] as num?)?.toDouble() ?? 0;
         balances[cid] = (balances[cid] ?? 0) + total;
       }
+      final allPartnerNames = <String, String>{
+        for (final p in partnerRows)
+          (p['id']?.toString() ?? ''): (p['company_name']?.toString() ?? 'Unknown'),
+      };
 
       final customers = customerRows.map(Customer.fromMap).map((c) {
         return c.copyWith(
@@ -60,9 +76,16 @@ class _CustomersScreenState extends State<CustomersScreen> {
         );
       }).toList();
 
+      final partnerNames = <String, String>{
+        for (final c in customers)
+          if (c.partnerId != null && allPartnerNames.containsKey(c.partnerId))
+            c.partnerId!: allPartnerNames[c.partnerId]!,
+      };
+
       if (mounted)
         setState(() {
           _allCustomers = customers;
+          _partnerNames = partnerNames;
           _loading = false;
         });
     } catch (_) {
@@ -85,9 +108,14 @@ class _CustomersScreenState extends State<CustomersScreen> {
           c.address.toLowerCase().contains(_searchQuery.toLowerCase());
       final matchesActive =
           _filterActive == null || c.isActive == _filterActive;
-      return matchesSearch && matchesActive;
+      final matchesPartner =
+          _filterPartnerId == null || c.partnerId == _filterPartnerId;
+      return matchesSearch && matchesActive && matchesPartner;
     }).toList();
   }
+
+  String partnerLabel(String? partnerId) =>
+      partnerId == null ? 'Unassigned' : (_partnerNames[partnerId] ?? 'Unknown');
 
   @override
   Widget build(BuildContext context) {
@@ -159,6 +187,12 @@ class _CustomersScreenState extends State<CustomersScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
+                    _CourierFilterDropdown(
+                      partnerNames: _partnerNames,
+                      value: _filterPartnerId,
+                      onChanged: (v) => setState(() => _filterPartnerId = v),
+                    ),
+                    const SizedBox(width: 12),
                     _StatusFilterChip(
                       label: 'Active',
                       selected: _filterActive == true,
@@ -209,6 +243,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                 final c = _filtered[index];
                                 return _CustomerCard(
                                   customer: c,
+                                  courierLabel: partnerLabel(c.partnerId),
                                   isSelected: _selectedCustomer?.id == c.id,
                                   onTap: () => setState(
                                     () => _selectedCustomer =
@@ -231,6 +266,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
         if (_selectedCustomer != null)
           _CustomerDetailPanel(
             customer: _selectedCustomer!,
+            courierLabel: partnerLabel(_selectedCustomer!.partnerId),
             onClose: () => setState(() => _selectedCustomer = null),
           ),
       ],
@@ -243,6 +279,61 @@ class _CustomersScreenState extends State<CustomersScreen> {
       builder: (context) => const _NewCustomerDialog(),
     );
     if (result != null) _load();
+  }
+}
+
+/// Filters the customer list to one courier/tenant — including "One
+/// Village Shipping & Freight" itself, the seeded direct-signup bucket
+/// for customers who never went through a third-party courier's own
+/// portal. Options are built from whichever partners actually have a
+/// customer today (see _CustomersScreenState._load), not the full
+/// partner_accounts table, which can carry unused rows.
+class _CourierFilterDropdown extends StatelessWidget {
+  final Map<String, String> partnerNames;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  const _CourierFilterDropdown({
+    required this.partnerNames,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = partnerNames.entries.toList()
+      ..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()));
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: AppTheme.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: value,
+          hint: const Text(
+            'All Couriers',
+            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+          ),
+          icon: const Icon(Icons.expand_more, size: 18, color: AppTheme.textSecondary),
+          items: [
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('All Couriers', style: TextStyle(fontSize: 13)),
+            ),
+            for (final e in entries)
+              DropdownMenuItem<String?>(
+                value: e.key,
+                child: Text(e.value, style: const TextStyle(fontSize: 13)),
+              ),
+          ],
+          onChanged: onChanged,
+        ),
+      ),
+    );
   }
 }
 
@@ -286,11 +377,13 @@ class _StatusFilterChip extends StatelessWidget {
 
 class _CustomerCard extends StatelessWidget {
   final Customer customer;
+  final String courierLabel;
   final bool isSelected;
   final VoidCallback onTap;
 
   const _CustomerCard({
     required this.customer,
+    required this.courierLabel,
     required this.isSelected,
     required this.onTap,
   });
@@ -356,6 +449,28 @@ class _CustomerCard extends StatelessWidget {
                     color: customer.isActive
                         ? AppTheme.success
                         : AppTheme.textSecondary,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.local_shipping_outlined,
+                    size: 12,
+                    color: AppTheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      courierLabel,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.primary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
@@ -425,9 +540,14 @@ class _CustomerCard extends StatelessWidget {
 
 class _CustomerDetailPanel extends StatefulWidget {
   final Customer customer;
+  final String courierLabel;
   final VoidCallback onClose;
 
-  const _CustomerDetailPanel({required this.customer, required this.onClose});
+  const _CustomerDetailPanel({
+    required this.customer,
+    required this.courierLabel,
+    required this.onClose,
+  });
 
   @override
   State<_CustomerDetailPanel> createState() => _CustomerDetailPanelState();
@@ -525,6 +645,13 @@ class _CustomerDetailPanelState extends State<_CustomerDetailPanel> {
 
                   _InfoCard(
                     children: [
+                      _InfoRow(Icons.local_shipping_outlined, widget.courierLabel),
+                      _InfoRow(
+                        Icons.markunread_mailbox_outlined,
+                        widget.customer.mailboxNumber.isEmpty
+                            ? 'No mailbox number assigned'
+                            : widget.customer.mailboxNumber,
+                      ),
                       _InfoRow(Icons.email_outlined, widget.customer.email),
                       _InfoRow(Icons.phone_outlined, widget.customer.phone),
                       _InfoRow(
