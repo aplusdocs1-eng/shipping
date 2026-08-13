@@ -207,6 +207,50 @@ class DatabaseService {
     return Map<String, dynamic>.from(data);
   }
 
+  /// Best-effort suggestion for a new customer's mailbox_number — their
+  /// unique forwarding-address ID (see idx_customers_mailbox_number_unique
+  /// and getWarehouseAddress). [prefix] is normally the courier's own
+  /// tracking_prefix (e.g. "HDS"), so the suggestion reads "HDS-1001" —
+  /// falls back to "CUST" when no prefix is known (e.g. the admin-wide
+  /// Customers screen, which isn't scoped to one courier).
+  ///
+  /// This is only ever a *suggestion* shown in an editable field — the
+  /// real guarantee against two customers colliding is the database's
+  /// unique index, checked at save time via isMailboxNumberConflict.
+  Future<String> suggestNextMailboxNumber({String? prefix}) async {
+    final p = ((prefix == null || prefix.trim().isEmpty)
+            ? 'CUST'
+            : prefix.trim())
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9]'), '');
+    var maxN = 1000;
+    try {
+      final data = await _db
+          .from('customers')
+          .select('mailbox_number')
+          .ilike('mailbox_number', '$p-%');
+      for (final row in List<Map<String, dynamic>>.from(data)) {
+        final mb = (row['mailbox_number'] as String?) ?? '';
+        final m = RegExp(r'-(\d+)$').firstMatch(mb);
+        final n = m == null ? null : int.tryParse(m.group(1)!);
+        if (n != null && n > maxN) maxN = n;
+      }
+    } catch (_) {
+      // Fall through with the base maxN — still just a suggestion, and
+      // the unique index catches a real collision regardless.
+    }
+    return '$p-${maxN + 1}';
+  }
+
+  /// True when [e] is a save failure specifically because the mailbox
+  /// number just submitted is already used by another customer — callers
+  /// show "already in use, try another" instead of a raw database error.
+  bool isMailboxNumberConflict(Object e) =>
+      e is PostgrestException &&
+      e.code == '23505' &&
+      (e.message.contains('mailbox_number') ||
+          (e.details?.toString().contains('mailbox_number') ?? false));
+
   Future<Map<String, dynamic>> updateCustomer(
     String id,
     Map<String, dynamic> updates,
@@ -1254,6 +1298,55 @@ class DatabaseService {
       'updated_at': DateTime.now().toIso8601String(),
       'updated_by': currentUser?.id,
     });
+  }
+
+  /// The one physical warehouse address every customer's personalized
+  /// "Shipping Addresses" page and every courier's dashboard reference —
+  /// admin-editable (Settings → Warehouse Address). Lives in its own
+  /// singleton table, NOT nested inside company_settings.settings: that
+  /// table is admin-only-readable because it also holds integration API
+  /// keys, and a customer or courier session needs to read this value.
+  /// Same "admin write, authenticated read" RLS shape as scanner_settings
+  /// — see 20260813030000_warehouse_settings.sql.
+  static const Map<String, String> defaultWarehouseAddress = {
+    'line1': '559 NE 42ND ST',
+    'city': 'OAKLAND PARK',
+    'state': 'Florida',
+    'zip': '33334',
+    'country': 'United States',
+  };
+
+  Future<Map<String, String>> getWarehouseAddress() async {
+    try {
+      final row = await _db.from('warehouse_settings').select().eq('id', true).single();
+      return {
+        for (final key in defaultWarehouseAddress.keys)
+          key: (row[key] as String?)?.trim().isNotEmpty == true
+              ? row[key] as String
+              : defaultWarehouseAddress[key]!,
+      };
+    } catch (_) {
+      return defaultWarehouseAddress;
+    }
+  }
+
+  Future<void> updateWarehouseAddress(Map<String, String> address) async {
+    // warehouse_settings.updated_by references admin_users(id), not
+    // auth.users(id) — currentUser.id is the latter and would violate the
+    // foreign key (same fix as updateScannerSettings).
+    final adminId = await _currentAdminId();
+    await _db
+        .from('warehouse_settings')
+        .update({
+          'line1': address['line1'],
+          'city': address['city'],
+          'state': address['state'],
+          'zip': address['zip'],
+          'country': address['country'],
+          'updated_at': DateTime.now().toIso8601String(),
+          'updated_by': adminId,
+        })
+        .eq('id', true);
   }
 
   // ─── Auth ────────────────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -27,6 +28,7 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
   List<Map<String, dynamic>> _invoices = const [];
   List<Map<String, dynamic>> _preAlerts = const [];
   List<Map<String, dynamic>> _paymentSubmissions = const [];
+  Map<String, String> _warehouseAddress = DatabaseService.defaultWarehouseAddress;
   String? _loadError;
   RealtimeChannel? _channel;
 
@@ -53,6 +55,19 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
   void initState() {
     super.initState();
     _load().then((_) => _subscribe());
+    unawaited(_loadWarehouseAddress());
+  }
+
+  /// Not customer-specific, so it's loaded independently of _load() —
+  /// a failure here shouldn't block the rest of the portal, and it
+  /// doesn't need to block on knowing who the customer is first.
+  Future<void> _loadWarehouseAddress() async {
+    try {
+      final address = await _db.getWarehouseAddress();
+      if (mounted) setState(() => _warehouseAddress = address);
+    } catch (_) {
+      // Leave the built-in default in place.
+    }
   }
 
   @override
@@ -257,7 +272,10 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
           onSubmitted: _silentLoad,
         );
       case 'Shipping Addresses':
-        return _ShippingAddressesPage(customer: _customer!);
+        return _ShippingAddressesPage(
+          customer: _customer!,
+          warehouseAddress: _warehouseAddress,
+        );
       case 'Pre-Alerts':
         return _PreAlertsPage(
           preAlerts: _preAlerts,
@@ -1501,7 +1519,11 @@ class _PayInvoiceDialogState extends State<_PayInvoiceDialog> {
 
 class _ShippingAddressesPage extends StatelessWidget {
   final Map<String, dynamic> customer;
-  const _ShippingAddressesPage({required this.customer});
+  final Map<String, String> warehouseAddress;
+  const _ShippingAddressesPage({
+    required this.customer,
+    required this.warehouseAddress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1597,23 +1619,23 @@ class _ShippingAddressesPage extends StatelessWidget {
                 title: 'AIR Warehouse',
                 tint: const Color(0xFF10B981),
                 name: name,
-                addressLine1: '559 NE 42ND ST',
+                addressLine1: warehouseAddress['line1']!,
                 addressLine2: '${mailbox}_AIR',
-                city: 'OAKLAND PARK',
-                state: 'Florida',
-                zip: '33334',
-                country: 'United States',
+                city: warehouseAddress['city']!,
+                state: warehouseAddress['state']!,
+                zip: warehouseAddress['zip']!,
+                country: warehouseAddress['country']!,
               );
               final sea = _WarehouseAddressCard(
                 title: 'SEA Warehouse',
                 tint: const Color(0xFF3B82F6),
                 name: name,
-                addressLine1: '559 NE 42ND ST',
+                addressLine1: warehouseAddress['line1']!,
                 addressLine2: '$mailbox SEA',
-                city: 'OAKLAND PARK',
-                state: 'Florida',
-                zip: '33334',
-                country: 'United States',
+                city: warehouseAddress['city']!,
+                state: warehouseAddress['state']!,
+                zip: warehouseAddress['zip']!,
+                country: warehouseAddress['country']!,
               );
               if (wide) {
                 return Row(

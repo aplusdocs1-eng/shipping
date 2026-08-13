@@ -735,8 +735,16 @@ class _NewCustomerDialogState extends State<_NewCustomerDialog> {
   final _address = TextEditingController();
   final _city = TextEditingController();
   final _country = TextEditingController();
+  final _mailbox = TextEditingController();
   bool _saving = false;
+  bool _mailboxLoading = true;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _regenerateMailbox();
+  }
 
   @override
   void dispose() {
@@ -746,7 +754,21 @@ class _NewCustomerDialogState extends State<_NewCustomerDialog> {
     _address.dispose();
     _city.dispose();
     _country.dispose();
+    _mailbox.dispose();
     super.dispose();
+  }
+
+  // This screen is admin-wide, not scoped to one courier, so there's no
+  // tracking prefix to build off — falls back to DatabaseService's
+  // generic "CUST" prefix (see suggestNextMailboxNumber).
+  Future<void> _regenerateMailbox() async {
+    setState(() => _mailboxLoading = true);
+    final suggestion = await _db.suggestNextMailboxNumber();
+    if (!mounted) return;
+    setState(() {
+      _mailbox.text = suggestion;
+      _mailboxLoading = false;
+    });
   }
 
   Future<void> _create() async {
@@ -769,11 +791,22 @@ class _NewCustomerDialogState extends State<_NewCustomerDialog> {
         'email': _email.text.trim().isEmpty ? null : _email.text.trim(),
         'phone': _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         'address': addressParts.isEmpty ? null : addressParts,
+        'mailbox_number': _mailbox.text.trim().isEmpty ? null : _mailbox.text.trim(),
         'status': 'active',
       });
       if (!mounted) return;
       Navigator.pop(context, row);
     } catch (e) {
+      if (_db.isMailboxNumberConflict(e)) {
+        await _regenerateMailbox();
+        if (!mounted) return;
+        setState(() {
+          _saving = false;
+          _error = 'That mailbox number is already in use — suggested a '
+              'new one below, try Add Customer again.';
+        });
+        return;
+      }
       setState(() {
         _saving = false;
         _error = 'Failed to add customer: $e';
@@ -823,6 +856,52 @@ class _NewCustomerDialogState extends State<_NewCustomerDialog> {
               ('City', 'City', _city),
               ('Country', 'Country', _country),
             ]),
+            const SizedBox(height: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Mailbox Number',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                TextField(
+                  controller: _mailbox,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Unique ID for this customer',
+                    hintStyle: const TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 13,
+                    ),
+                    suffixIcon: _mailboxLoading
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : IconButton(
+                            tooltip: 'Suggest another',
+                            icon: const Icon(Icons.refresh, size: 18),
+                            onPressed: _regenerateMailbox,
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'This is what the customer gives merchants so packages '
+                  'can be matched to them at the warehouse — keep it unique.',
+                  style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                ),
+              ],
+            ),
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),

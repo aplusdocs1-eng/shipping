@@ -479,6 +479,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                   const SizedBox(height: 20),
+                  const _WarehouseAddressSection(),
+                  const SizedBox(height: 20),
                   _SettingsSection(
                     title: 'Regional Settings',
                     icon: Icons.public_rounded,
@@ -1010,6 +1012,138 @@ class _IntegrationTile extends StatelessWidget {
                 ),
         ],
       ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════
+// Warehouse Address
+// ═════════════════════════════════════════════════════════════════
+
+/// The physical address every customer's "Shipping Addresses" page and
+/// every courier's dashboard reference. Its own load/save cycle against
+/// warehouse_settings — a dedicated table, not a key inside this screen's
+/// main company_settings save flow, because company_settings is
+/// admin-only-readable (it also holds integration API keys) while this
+/// value needs to be readable by every customer and courier session. See
+/// 20260813030000_warehouse_settings.sql.
+class _WarehouseAddressSection extends StatefulWidget {
+  const _WarehouseAddressSection();
+
+  @override
+  State<_WarehouseAddressSection> createState() => _WarehouseAddressSectionState();
+}
+
+class _WarehouseAddressSectionState extends State<_WarehouseAddressSection> {
+  final _db = DatabaseService();
+  bool _loading = true;
+  bool _saving = false;
+
+  final _line1Ctl = TextEditingController();
+  final _cityCtl = TextEditingController();
+  final _stateCtl = TextEditingController();
+  final _zipCtl = TextEditingController();
+  final _countryCtl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _line1Ctl.dispose();
+    _cityCtl.dispose();
+    _stateCtl.dispose();
+    _zipCtl.dispose();
+    _countryCtl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final address = await _db.getWarehouseAddress();
+      if (!mounted) return;
+      setState(() {
+        _line1Ctl.text = address['line1']!;
+        _cityCtl.text = address['city']!;
+        _stateCtl.text = address['state']!;
+        _zipCtl.text = address['zip']!;
+        _countryCtl.text = address['country']!;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _db.updateWarehouseAddress({
+        'line1': _line1Ctl.text.trim(),
+        'city': _cityCtl.text.trim(),
+        'state': _stateCtl.text.trim(),
+        'zip': _zipCtl.text.trim(),
+        'country': _countryCtl.text.trim(),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Warehouse address saved.'), backgroundColor: AppTheme.success),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Save failed: $e'), backgroundColor: AppTheme.danger),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const _SettingsSection(
+        title: 'Warehouse Address',
+        icon: Icons.warehouse_rounded,
+        children: [Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))],
+      );
+    }
+    return _SettingsSection(
+      title: 'Warehouse Address',
+      icon: Icons.warehouse_rounded,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 10),
+          child: Text(
+            'The one physical address customers ship to and couriers see '
+            'on their dashboard — each customer appends their own unique '
+            'mailbox number to it.',
+            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+          ),
+        ),
+        _EditableField(label: 'Address Line 1', controller: _line1Ctl),
+        _EditableField(label: 'City', controller: _cityCtl),
+        _EditableField(label: 'State / Province', controller: _stateCtl),
+        _EditableField(label: 'ZIP / Postal Code', controller: _zipCtl),
+        _EditableField(label: 'Country', controller: _countryCtl, last: true),
+        const SizedBox(height: 14),
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton(
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('Save Warehouse Address'),
+          ),
+        ),
+      ],
     );
   }
 }

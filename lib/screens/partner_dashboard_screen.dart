@@ -29,6 +29,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
   // Real stats loaded from Supabase (partner-scoped where possible).
   _PartnerStats? _stats;
   List<Map<String, dynamic>> _branches = [];
+  Map<String, String> _warehouseAddress = DatabaseService.defaultWarehouseAddress;
 
   @override
   void initState() {
@@ -60,6 +61,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
       // Load stats and branch list in the background; don't block the UI.
       _loadStats(account);
       unawaited(_loadBranches());
+      unawaited(_loadWarehouseAddress());
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -119,6 +121,18 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
       // Leave _branches empty — location button falls back to "Set Location".
       // ignore: avoid_print
       print('[PartnerDashboard] branches load failed: $e');
+    }
+  }
+
+  Future<void> _loadWarehouseAddress() async {
+    try {
+      final address = await _db.getWarehouseAddress();
+      if (!mounted) return;
+      setState(() => _warehouseAddress = address);
+    } catch (e) {
+      // Leave the built-in default in place.
+      // ignore: avoid_print
+      print('[PartnerDashboard] warehouse address load failed: $e');
     }
   }
 
@@ -879,6 +893,7 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
         return _DashboardPage(
           account: account,
           stats: _stats,
+          warehouseAddress: _warehouseAddress,
           onNavigate: _navigateToNavLabel,
         );
       case 'Point of Sale':
@@ -956,10 +971,12 @@ class _NavItem {
 class _DashboardPage extends StatelessWidget {
   final Map<String, dynamic> account;
   final _PartnerStats? stats;
+  final Map<String, String> warehouseAddress;
   final ValueChanged<String>? onNavigate;
   const _DashboardPage({
     required this.account,
     required this.stats,
+    required this.warehouseAddress,
     this.onNavigate,
   });
 
@@ -975,6 +992,8 @@ class _DashboardPage extends StatelessWidget {
           _CourierChargesCard(stats: stats, onNavigate: onNavigate),
           const SizedBox(height: 16),
           _ShareLinkCard(account: account),
+          const SizedBox(height: 16),
+          _WarehouseAddressCard(account: account, address: warehouseAddress),
           const SizedBox(height: 16),
           _StatRow(stats: stats),
           const SizedBox(height: 16),
@@ -1287,6 +1306,163 @@ class _LinkRow extends StatelessWidget {
         const SizedBox(height: 2),
         Text(sublabel, style: TextStyle(fontSize: 11, color: _muted)),
       ],
+    );
+  }
+}
+
+// The shared physical warehouse (admin-configurable, Settings → Warehouse
+// Address) paired with this courier's own tracking prefix — the address
+// alone isn't enough to be useful here, since every courier on the
+// platform ships to the exact same building. What actually tells the
+// warehouse "this package is one of mine" is a customer's mailbox number
+// (see suggestNextMailboxNumber), and every one of those starts with this
+// courier's own code — so the code has to be shown right alongside the
+// address, not just the address by itself.
+class _WarehouseAddressCard extends StatelessWidget {
+  final Map<String, dynamic> account;
+  final Map<String, String> address;
+  const _WarehouseAddressCard({required this.account, required this.address});
+
+  String get _prefix => ((account['tracking_prefix'] as String?) ?? '').trim();
+
+  String get _fullAddress => [
+    address['line1'],
+    '${address['city']}, ${address['state']} ${address['zip']}',
+    address['country'],
+  ].where((s) => s != null && s.trim().isNotEmpty).join('\n');
+
+  Future<void> _copy(BuildContext context, String text, String label) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$label copied')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.warehouse_outlined,
+                size: 18,
+                color: AppTheme.primary,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Warehouse Address',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: _text,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'The one warehouse every customer on the platform ships to — '
+            'set by One Village and the same for every courier.',
+            style: TextStyle(fontSize: 12, color: _muted),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _panelBg,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    _fullAddress,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.5,
+                      color: _text,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Copy address',
+                  onPressed: () => _copy(context, _fullAddress, 'Address'),
+                  icon: const Icon(Icons.copy, size: 16),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_prefix.isEmpty)
+            Text(
+              'Set a tracking prefix in Settings → Company so each of your '
+              'customers gets their own unique mailbox number to add to '
+              'this address.',
+              style: TextStyle(fontSize: 12, color: AppTheme.warning),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.06),
+                border: Border.all(
+                  color: AppTheme.primary.withValues(alpha: 0.25),
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.tag, size: 16, color: AppTheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: RichText(
+                      text: TextSpan(
+                        style: const TextStyle(fontSize: 12.5, color: _text, height: 1.4),
+                        children: [
+                          const TextSpan(
+                            text: 'Your unique courier code: ',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          TextSpan(
+                            text: _prefix,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.primary,
+                            ),
+                          ),
+                          TextSpan(
+                            text: ' — every one of your customers\' mailbox '
+                                'numbers starts with it (e.g. "$_prefix-1001"). '
+                                'Give each customer the address above plus '
+                                'their own full mailbox number on Address '
+                                'Line 2, so the warehouse knows the package '
+                                'is yours.',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -2684,14 +2860,24 @@ class _CustomersPageState extends State<_CustomersPage> {
     final emailCtl = TextEditingController(text: _s(existing?['email']).replaceAll('—', ''));
     final phoneCtl = TextEditingController(text: _s(existing?['phone']).replaceAll('—', ''));
     final addressCtl = TextEditingController(text: _s(existing?['address']).replaceAll('—', ''));
-    final prefix = widget.prefix.isEmpty ? 'CUST' : widget.prefix;
-    final nextBox =
-        '$prefix-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    // A real suggestion, not a millisecond-timestamp guess — still just a
+    // suggestion (staff can edit it), but the actual guarantee against two
+    // customers colliding is the DB's unique index, checked on save below.
+    final existingMailbox = existing?['mailbox_number'] as String?;
     final mailboxCtl = TextEditingController(
-      text: (existing?['mailbox_number'] as String?) ?? nextBox,
+      text: existingMailbox ?? await widget.db.suggestNextMailboxNumber(prefix: widget.prefix),
     );
+
+    Future<void> regenerateMailbox(StateSetter setDialogState) async {
+      final suggestion = await widget.db.suggestNextMailboxNumber(prefix: widget.prefix);
+      setDialogState(() => mailboxCtl.text = suggestion);
+    }
+
     bool active = (existing?['status'] as String? ?? 'active') != 'inactive';
 
+    // suggestNextMailboxNumber above awaited a query, so this widget could
+    // have been disposed in the meantime (e.g. the user navigated away).
+    if (!mounted) return;
     final saved = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
@@ -2741,9 +2927,17 @@ class _CustomersPageState extends State<_CustomersPage> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: mailboxCtl,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Mailbox Number',
-                    prefixIcon: Icon(Icons.markunread_mailbox),
+                    helperText: 'Unique — this is what customers give merchants '
+                        'to identify their packages at the warehouse.',
+                    helperMaxLines: 2,
+                    prefixIcon: const Icon(Icons.markunread_mailbox),
+                    suffixIcon: IconButton(
+                      tooltip: 'Suggest another',
+                      icon: const Icon(Icons.refresh, size: 18),
+                      onPressed: () => regenerateMailbox(setDialogState),
+                    ),
                   ),
                 ),
                 if (isEdit) ...[
@@ -2799,6 +2993,20 @@ class _CustomersPageState extends State<_CustomersPage> {
                 }
                 if (dialogCtx.mounted) Navigator.pop(dialogCtx, true);
               } catch (e) {
+                if (widget.db.isMailboxNumberConflict(e)) {
+                  await regenerateMailbox(setDialogState);
+                  if (dialogCtx.mounted) {
+                    ScaffoldMessenger.of(dialogCtx).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'That mailbox number is already in use by another '
+                          'customer — suggested a new one, try Save again.',
+                        ),
+                      ),
+                    );
+                  }
+                  return;
+                }
                 if (dialogCtx.mounted) {
                   ScaffoldMessenger.of(
                     dialogCtx,

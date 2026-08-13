@@ -320,51 +320,130 @@ class _PackageCard extends StatelessWidget {
           .where((s) => s != null && s.toString().isNotEmpty)
           .join(', '),
     );
-    final confirmed = await showDialog<bool>(
+    // Admin-wide screen, no single courier's tracking prefix applies here
+    // — falls back to DatabaseService's generic "CUST" prefix.
+    final mailboxCtrl = TextEditingController(text: await db.suggestNextMailboxNumber());
+    if (!context.mounted) return;
+
+    bool saving = false;
+    String? error;
+
+    await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        title: const Text('Create Customer From Extracted Data'),
-        content: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder(), isDense: true)),
-              const SizedBox(height: 10),
-              TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder(), isDense: true)),
-              const SizedBox(height: 10),
-              TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Phone', border: OutlineInputBorder(), isDense: true)),
-              const SizedBox(height: 10),
-              TextField(controller: addressCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Address', border: OutlineInputBorder(), isDense: true)),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          Future<void> regenerateMailbox() async {
+            final suggestion = await db.suggestNextMailboxNumber();
+            setDialogState(() => mailboxCtrl.text = suggestion);
+          }
+
+          Future<void> createAndAssign() async {
+            if (nameCtrl.text.trim().isEmpty) {
+              setDialogState(() => error = 'Name is required.');
+              return;
+            }
+            setDialogState(() {
+              saving = true;
+              error = null;
+            });
+            try {
+              final row = await db.insertCustomer({
+                'name': nameCtrl.text.trim(),
+                'email': emailCtrl.text.trim(),
+                'phone': phoneCtrl.text.trim(),
+                'address': addressCtrl.text.trim(),
+                'mailbox_number': mailboxCtrl.text.trim().isEmpty ? null : mailboxCtrl.text.trim(),
+                'status': 'active',
+              });
+              await db.assignPackageToCustomer(
+                warehouseEntryId: entry['id'].toString(),
+                customerId: row['id'].toString(),
+                customerName: nameCtrl.text.trim(),
+              );
+              onChanged();
+              if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Created ${nameCtrl.text.trim()} and assigned the package'),
+                    backgroundColor: AppTheme.success,
+                  ),
+                );
+              }
+            } catch (e) {
+              if (db.isMailboxNumberConflict(e)) {
+                await regenerateMailbox();
+                setDialogState(() {
+                  saving = false;
+                  error = 'That mailbox number is already in use — '
+                      'suggested a new one below, try again.';
+                });
+                return;
+              }
+              setDialogState(() {
+                saving = false;
+                error = 'Failed to create customer: $e';
+              });
+            }
+          }
+
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            title: const Text('Create Customer From Extracted Data'),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder(), isDense: true)),
+                  const SizedBox(height: 10),
+                  TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder(), isDense: true)),
+                  const SizedBox(height: 10),
+                  TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Phone', border: OutlineInputBorder(), isDense: true)),
+                  const SizedBox(height: 10),
+                  TextField(controller: addressCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Address', border: OutlineInputBorder(), isDense: true)),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: mailboxCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Mailbox Number',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      helperText: 'Unique ID this customer gives merchants',
+                      suffixIcon: IconButton(
+                        tooltip: 'Suggest another',
+                        icon: const Icon(Icons.refresh, size: 18),
+                        onPressed: saving ? null : regenerateMailbox,
+                      ),
+                    ),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 10),
+                    Text(error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12.5)),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: saving ? null : () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: saving ? null : createAndAssign,
+                child: saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Create & Assign'),
+              ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Create & Assign')),
-        ],
+          );
+        },
       ),
     );
-    if (confirmed != true || nameCtrl.text.trim().isEmpty) return;
-    final row = await db.insertCustomer({
-      'name': nameCtrl.text.trim(),
-      'email': emailCtrl.text.trim(),
-      'phone': phoneCtrl.text.trim(),
-      'address': addressCtrl.text.trim(),
-      'status': 'active',
-    });
-    await db.assignPackageToCustomer(
-      warehouseEntryId: entry['id'].toString(),
-      customerId: row['id'].toString(),
-      customerName: nameCtrl.text.trim(),
-    );
-    onChanged();
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Created ${nameCtrl.text.trim()} and assigned the package'), backgroundColor: AppTheme.success),
-      );
-    }
   }
 
   Future<void> _viewLabel(BuildContext context) async {
