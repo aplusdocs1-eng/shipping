@@ -16,6 +16,7 @@ class ManifestScreen extends StatefulWidget {
 class _ManifestScreenState extends State<ManifestScreen> {
   final _db = DatabaseService();
   Shipment? _selectedShipment;
+  DateTime? _dateFilter;
   final _searchCtrl = TextEditingController();
   String _query = '';
   bool _loading = true;
@@ -47,18 +48,61 @@ class _ManifestScreenState extends State<ManifestScreen> {
       setState(() {
         _allShipments = shipments;
         _allPackages = packages;
+        final filtered = _filteredShipmentsFrom(shipments);
         if (_selectedShipment != null) {
-          final match = shipments.where((s) => s.id == _selectedShipment!.id);
+          final match = filtered.where((s) => s.id == _selectedShipment!.id);
           _selectedShipment = match.isEmpty ? null : match.first;
         }
-        if (_selectedShipment == null && shipments.isNotEmpty) {
-          _selectedShipment = shipments.first;
+        if (_selectedShipment == null && filtered.isNotEmpty) {
+          _selectedShipment = filtered.first;
         }
         _loading = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  static bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  List<Shipment> _filteredShipmentsFrom(List<Shipment> source) {
+    final date = _dateFilter;
+    if (date == null) return source;
+    return source.where((s) => _isSameDay(s.departureDate, date)).toList();
+  }
+
+  List<Shipment> get _filteredShipments => _filteredShipmentsFrom(_allShipments);
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dateFilter ?? now,
+      firstDate: DateTime(now.year - 5),
+      lastDate: DateTime(now.year + 2),
+      helpText: 'Select manifest date',
+    );
+    if (picked == null) return;
+    setState(() {
+      _dateFilter = picked;
+      final filtered = _filteredShipments;
+      final stillMatches =
+          _selectedShipment != null &&
+          filtered.any((s) => s.id == _selectedShipment!.id);
+      if (!stillMatches) {
+        _selectedShipment = filtered.isNotEmpty ? filtered.first : null;
+      }
+    });
+  }
+
+  void _clearDateFilter() {
+    setState(() {
+      _dateFilter = null;
+      if (_selectedShipment == null && _allShipments.isNotEmpty) {
+        _selectedShipment = _allShipments.first;
+      }
+    });
   }
 
   @override
@@ -68,6 +112,13 @@ class _ManifestScreenState extends State<ManifestScreen> {
   }
 
   List<Package> get _manifestPackages {
+    // A date filter that matches no shipment means the manifest for that
+    // date is empty — must never fall back to "no shipment selected"
+    // below, which intentionally shows every package system-wide (the
+    // sane default when there simply are no shipments yet at all).
+    // Without this, picking a date with nothing scheduled would silently
+    // show unrelated packages from every other date instead of "none".
+    if (_dateFilter != null && _selectedShipment == null) return const [];
     return _allPackages.where((p) {
       final matchesShipment =
           _selectedShipment == null || p.shipmentId == _selectedShipment!.id;
@@ -109,7 +160,7 @@ class _ManifestScreenState extends State<ManifestScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
-    final shipments = _allShipments;
+    final shipments = _filteredShipments;
     final df = DateFormat('MMM d, yyyy');
 
     return Padding(
@@ -187,9 +238,11 @@ class _ManifestScreenState extends State<ManifestScreen> {
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<Shipment>(
                     value: _selectedShipment,
-                    hint: const Text(
-                      'All Packages (no shipments yet)',
-                      style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                    hint: Text(
+                      _dateFilter != null
+                          ? 'No shipments on ${df.format(_dateFilter!)}'
+                          : 'All Packages (no shipments yet)',
+                      style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
                     ),
                     items: shipments
                         .map(
@@ -221,6 +274,64 @@ class _ManifestScreenState extends State<ManifestScreen> {
                 ),
               ),
               const SizedBox(width: 14),
+              const Text(
+                'Date:',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              InkWell(
+                onTap: _pickDate,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  height: 42,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(
+                      color: _dateFilter != null ? AppTheme.primary : AppTheme.border,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.calendar_today_outlined,
+                        size: 14,
+                        color: _dateFilter != null ? AppTheme.primary : AppTheme.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _dateFilter == null ? 'Any date' : df.format(_dateFilter!),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: _dateFilter != null ? FontWeight.w600 : FontWeight.normal,
+                          color: _dateFilter != null ? AppTheme.primary : AppTheme.textPrimary,
+                        ),
+                      ),
+                      if (_dateFilter != null) ...[
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: _clearDateFilter,
+                          borderRadius: BorderRadius.circular(10),
+                          child: const Icon(Icons.close, size: 14, color: AppTheme.textSecondary),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Selected shipment info + actions
+          Row(
+            children: [
               if (_selectedShipment != null) ...[
                 StatusBadge(
                   label: _selectedShipment!.status.label,
@@ -247,7 +358,13 @@ class _ManifestScreenState extends State<ManifestScreen> {
                     ),
                   ),
                 ],
-              ],
+              ] else
+                Text(
+                  _dateFilter != null
+                      ? 'No shipments depart on ${df.format(_dateFilter!)}.'
+                      : 'No shipment selected.',
+                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                ),
               const Spacer(),
               if (_selectedShipment != null)
                 OutlinedButton.icon(
@@ -322,10 +439,12 @@ class _ManifestScreenState extends State<ManifestScreen> {
                   _ManifestTableHead(),
                   Expanded(
                     child: _manifestPackages.isEmpty
-                        ? const EmptyState(
+                        ? EmptyState(
                             icon: Icons.description_outlined,
                             title: 'No packages',
-                            subtitle: 'No packages match this shipment',
+                            subtitle: _dateFilter != null && _selectedShipment == null
+                                ? 'No shipments depart on ${df.format(_dateFilter!)}, so there\'s nothing to manifest.'
+                                : 'No packages match this shipment',
                           )
                         : ListView.builder(
                             itemCount: _manifestPackages.length,
