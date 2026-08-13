@@ -45,5 +45,18 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!--
+		Added for the warehouse barcode + OCR package scanner
+		(mobile_scanner / image_picker). Best-effort only — this project
+		has never had an iOS build produced or run in this environment (no
+		device/simulator access, no Apple developer account configured
+		here), so these entries are the standard, well-documented
+		requirement for those two packages but have NOT been verified
+		against a real iOS build. See the feature's KNOWN LIMITATIONS.
+	-->
+	<key>NSCameraUsageDescription</key>
+	<string>Used to scan package barcodes and photograph shipping labels for warehouse receiving.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Used to upload a photo of a shipping label when a live camera capture isn't available.</string>
 </dict>
 </plist>

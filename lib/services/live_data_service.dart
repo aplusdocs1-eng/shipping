@@ -111,6 +111,7 @@ class LiveDataService {
       country: country,
       joinedAt:
           DateTime.tryParse(r['created_at'] as String? ?? '') ?? DateTime.now(),
+      mailboxNumber: r['mailbox_number'] as String? ?? '',
       totalPackages: 0,
       balance: 0,
       isActive: (r['status'] as String? ?? 'active') == 'active',

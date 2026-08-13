@@ -21,6 +21,8 @@ import 'video_backdrop.dart';
 // 15 Site Content
 // 16 Accounting
 // 17 Payroll
+// 18 Package Scanner
+// 19 Unknown Packages
 
 class AppNavDrawer extends StatelessWidget {
   final int selectedIndex;
@@ -168,6 +170,24 @@ class _DrawerContent extends StatelessWidget {
                 _DrawerTile(
                   label: 'Warehouse',
                   index: 13,
+                  selectedIndex: selectedIndex,
+                  onTap: (i) {
+                    onItemSelected(i);
+                    Navigator.of(context).pop();
+                  },
+                ),
+                _DrawerTile(
+                  label: 'Package Scanner',
+                  index: 18,
+                  selectedIndex: selectedIndex,
+                  onTap: (i) {
+                    onItemSelected(i);
+                    Navigator.of(context).pop();
+                  },
+                ),
+                _DrawerTile(
+                  label: 'Unknown Packages',
+                  index: 19,
                   selectedIndex: selectedIndex,
                   onTap: (i) {
                     onItemSelected(i);

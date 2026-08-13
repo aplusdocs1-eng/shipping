@@ -24,11 +24,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // Real company name from Settings -> Company Profile — falls back to
   // the platform default until settings load.
   String _companyName = 'One Village Shipping & Freight';
+  Map<String, int>? _receivingStats;
 
   @override
   void initState() {
     super.initState();
     _loadAll();
+    _loadReceivingStats();
+  }
+
+  // Fetched separately from _loadAll's Future.wait — a failure here (e.g.
+  // during a migration rollout edge case) shouldn't take down the rest of
+  // the dashboard, which has nothing to do with package scanning.
+  Future<void> _loadReceivingStats() async {
+    try {
+      final stats = await _db.getReceivingStats();
+      if (mounted) setState(() => _receivingStats = stats);
+    } catch (_) {
+      // Stat block just doesn't render — see _receivingStats == null below.
+    }
   }
 
   Future<void> _loadAll() async {
@@ -254,6 +268,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 28),
 
+          if (_receivingStats != null) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'WAREHOUSE RECEIVING — TODAY',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 0.8, color: AppTheme.textSecondary),
+                    ),
+                    const SizedBox(height: 16),
+                    LayoutBuilder(
+                      builder: (context, c) {
+                        final wide = c.maxWidth > 700;
+                        final tiles = [
+                          _ReceivingStatTile('Received Today', _receivingStats!['receivedToday'] ?? 0, AppTheme.primary),
+                          _ReceivingStatTile('Received This Week', _receivingStats!['receivedThisWeek'] ?? 0, AppTheme.accent),
+                          _ReceivingStatTile('Needs Review', _receivingStats!['needsReview'] ?? 0, AppTheme.warning),
+                          _ReceivingStatTile('Unmatched', _receivingStats!['unmatched'] ?? 0, AppTheme.danger),
+                          _ReceivingStatTile('Duplicate Scans Today', _receivingStats!['duplicatesToday'] ?? 0, AppTheme.textSecondary),
+                        ];
+                        return Wrap(
+                          spacing: wide ? 32 : 20,
+                          runSpacing: 16,
+                          children: tiles,
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 28),
+          ],
+
           // Recent Shipments table (matches website)
           Card(
             child: Padding(
@@ -275,6 +325,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
           const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReceivingStatTile extends StatelessWidget {
+  final String label;
+  final int value;
+  final Color color;
+  const _ReceivingStatTile(this.label, this.value, this.color);
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 140,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value.toString(),
+            style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: color),
+          ),
+          const SizedBox(height: 2),
+          Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
         ],
       ),
     );

@@ -611,6 +611,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 20),
                   _ApiAccessSection(),
+                  const SizedBox(height: 20),
+                  const _ScannerSettingsSection(),
                 ],
               );
 
@@ -1015,6 +1017,163 @@ class _IntegrationTile extends StatelessWidget {
 // ═════════════════════════════════════════════════════════════════
 // API for 3rd Party Vendors
 // ═════════════════════════════════════════════════════════════════
+
+/// Admin controls for the warehouse barcode+OCR scanner — its own
+/// load/save cycle against scanner_settings, independent of this screen's
+/// main Company Profile save flow so a mistake in one can never affect
+/// the other. Only admins can reach Settings at all (see the app's own
+/// navigation), and the underlying table is RLS-protected the same way.
+class _ScannerSettingsSection extends StatefulWidget {
+  const _ScannerSettingsSection();
+
+  @override
+  State<_ScannerSettingsSection> createState() => _ScannerSettingsSectionState();
+}
+
+class _ScannerSettingsSectionState extends State<_ScannerSettingsSection> {
+  final _db = DatabaseService();
+  bool _loading = true;
+  bool _saving = false;
+  double _autoMatchThreshold = 90;
+  double _manualReviewThreshold = 70;
+  bool _autoCaptureLabel = true;
+  bool _rapidScanning = true;
+  bool _saveLabelImages = true;
+  bool _requireManualConfirmation = true;
+  bool _offlineScanning = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final s = await _db.getScannerSettings();
+      if (!mounted) return;
+      setState(() {
+        _autoMatchThreshold = (s['auto_match_threshold'] as num?)?.toDouble() ?? 90;
+        _manualReviewThreshold = (s['manual_review_threshold'] as num?)?.toDouble() ?? 70;
+        _autoCaptureLabel = s['auto_capture_label'] as bool? ?? true;
+        _rapidScanning = s['rapid_scanning'] as bool? ?? true;
+        _saveLabelImages = s['save_label_images'] as bool? ?? true;
+        _requireManualConfirmation = s['require_manual_confirmation'] as bool? ?? true;
+        _offlineScanning = s['offline_scanning'] as bool? ?? true;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _db.updateScannerSettings({
+        'auto_match_threshold': _autoMatchThreshold,
+        'manual_review_threshold': _manualReviewThreshold,
+        'auto_capture_label': _autoCaptureLabel,
+        'rapid_scanning': _rapidScanning,
+        'save_label_images': _saveLabelImages,
+        'require_manual_confirmation': _requireManualConfirmation,
+        'offline_scanning': _offlineScanning,
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Scanner settings saved.'), backgroundColor: AppTheme.success),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Save failed: $e'), backgroundColor: AppTheme.danger),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const _SettingsSection(
+        title: 'Warehouse Scanner Settings',
+        icon: Icons.qr_code_scanner,
+        children: [Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))],
+      );
+    }
+    return _SettingsSection(
+      title: 'Warehouse Scanner Settings',
+      icon: Icons.qr_code_scanner,
+      children: [
+        Text('Auto-match threshold: ${_autoMatchThreshold.toStringAsFixed(0)}%',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        Slider(
+          value: _autoMatchThreshold,
+          min: 50,
+          max: 100,
+          divisions: 50,
+          label: '${_autoMatchThreshold.toStringAsFixed(0)}%',
+          onChanged: (v) => setState(() => _autoMatchThreshold = v),
+        ),
+        Text('Manual review threshold: ${_manualReviewThreshold.toStringAsFixed(0)}%',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        Slider(
+          value: _manualReviewThreshold,
+          min: 0,
+          max: _autoMatchThreshold,
+          divisions: _autoMatchThreshold > 0 ? _autoMatchThreshold.toInt() : 1,
+          label: '${_manualReviewThreshold.toStringAsFixed(0)}%',
+          onChanged: (v) => setState(() => _manualReviewThreshold = v),
+        ),
+        const Divider(height: 24, color: AppTheme.border),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text('Auto-capture label', style: TextStyle(fontSize: 13.5)),
+          value: _autoCaptureLabel,
+          onChanged: (v) => setState(() => _autoCaptureLabel = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text('Rapid scanning', style: TextStyle(fontSize: 13.5)),
+          value: _rapidScanning,
+          onChanged: (v) => setState(() => _rapidScanning = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text('Save label images', style: TextStyle(fontSize: 13.5)),
+          value: _saveLabelImages,
+          onChanged: (v) => setState(() => _saveLabelImages = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text('Require manual confirmation', style: TextStyle(fontSize: 13.5)),
+          value: _requireManualConfirmation,
+          onChanged: (v) => setState(() => _requireManualConfirmation = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text('Offline scanning', style: TextStyle(fontSize: 13.5)),
+          value: _offlineScanning,
+          onChanged: (v) => setState(() => _offlineScanning = v),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton(
+            onPressed: _saving ? null : _save,
+            child: Text(_saving ? 'Saving…' : 'Save Scanner Settings'),
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class _ApiAccessSection extends StatefulWidget {
   @override

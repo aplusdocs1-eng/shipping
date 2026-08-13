@@ -1,4 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+        Added for the warehouse barcode + OCR package scanner
+        (mobile_scanner / image_picker). Best-effort only — this project
+        has never had an Android build produced, signed, or run in this
+        environment (no emulator/device access), so these entries are the
+        standard, well-documented requirement for those two packages but
+        have NOT been verified against a real Android build. See the
+        feature's KNOWN LIMITATIONS for details.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <application
         android:label="courierwarehousing"
         android:name="${applicationName}"

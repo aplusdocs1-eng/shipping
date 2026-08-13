@@ -170,6 +170,11 @@ class Customer {
   // (direct/One Village customers carry the seeded OVS tenant id), but
   // it's nullable here defensively in case of legacy/unscoped rows.
   final String? partnerId;
+  // customers.mailbox_number (e.g. "HDS-1001") — this IS the "Customer ID"
+  // concept the warehouse scanner's matching engine treats as its
+  // strongest signal (see CustomerMatchService): if this code appears
+  // printed anywhere on a label, it's about as certain a match as exists.
+  final String mailboxNumber;
 
   Customer({
     required this.id,
@@ -184,6 +189,7 @@ class Customer {
     required this.balance,
     required this.isActive,
     this.partnerId,
+    this.mailboxNumber = '',
   });
 
   factory Customer.fromMap(Map<String, dynamic> m) => Customer(
@@ -200,6 +206,7 @@ class Customer {
     balance: 0.0,
     isActive: (m['status']?.toString() ?? 'active') != 'inactive',
     partnerId: m['partner_id']?.toString(),
+    mailboxNumber: m['mailbox_number']?.toString() ?? '',
   );
 
   Customer copyWith({int? totalPackages, double? balance}) => Customer(

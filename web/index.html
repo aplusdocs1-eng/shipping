@@ -31,6 +31,18 @@
 
   <title>One Village Shipping &amp; Freight</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    In-browser OCR for the warehouse package scanner (Ocr service in
+    lib/services/ocr_service.dart calls into this via dart:js_interop).
+    Runs entirely client-side — no image ever leaves the browser, no
+    account/API key needed. Loaded synchronously (no async/defer) so the
+    `Tesseract` global is guaranteed ready before any Dart interop call;
+    the actual OCR engine (worker + wasm + trained data) is fetched lazily
+    by Tesseract.js itself only when a scan actually runs recognition, not
+    at page load.
+  -->
+  <script src="https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>

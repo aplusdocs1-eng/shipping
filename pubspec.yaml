@@ -23,6 +23,9 @@ dependencies:
   csv: ^6.0.0
   barcode: ^2.2.9
   video_player: ^2.9.2
+  mobile_scanner: ^6.0.2
+  image_picker: ^1.1.2
+  connectivity_plus: ^6.1.0
 
 dev_dependencies:
   flutter_test:

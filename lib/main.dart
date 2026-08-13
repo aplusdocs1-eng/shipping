@@ -31,6 +31,8 @@ import 'screens/shipping_partners_screen.dart';
 import 'screens/site_content_screen.dart';
 import 'screens/accounting_screen.dart';
 import 'screens/payroll_screen.dart';
+import 'screens/warehouse_scanner_screen.dart';
+import 'screens/unknown_packages_screen.dart';
 import 'screens/partner_login_screen.dart';
 import 'screens/partner_dashboard_screen.dart';
 import 'screens/customer_login_screen.dart';
@@ -204,6 +206,8 @@ class _MainShellState extends State<MainShell> {
     const SiteContentScreen(), // 15
     const AccountingScreen(), // 16
     const PayrollScreen(), // 17
+    const WarehouseScannerScreen(), // 18
+    const UnknownPackagesScreen(), // 19
   ];
 
   @override

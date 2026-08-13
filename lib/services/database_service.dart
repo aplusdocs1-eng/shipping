@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_config.dart';
 
@@ -1419,5 +1420,237 @@ class DatabaseService {
   Future<void> deletePayrollRun(String runId) async {
     // payroll_entries cascades via ON DELETE CASCADE.
     await _db.from('payroll_runs').delete().eq('id', runId);
+  }
+
+  // ─── Warehouse package scanning (barcode + OCR receiving) ─────────────
+
+  /// Uploads a captured/uploaded label photo to the private package-labels
+  /// bucket. Returns the storage path (not a URL — signed URLs expire, so
+  /// callers mint a fresh one from this path via
+  /// getPackageLabelSignedUrl whenever they actually need to display it).
+  Future<String> uploadPackageLabel({
+    required String warehouseEntryId,
+    required Uint8List bytes,
+  }) async {
+    final path = '$warehouseEntryId/${DateTime.now().millisecondsSinceEpoch}.jpg';
+    await _db.storage
+        .from('package-labels')
+        .uploadBinary(path, bytes, fileOptions: const FileOptions(contentType: 'image/jpeg'));
+    return path;
+  }
+
+  /// Signed URLs are short-lived on purpose — label images contain a
+  /// customer's name and address, so nothing about this bucket is public
+  /// and nothing here should be linkable/cacheable long-term.
+  Future<String> getPackageLabelSignedUrl(String path) async {
+    return _db.storage.from('package-labels').createSignedUrl(path, 300);
+  }
+
+  /// The authoritative server-side half of a scan: duplicate check,
+  /// server-side re-verification of any claimed auto-match, insert, and
+  /// audit log — see supabase/functions/process-package-scan. Never
+  /// trust a customer assignment that didn't come back through this.
+  Future<Map<String, dynamic>> processPackageScan(Map<String, dynamic> payload) async {
+    final res = await _db.functions.invoke('process-package-scan', body: payload);
+    final data = res.data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    throw Exception('process-package-scan returned an unexpected response');
+  }
+
+  Future<Map<String, dynamic>> getScannerSettings() async {
+    final data = await _db.from('scanner_settings').select().eq('id', true).single();
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<void> updateScannerSettings(Map<String, dynamic> updates) async {
+    // scanner_settings.updated_by references admin_users(id), NOT
+    // auth.users(id) — currentUser.id is the latter, which is a different
+    // value and violates the foreign key. _currentAdminId() resolves the
+    // right one (same helper the audit log uses).
+    final adminId = await _currentAdminId();
+    await _db
+        .from('scanner_settings')
+        .update({
+          ...updates,
+          'updated_at': DateTime.now().toIso8601String(),
+          'updated_by': adminId,
+        })
+        .eq('id', true);
+  }
+
+  /// Unknown Packages queue: received but no confident customer match.
+  /// Distinct from the older getUnknownPackagesByPrefix (partner-portal-
+  /// scoped, customer_id IS NULL only) — this is the admin-wide queue,
+  /// keyed on the richer match_status this feature adds.
+  Future<List<Map<String, dynamic>>> getUnknownPackages() async {
+    final data = await _db
+        .from('warehouse_entries')
+        .select()
+        .eq('match_status', 'unknown')
+        .order('scanned_in_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  Future<List<Map<String, dynamic>>> getPackagesNeedingReview() async {
+    final data = await _db
+        .from('warehouse_entries')
+        .select()
+        .eq('match_status', 'needs_review')
+        .order('scanned_in_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  /// Assigns an Unknown/needs-review package to a customer after a staff
+  /// member manually picks one — a routine authenticated admin update
+  /// (protected by warehouse_entries' existing "Admins full access" RLS
+  /// policy), not a claim that needs the Edge Function's anti-spoofing
+  /// re-verification: the staff member is looking at the real label with
+  /// their own eyes when they make this call.
+  Future<void> assignPackageToCustomer({
+    required String warehouseEntryId,
+    required String customerId,
+    required String customerName,
+  }) async {
+    final adminId = await _currentAdminId();
+    await _db
+        .from('warehouse_entries')
+        .update({
+          'customer_id': customerId,
+          'customer_name': customerName,
+          'match_status': 'matched',
+          'match_score': 100,
+          'match_reason': 'Manually matched by warehouse staff',
+          'assigned_by': adminId,
+          'assigned_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', warehouseEntryId);
+    await insertPackageScanAuditLog(
+      warehouseEntryId: warehouseEntryId,
+      action: 'customer_assignment_changed',
+      notes: 'Manually matched to $customerName',
+    );
+  }
+
+  Future<void> rejectPackage({
+    required String warehouseEntryId,
+    required String reason,
+  }) async {
+    final adminId = await _currentAdminId();
+    await _db
+        .from('warehouse_entries')
+        .update({
+          'match_status': 'rejected',
+          'rejected_at': DateTime.now().toIso8601String(),
+          'rejected_by': adminId,
+          'rejected_reason': reason,
+        })
+        .eq('id', warehouseEntryId);
+    await insertPackageScanAuditLog(
+      warehouseEntryId: warehouseEntryId,
+      action: 'package_rejected',
+      notes: reason,
+    );
+  }
+
+  Future<void> updateWarehouseEntryFields(
+    String warehouseEntryId,
+    Map<String, dynamic> updates,
+  ) async {
+    await _db.from('warehouse_entries').update(updates).eq('id', warehouseEntryId);
+    await insertPackageScanAuditLog(
+      warehouseEntryId: warehouseEntryId,
+      action: 'package_updated',
+      notes: 'Fields corrected by staff: ${updates.keys.join(', ')}',
+    );
+  }
+
+  Future<String?> _currentAdminId() async {
+    final uid = currentUser?.id;
+    if (uid == null) return null;
+    final row = await getAdminUser(uid);
+    return row?['id'] as String?;
+  }
+
+  Future<void> insertPackageScanAuditLog({
+    String? warehouseEntryId,
+    required String action,
+    String? notes,
+    Map<String, dynamic>? oldValue,
+    Map<String, dynamic>? newValue,
+  }) async {
+    String performedByName = 'Unknown';
+    String? performedById;
+    final uid = currentUser?.id;
+    if (uid != null) {
+      final admin = await getAdminUser(uid);
+      performedById = admin?['id'] as String?;
+      performedByName = (admin?['full_name'] as String?) ?? currentUser?.email ?? 'Unknown';
+    }
+    await _db.from('package_scan_audit_log').insert({
+      'warehouse_entry_id': warehouseEntryId,
+      'action': action,
+      'performed_by': performedById,
+      'performed_by_name': performedByName,
+      'notes': notes,
+      'old_value': oldValue,
+      'new_value': newValue,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getPackageScanAuditLog(String warehouseEntryId) async {
+    final data = await _db
+        .from('package_scan_audit_log')
+        .select()
+        .eq('warehouse_entry_id', warehouseEntryId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  /// Searches every field a warehouse employee might actually have in
+  /// hand when looking for a package: tracking number, barcode, recipient
+  /// name, postal code, order number, reference number. customer name/ID
+  /// search happens client-side against the already-loaded customer list
+  /// (see WarehouseScreen), same as the rest of this screen's search.
+  Future<List<Map<String, dynamic>>> searchWarehouseEntries(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) return [];
+    final data = await _db
+        .from('warehouse_entries')
+        .select()
+        .or(
+          'tracking_number.ilike.%$q%,barcode_value.ilike.%$q%,recipient_name.ilike.%$q%,'
+          'postal_code.ilike.%$q%,order_number.ilike.%$q%,reference_number.ilike.%$q%',
+        )
+        .order('scanned_in_at', ascending: false)
+        .limit(50);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  /// Powers the admin dashboard's "Warehouse Receiving" stat block.
+  Future<Map<String, int>> getReceivingStats() async {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day).toIso8601String();
+    final weekStart = now.subtract(const Duration(days: 7)).toIso8601String();
+
+    final results = await Future.wait([
+      _db.from('warehouse_entries').select('id').gte('scanned_in_at', todayStart).count(),
+      _db.from('warehouse_entries').select('id').gte('scanned_in_at', weekStart).count(),
+      _db.from('warehouse_entries').select('id').eq('match_status', 'unknown').count(),
+      _db.from('warehouse_entries').select('id').eq('match_status', 'needs_review').count(),
+      _db
+          .from('package_scan_audit_log')
+          .select('id')
+          .eq('action', 'duplicate_detected')
+          .gte('created_at', todayStart)
+          .count(),
+    ]);
+
+    return {
+      'receivedToday': results[0].count,
+      'receivedThisWeek': results[1].count,
+      'unmatched': results[2].count,
+      'needsReview': results[3].count,
+      'duplicatesToday': results[4].count,
+    };
   }
 }
