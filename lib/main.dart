@@ -6,6 +6,7 @@ import 'services/live_data_service.dart';
 import 'services/tenant_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/sidebar.dart';
+import 'widgets/video_backdrop.dart';
 import 'screens/landing_screen.dart';
 import 'screens/about_page.dart';
 import 'screens/services_page.dart';
@@ -63,9 +64,9 @@ class CourierWarehouseApp extends StatelessWidget {
         // "entire website" rather than needing to be wired into each
         // screen individually.
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(
-            context,
-          ).copyWith(textScaler: TextScaler.linear(FontScaleController().scale)),
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.linear(FontScaleController().scale),
+          ),
           child: child!,
         ),
         initialRoute: TenantService().isAdminHost ? '/' : '/partner-login',
@@ -185,7 +186,9 @@ class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
 
   List<Widget> get _screens => [
-    DashboardScreen(onViewShipments: () => setState(() => _selectedIndex = 3)), // 0
+    DashboardScreen(
+      onViewShipments: () => setState(() => _selectedIndex = 3),
+    ), // 0
     const PackagesScreen(), // 1
     const PreAlertsScreen(), // 2
     const ShipmentsScreen(), // 3
@@ -207,6 +210,7 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    final wide = MediaQuery.of(context).size.width > 900;
     return Scaffold(
       appBar: AppBar(
         leading: Builder(
@@ -267,7 +271,33 @@ class _MainShellState extends State<MainShell> {
         selectedIndex: _selectedIndex,
         onItemSelected: (index) => setState(() => _selectedIndex = index),
       ),
-      body: _screens[_selectedIndex],
+      // Same clip/ship footage as the public site's hero, but heavily
+      // tinted toward the ordinary page background — this is a working
+      // tool staff use all day, not a marketing page, so the video only
+      // shows as a faint moving texture in the page margins around each
+      // screen's own cards/tables. Nothing about any individual screen's
+      // content changes: they already render on transparent backgrounds
+      // over the Scaffold, so this is a drop-in backdrop swap, not a
+      // per-screen edit.
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: ClipRect(
+              child: VideoBackdrop(
+                enabled: wide,
+                assetPath: 'assets/videos/hero_background.mp4',
+                fallback: const ColoredBox(color: AppTheme.surface),
+              ),
+            ),
+          ),
+          const Positioned.fill(
+            child: ColoredBox(
+              color: Color(0xE6FFF9FA),
+            ), // AppTheme.surface @ ~90% alpha
+          ),
+          _screens[_selectedIndex],
+        ],
+      ),
     );
   }
 }
