@@ -3,6 +3,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../services/database_service.dart';
+import '../services/export_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 
@@ -51,6 +52,81 @@ class _ReportsScreenState extends State<ReportsScreen> {
         });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// Same metrics build() computes for the on-screen stat cards and
+  /// charts, as a flat "Metric / Value" table — the report itself is a
+  /// dashboard of derived numbers, not a row-per-record table like
+  /// invoices/manifests, so that's the export shape that actually
+  /// matches what's on screen rather than guessing at a different one.
+  Future<void> _exportReport() async {
+    final packages = _packages;
+    final invoices = _invoices;
+    final currencyFormat = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+    final totalRevenue = invoices
+        .where((i) => i.status == InvoiceStatus.paid)
+        .fold(0.0, (sum, i) => sum + i.total);
+    final terminalPackages = packages.where(
+      (p) =>
+          p.status == PackageStatus.delivered ||
+          p.status == PackageStatus.exception ||
+          p.status == PackageStatus.returned,
+    );
+    final onTimeRate = terminalPackages.isEmpty
+        ? 0.0
+        : packages.where((p) => p.status == PackageStatus.delivered).length /
+              terminalPackages.length;
+    final exceptionRate = packages.isEmpty
+        ? 0.0
+        : packages.where((p) => p.status == PackageStatus.exception).length /
+              packages.length;
+    final invoiceCollectionRate = invoices.isEmpty
+        ? 0.0
+        : invoices.where((i) => i.status == InvoiceStatus.paid).length /
+              invoices.length;
+    final packagesPerCustomer = <String, int>{};
+    for (final p in packages) {
+      if (p.customerId.isEmpty) continue;
+      packagesPerCustomer[p.customerId] =
+          (packagesPerCustomer[p.customerId] ?? 0) + 1;
+    }
+    final repeatCustomers = packagesPerCustomer.values.where((c) => c > 1).length;
+    final customerRetention = packagesPerCustomer.isEmpty
+        ? 0.0
+        : repeatCustomers / packagesPerCustomer.length;
+    final percent = NumberFormat.percentPattern();
+
+    try {
+      await ExportService.downloadPdf(
+        filename: 'report-${DateFormat('yyyy-MM-dd').format(DateTime.now())}.pdf',
+        title: 'Analytics Report',
+        subtitle: 'Generated ${DateFormat('MMM d, yyyy - h:mm a').format(DateTime.now())}',
+        headers: const ['Metric', 'Value'],
+        rows: [
+          ['Total Packages', packages.length.toString()],
+          [
+            'Delivered',
+            packages.where((p) => p.status == PackageStatus.delivered).length.toString(),
+          ],
+          ['Total Revenue (paid invoices)', currencyFormat.format(totalRevenue)],
+          [
+            'Exceptions',
+            packages.where((p) => p.status == PackageStatus.exception).length.toString(),
+          ],
+          ['On-Time Delivery Rate', percent.format(onTimeRate)],
+          ['Exception Rate', percent.format(exceptionRate)],
+          ['Invoice Collection Rate', percent.format(invoiceCollectionRate)],
+          ['Customer Retention (repeat customers)', percent.format(customerRetention)],
+          ['Total Customers', _customers.length.toString()],
+          ['Total Invoices', invoices.length.toString()],
+        ],
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not export report: $e')));
     }
   }
 
@@ -139,7 +215,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ),
               const Spacer(),
               OutlinedButton.icon(
-                onPressed: () {},
+                onPressed: _exportReport,
                 icon: const Icon(Icons.download_outlined, size: 16),
                 label: const Text('Export Report'),
                 style: OutlinedButton.styleFrom(
