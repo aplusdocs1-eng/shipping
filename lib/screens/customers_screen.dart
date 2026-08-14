@@ -285,6 +285,10 @@ class _CustomersScreenState extends State<CustomersScreen> {
             customer: _selectedCustomer!,
             courierLabel: partnerLabel(_selectedCustomer!.partnerId),
             onClose: () => setState(() => _selectedCustomer = null),
+            onActioned: () async {
+              await _load();
+              if (mounted) setState(() => _selectedCustomer = null);
+            },
           ),
       ],
     );
@@ -587,11 +591,13 @@ class _CustomerDetailPanel extends StatefulWidget {
   final Customer customer;
   final String courierLabel;
   final VoidCallback onClose;
+  final Future<void> Function() onActioned;
 
   const _CustomerDetailPanel({
     required this.customer,
     required this.courierLabel,
     required this.onClose,
+    required this.onActioned,
   });
 
   @override
@@ -601,6 +607,7 @@ class _CustomerDetailPanel extends StatefulWidget {
 class _CustomerDetailPanelState extends State<_CustomerDetailPanel> {
   final _db = DatabaseService();
   List<Package> _packages = [];
+  bool _actioning = false;
 
   @override
   void initState() {
@@ -609,6 +616,61 @@ class _CustomerDetailPanelState extends State<_CustomerDetailPanel> {
       if (mounted)
         setState(() => _packages = rows.map(Package.fromMap).toList());
     });
+  }
+
+  Future<void> _approveDeletion() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Deactivate this account?'),
+        content: Text(
+          '${widget.customer.name} will no longer be able to sign in to '
+          'the customer portal. Their packages, invoices, and payment '
+          'history are kept exactly as-is — this only blocks login, and '
+          'can be undone later the same way any Active/Inactive account '
+          'is reactivated.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
+            child: const Text('Deactivate Account'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    setState(() => _actioning = true);
+    try {
+      await _db.approveCustomerDeletion(widget.customer.id);
+      await widget.onActioned();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _actioning = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not deactivate account: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _dismissDeletion() async {
+    setState(() => _actioning = true);
+    try {
+      await _db.dismissCustomerDeletion(widget.customer.id);
+      await widget.onActioned();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _actioning = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not dismiss request: $e')));
+      }
+    }
   }
 
   @override
@@ -718,6 +780,46 @@ class _CustomerDetailPanelState extends State<_CustomerDetailPanel> {
                           ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: _actioning ? null : _approveDeletion,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppTheme.danger,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            child: _actioning
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Deactivate',
+                                    style: TextStyle(fontSize: 12.5),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _actioning ? null : _dismissDeletion,
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            child: const Text(
+                              'Dismiss',
+                              style: TextStyle(fontSize: 12.5),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                   const SizedBox(height: 16),

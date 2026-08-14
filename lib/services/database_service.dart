@@ -768,6 +768,31 @@ class DatabaseService {
     return List<Map<String, dynamic>>.from(data);
   }
 
+  /// Admin action on a customer's self-submitted deletion request (see
+  /// request_own_account_deletion in customer_portal_screen.dart).
+  /// Deactivates the account — blocks their portal login the same way
+  /// the existing Active/Inactive status already does — without
+  /// touching their packages, invoices, or payment history, which stay
+  /// intact for real financial/shipping records. Reversible: reusing
+  /// the ordinary Active/Inactive status means un-deactivating them
+  /// later needs no special-cased "undelete" path.
+  Future<void> approveCustomerDeletion(String customerId) async {
+    await _db
+        .from('customers')
+        .update({'status': 'inactive', 'deletion_requested_at': null})
+        .eq('id', customerId);
+  }
+
+  /// Declines a deletion request without changing anything else about
+  /// the account — just clears the flag so it drops off the pending
+  /// queue. The customer can request again later if they still want to.
+  Future<void> dismissCustomerDeletion(String customerId) async {
+    await _db
+        .from('customers')
+        .update({'deletion_requested_at': null})
+        .eq('id', customerId);
+  }
+
   Future<Map<String, dynamic>?> getCustomerByEmail(
     String email, {
     String? partnerId,
