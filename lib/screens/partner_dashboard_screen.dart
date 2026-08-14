@@ -220,9 +220,9 @@ class _PartnerDashboardScreenState extends State<PartnerDashboardScreen> {
                         : () async {
                             setDialogState(() => saving = true);
                             try {
-                              await _db.updatePartnerAccount(accountId, {
-                                'preferred_branch_id': selectedId,
-                              });
+                              await _db.updateOwnPartnerPreferredBranch(
+                                selectedId!,
+                              );
                               if (!mounted) return;
                               setState(() {
                                 _account = {
@@ -7704,6 +7704,8 @@ class _SettingsField extends StatelessWidget {
   final IconData? icon;
   final bool obscure;
   final int maxLines;
+  final bool readOnly;
+  final String? helperText;
   const _SettingsField({
     required this.label,
     this.hint,
@@ -7712,6 +7714,8 @@ class _SettingsField extends StatelessWidget {
     this.icon,
     this.obscure = false,
     this.maxLines = 1,
+    this.readOnly = false,
+    this.helperText,
   });
   @override
   Widget build(BuildContext context) {
@@ -7732,7 +7736,8 @@ class _SettingsField extends StatelessWidget {
           initialValue: controller == null ? initial : null,
           obscureText: obscure,
           maxLines: obscure ? 1 : maxLines,
-          style: const TextStyle(fontSize: 13),
+          readOnly: readOnly,
+          style: TextStyle(fontSize: 13, color: readOnly ? _muted : null),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: TextStyle(color: _muted, fontSize: 13),
@@ -7742,6 +7747,11 @@ class _SettingsField extends StatelessWidget {
               horizontal: 12,
               vertical: 12,
             ),
+            filled: readOnly,
+            fillColor: readOnly ? _panelBg : null,
+            helperText: helperText,
+            helperMaxLines: 2,
+            helperStyle: const TextStyle(fontSize: 11, color: _muted),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: const BorderSide(color: _border),
@@ -7846,17 +7856,15 @@ class _CompanyProfileTabState extends State<_CompanyProfileTab> {
       _error = null;
     });
     try {
-      final updates = {
-        'company_name': _companyNameCtl.text.trim(),
-        'email': _emailCtl.text.trim(),
-        'phone': _phoneCtl.text.trim(),
-        'address': _addressCtl.text.trim(),
-        'tracking_prefix': _prefixCtl.text.trim(),
-      };
-      await _db.updatePartnerAccount(widget.account['id'] as String, updates);
+      final updated = await _db.updateOwnPartnerProfile(
+        companyName: _companyNameCtl.text.trim(),
+        email: _emailCtl.text.trim(),
+        phone: _phoneCtl.text.trim(),
+        address: _addressCtl.text.trim(),
+      );
       if (!mounted) return;
       setState(() => _saving = false);
-      widget.onAccountUpdated?.call({...widget.account, ...updates});
+      widget.onAccountUpdated?.call({...widget.account, ...updated});
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Settings saved')));
@@ -8058,6 +8066,9 @@ class _CompanyProfileTabState extends State<_CompanyProfileTab> {
                   label: 'Tracking Prefix',
                   controller: _prefixCtl,
                   icon: Icons.qr_code,
+                  readOnly: true,
+                  helperText: 'Contact support to change this — it controls '
+                      'which warehouse packages route to your account.',
                 ),
                 const SizedBox(height: 20),
                 Row(
@@ -9064,7 +9075,7 @@ class _ApiKeysTabState extends State<_ApiKeysTab> {
     setState(() => _regenerating = true);
     final newKey = _generateApiKey();
     try {
-      await _db.setPartnerApiKey(widget.account['id'] as String, newKey);
+      await _db.regenerateOwnPartnerApiKey(newKey);
       if (!mounted) return;
       setState(() {
         _apiKey = newKey;

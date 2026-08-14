@@ -878,6 +878,14 @@ class DatabaseService {
     }
   }
 
+  /// Admin-only in practice: partner_accounts RLS only grants UPDATE to
+  /// admins (via "Admins update all partner_accounts") and to a partner's
+  /// own row through the narrow RPCs below — there is no broad "partner
+  /// updates own row" policy anymore (see
+  /// 20260813050000_auth_security_audit.sql for why one existing at all
+  /// was a real cross-tenant risk: it let a partner rewrite their own
+  /// tracking_prefix to collide with another courier's and see that
+  /// courier's packages). Calling this as a partner now updates 0 rows.
   Future<void> updatePartnerAccount(
     String id,
     Map<String, dynamic> updates,
@@ -885,11 +893,71 @@ class DatabaseService {
     await _db.from('partner_accounts').update(updates).eq('id', id);
   }
 
+  /// Admin-only in practice — see updatePartnerAccount. A partner setting
+  /// their own key goes through regenerateOwnPartnerApiKey instead.
   Future<void> setPartnerApiKey(String accountId, String apiKey) async {
     await _db
         .from('partner_accounts')
         .update({'api_key': apiKey})
         .eq('id', accountId);
+  }
+
+  /// Partner-portal Settings ("Company Profile"): lets the *currently
+  /// signed-in* partner edit their own company_name/email/phone/address.
+  /// Deliberately excludes tracking_prefix, status, plan, and domain —
+  /// see the migration comment above for why tracking_prefix specifically
+  /// can't be self-service. Resolves which row via auth.uid() server-side.
+  Future<Map<String, dynamic>> updateOwnPartnerProfile({
+    required String companyName,
+    required String email,
+    required String phone,
+    required String address,
+  }) async {
+    final data = await _db.rpc(
+      'update_own_partner_profile',
+      params: {
+        'p_company_name': companyName,
+        'p_email': email,
+        'p_phone': phone,
+        'p_address': address,
+      },
+    );
+    final list = List<Map<String, dynamic>>.from(data as List);
+    if (list.isEmpty) {
+      throw Exception('No partner account found for the current session.');
+    }
+    return list.first;
+  }
+
+  /// Partner portal "Set Location" — same narrow-RPC pattern as above.
+  Future<Map<String, dynamic>> updateOwnPartnerPreferredBranch(
+    String branchId,
+  ) async {
+    final data = await _db.rpc(
+      'update_own_partner_preferred_branch',
+      params: {'p_branch_id': branchId},
+    );
+    final list = List<Map<String, dynamic>>.from(data as List);
+    if (list.isEmpty) {
+      throw Exception('No partner account found for the current session.');
+    }
+    return list.first;
+  }
+
+  /// Partner-generated API key (see _generateApiKey in the caller) —
+  /// only the write is server-verified to be the caller's own row.
+  Future<Map<String, dynamic>> regenerateOwnPartnerApiKey(
+    String apiKey,
+  ) async {
+    final data = await _db.rpc(
+      'regenerate_own_partner_api_key',
+      params: {'p_api_key': apiKey},
+    );
+    final list = List<Map<String, dynamic>>.from(data as List);
+    if (list.isEmpty) {
+      throw Exception('No partner account found for the current session.');
+    }
+    return list.first;
   }
 
   // ─── Partner Settings (Settings screen) ───────────────────────────────

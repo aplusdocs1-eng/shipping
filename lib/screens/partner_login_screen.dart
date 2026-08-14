@@ -239,7 +239,7 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
           plan: _selectedPlan,
         );
         try {
-          await _db.setPartnerApiKey(account['id'] as String, apiKey);
+          await _db.regenerateOwnPartnerApiKey(apiKey);
         } catch (_) {}
 
         String? domainInstructions;
