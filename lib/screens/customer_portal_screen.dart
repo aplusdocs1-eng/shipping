@@ -182,15 +182,30 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
       final cust = await _db.getCustomerByEmail(email, partnerId: partnerId);
       debugPrint('[CustomerPortal] cust=${cust?['id']} / ${cust?['name']}');
       if (cust == null) {
-        _customer = {
-          'name': email.split('@').first,
-          'email': email,
-          'mailbox_number': '—',
-        };
-        _packages = const [];
-        _invoices = const [];
-        _preAlerts = const [];
-        _paymentSubmissions = const [];
+        // This auth session has no matching customers row — it isn't a
+        // customer account at all (an admin or courier's own session in
+        // the same browser, still valid from another tab; a stray
+        // account; anything). This route is reachable directly by URL
+        // regardless of how sign-in happened, so this check — not just
+        // the one in customer_login_screen.dart — is the real boundary.
+        // Previously this fabricated a synthetic customer instead of
+        // rejecting, with mailbox_number hardcoded to the same "—"
+        // placeholder the original broken-address bug (874c30c) was
+        // named for — so any non-customer account landing here saw
+        // that exact "—_AIR" address again. Never paper over it: sign
+        // out and send them back to a real customer login.
+        await _db.signOut();
+        if (mounted) {
+          Navigator.of(context).pushReplacementNamed('/customer-login');
+        }
+        // Deliberately leave _loading as-is rather than flipping it off:
+        // this widget is being replaced, and a late setState here (a
+        // finally block previously did this unconditionally) would
+        // rebuild _buildBody() with _customer still null and crash on
+        // its `_customer!` — caught live via the null-check exception
+        // this produced before switching to explicit per-branch
+        // setState calls instead of a blanket finally.
+        return;
       } else {
         _customer = cust;
         final custId = cust['id'].toString();
@@ -205,10 +220,14 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
         _preAlerts = results[2];
         _paymentSubmissions = results[3];
       }
-    } catch (e) {
-      _loadError = e.toString();
-    } finally {
       if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadError = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 

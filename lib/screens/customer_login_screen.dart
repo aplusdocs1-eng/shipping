@@ -81,6 +81,20 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
       }
       final res = await _db.signIn(email, pw);
       if (res.user == null) throw 'Invalid credentials.';
+      // A successful Supabase Auth sign-in only proves this is *some*
+      // valid account — it says nothing about which portal it belongs
+      // to. Without this check, an admin or courier's own real
+      // credentials would sign in here too and land on a fabricated
+      // empty customer view (see the matching fix in
+      // customer_portal_screen.dart's _load). Verify a customers row
+      // actually exists before treating this as a customer session.
+      final partnerId = TenantService().partnerId;
+      final cust = await _db.getCustomerByEmail(email, partnerId: partnerId);
+      if (cust == null) {
+        await _db.signOut();
+        throw 'This account is not registered as a customer. '
+            'Couriers and staff should use their own sign-in page.';
+      }
       if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/customer-home');
     } catch (e) {
