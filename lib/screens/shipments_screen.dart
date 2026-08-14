@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/database_service.dart';
+import '../services/export_service.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
@@ -46,6 +47,75 @@ class _ShipmentsScreenState extends State<ShipmentsScreen> {
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// Backs the "Manifest" (card), "View Manifest", and "Export PDF"
+  /// buttons — same headers/rows/summary shape and the same
+  /// ExportService already used by manifest_screen.dart, just scoped to
+  /// one shipment's packages instead of a picker. [print] drives the
+  /// browser's print/preview dialog for "View"; otherwise downloads the
+  /// PDF directly, matching each button's own icon/label.
+  Future<void> _exportManifest(Shipment shipment, {required bool print}) async {
+    try {
+      final rows = await _db.getPackages();
+      final packages = rows
+          .map(Package.fromMap)
+          .where((p) => p.shipmentId == shipment.id)
+          .toList();
+      final headers = const [
+        '#',
+        'Tracking #',
+        'Customer',
+        'Description',
+        'Weight',
+        'Value',
+        'Status',
+      ];
+      final tableRows = [
+        for (var i = 0; i < packages.length; i++)
+          [
+            (i + 1).toString(),
+            packages[i].trackingNumber,
+            packages[i].customerName,
+            packages[i].description,
+            '${packages[i].weight} lbs',
+            '\$${packages[i].declaredValue.toStringAsFixed(2)}',
+            packages[i].status.label,
+          ],
+      ];
+      final totalWeight = packages.fold(0.0, (s, p) => s + p.weight);
+      final totalValue = packages.fold(0.0, (s, p) => s + p.declaredValue);
+      final summary = {
+        'Total Packages': packages.length.toString(),
+        'Total Weight': '${totalWeight.toStringAsFixed(1)} lbs',
+        'Declared Value': '\$${totalValue.toStringAsFixed(2)}',
+      };
+      final title = 'Manifest — ${shipment.shipmentNumber}';
+      final subtitle = '${shipment.origin} → ${shipment.destination}';
+      if (print) {
+        await ExportService.printPdf(
+          title: title,
+          subtitle: subtitle,
+          headers: headers,
+          rows: tableRows,
+          summary: summary,
+        );
+      } else {
+        await ExportService.downloadPdf(
+          filename: 'manifest-${shipment.shipmentNumber}.pdf',
+          title: title,
+          subtitle: subtitle,
+          headers: headers,
+          rows: tableRows,
+          summary: summary,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not generate manifest: $e')));
+    }
   }
 
   List<Shipment> get _filtered {
@@ -175,6 +245,8 @@ class _ShipmentsScreenState extends State<ShipmentsScreen> {
                             return _ShipmentCard(
                               shipment: s,
                               isSelected: _selected?.id == s.id,
+                              onManifest: () =>
+                                  _exportManifest(s, print: false),
                               onTap: () => setState(
                                 () => _selected = _selected?.id == s.id
                                     ? null
@@ -192,6 +264,8 @@ class _ShipmentsScreenState extends State<ShipmentsScreen> {
           _ShipmentDetail(
             shipment: _selected!,
             onClose: () => setState(() => _selected = null),
+            onViewManifest: () => _exportManifest(_selected!, print: true),
+            onExportPdf: () => _exportManifest(_selected!, print: false),
           ),
       ],
     );
@@ -468,10 +542,12 @@ class _ShipmentCard extends StatelessWidget {
   final Shipment shipment;
   final bool isSelected;
   final VoidCallback onTap;
+  final VoidCallback onManifest;
   const _ShipmentCard({
     required this.shipment,
     required this.isSelected,
     required this.onTap,
+    required this.onManifest,
   });
 
   @override
@@ -609,7 +685,7 @@ class _ShipmentCard extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             TextButton.icon(
-              onPressed: () {},
+              onPressed: onManifest,
               icon: const Icon(Icons.description_outlined, size: 14),
               label: const Text('Manifest', style: TextStyle(fontSize: 12)),
               style: TextButton.styleFrom(
@@ -630,7 +706,14 @@ class _ShipmentCard extends StatelessWidget {
 class _ShipmentDetail extends StatelessWidget {
   final Shipment shipment;
   final VoidCallback onClose;
-  const _ShipmentDetail({required this.shipment, required this.onClose});
+  final VoidCallback onViewManifest;
+  final VoidCallback onExportPdf;
+  const _ShipmentDetail({
+    required this.shipment,
+    required this.onClose,
+    required this.onViewManifest,
+    required this.onExportPdf,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -730,7 +813,7 @@ class _ShipmentDetail extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () {},
+                      onPressed: onViewManifest,
                       icon: const Icon(Icons.description_outlined, size: 14),
                       label: const Text('View Manifest'),
                     ),
@@ -739,7 +822,7 @@ class _ShipmentDetail extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: () {},
+                      onPressed: onExportPdf,
                       icon: const Icon(Icons.picture_as_pdf_outlined, size: 14),
                       label: const Text('Export PDF'),
                     ),
