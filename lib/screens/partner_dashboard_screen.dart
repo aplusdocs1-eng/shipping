@@ -3,6 +3,7 @@ import 'dart:html' as html;
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/database_service.dart';
@@ -7837,7 +7838,17 @@ class _CompanyProfileTabState extends State<_CompanyProfileTab> {
       (widget.account['domain_status'] as String?) ?? 'unset';
   bool _saving = false;
   bool _provisioning = false;
+  bool _uploadingLogo = false;
   String? _error;
+  final _picker = ImagePicker();
+  late String? _logoUrl = _initialLogoUrl();
+
+  String? _initialLogoUrl() {
+    final raw =
+        (widget.account['settings'] as Map?)?['branding_logo_url'] as String?;
+    final trimmed = raw?.trim();
+    return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+  }
 
   @override
   void dispose() {
@@ -7848,6 +7859,53 @@ class _CompanyProfileTabState extends State<_CompanyProfileTab> {
     _prefixCtl.dispose();
     _domainCtl.dispose();
     super.dispose();
+  }
+
+  /// Same key the existing Branding tab's manual "Logo URL" field reads
+  /// and writes (settings.branding_logo_url) — get_partner_by_domain
+  /// already repackages that flat key into the nested branding.logoUrl
+  /// shape PartnerBranding reads, so writing here keeps this in sync
+  /// with what customers actually see on the branded portal, instead of
+  /// inventing a second, disconnected place a logo could live.
+  Future<void> _uploadLogo() async {
+    final accountId = widget.account['id']?.toString();
+    if (accountId == null) return;
+    try {
+      final file = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 512,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      setState(() => _uploadingLogo = true);
+      final contentType = file.name.toLowerCase().endsWith('.png')
+          ? 'image/png'
+          : 'image/jpeg';
+      final url = await _db.uploadPartnerLogo(
+        partnerAccountId: accountId,
+        bytes: bytes,
+        contentType: contentType,
+      );
+      final updated = await _db.updatePartnerSettings(accountId, {
+        'branding_logo_url': url,
+      });
+      if (!mounted) return;
+      setState(() {
+        _logoUrl = url;
+        _uploadingLogo = false;
+      });
+      widget.onAccountUpdated?.call({...widget.account, ...updated});
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Logo updated')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _uploadingLogo = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not upload logo: $e')));
+    }
   }
 
   Future<void> _save() async {
@@ -7965,16 +8023,23 @@ class _CompanyProfileTabState extends State<_CompanyProfileTab> {
                     CircleAvatar(
                       radius: 32,
                       backgroundColor: AppTheme.primary,
-                      child: Text(
-                        _companyNameCtl.text.isNotEmpty
-                            ? _companyNameCtl.text.substring(0, 1).toUpperCase()
-                            : 'P',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                      backgroundImage: _logoUrl != null
+                          ? NetworkImage(_logoUrl!)
+                          : null,
+                      child: _logoUrl != null
+                          ? null
+                          : Text(
+                              _companyNameCtl.text.isNotEmpty
+                                  ? _companyNameCtl.text
+                                        .substring(0, 1)
+                                        .toUpperCase()
+                                  : 'P',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                     ),
                     const SizedBox(width: 16),
                     Column(
@@ -7995,9 +8060,17 @@ class _CompanyProfileTabState extends State<_CompanyProfileTab> {
                         ),
                         const SizedBox(height: 8),
                         OutlinedButton.icon(
-                          onPressed: () {},
-                          icon: const Icon(Icons.upload, size: 14),
-                          label: const Text('Upload'),
+                          onPressed: _uploadingLogo ? null : _uploadLogo,
+                          icon: _uploadingLogo
+                              ? const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.upload, size: 14),
+                          label: Text(_uploadingLogo ? 'Uploading…' : 'Upload'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: _text,
                             side: const BorderSide(color: _border),

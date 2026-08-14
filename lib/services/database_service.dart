@@ -990,29 +990,55 @@ class DatabaseService {
   // Calculator, Branding, Api/Webhooks tabs) live in one JSONB bag on the
   // account row; list-shaped sections get their own small tables below.
 
-  /// Merges [patch] into the account's existing settings JSONB (a plain
-  /// `.update()` would overwrite the whole column, wiping unrelated keys
-  /// set by other tabs) and returns the updated account row.
+  /// Merges [patch] into the *caller's own* settings JSONB, server-side,
+  /// via update_own_partner_settings — resolves the row through
+  /// auth.uid() rather than trusting [accountId] (kept only so none of
+  /// this method's 6 existing call sites need to change). This used to
+  /// be a raw client-side read-merge-.update() trusting a
+  /// client-supplied id, which relied on the "Partners update own row"
+  /// RLS policy the auth audit (20260813050000) dropped for being too
+  /// broad — that silently broke every one of these 6 tabs for every
+  /// partner (confirmed live: 0 rows updated) until this fix.
   Future<Map<String, dynamic>> updatePartnerSettings(
     String accountId,
     Map<String, dynamic> patch,
   ) async {
-    final current = await _db
-        .from('partner_accounts')
-        .select('settings')
-        .eq('id', accountId)
-        .single();
-    final merged = <String, dynamic>{
-      ...Map<String, dynamic>.from(current['settings'] as Map? ?? {}),
-      ...patch,
-    };
-    final data = await _db
-        .from('partner_accounts')
-        .update({'settings': merged})
-        .eq('id', accountId)
-        .select()
-        .single();
-    return Map<String, dynamic>.from(data);
+    final data = await _db.rpc(
+      'update_own_partner_settings',
+      params: {'p_patch': patch},
+    );
+    final list = List<Map<String, dynamic>>.from(data as List);
+    if (list.isEmpty) {
+      throw Exception('No partner account found for the current session.');
+    }
+    return list.first;
+  }
+
+  /// Uploads to the public partner-logos bucket at
+  /// `{partnerAccountId}/logo.<ext>` (storage RLS checks that path
+  /// segment against the caller's own partner_accounts row — see
+  /// 20260815000000_partner_settings_and_logo.sql) and returns the
+  /// public URL. Saving that URL into settings.branding.logoUrl is a
+  /// separate call (updatePartnerSettings) — this only handles the file.
+  Future<String> uploadPartnerLogo({
+    required String partnerAccountId,
+    required Uint8List bytes,
+    required String contentType,
+  }) async {
+    final ext = contentType == 'image/png' ? 'png' : 'jpg';
+    final path = '$partnerAccountId/logo.$ext';
+    await _db.storage
+        .from('partner-logos')
+        .uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: contentType, upsert: true),
+        );
+    // Cache-bust: the path never changes on re-upload (upsert: true), so
+    // without this a browser/CDN would keep showing the old image under
+    // the same URL after a partner replaces their logo.
+    final base = _db.storage.from('partner-logos').getPublicUrl(path);
+    return '$base?t=${DateTime.now().millisecondsSinceEpoch}';
   }
 
   Future<List<Map<String, dynamic>>> getPartnerLocations(
