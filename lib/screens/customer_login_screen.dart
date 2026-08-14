@@ -95,6 +95,17 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
         throw 'This account is not registered as a customer. '
             'Couriers and staff should use their own sign-in page.';
       }
+      // A row existing only proves this really is a customer — it says
+      // nothing about whether staff deactivated them since (see
+      // approveCustomerDeletion in database_service.dart). Matches
+      // Customer.isActive's own "anything but literally 'inactive'
+      // counts as active" rule so this can never disagree with what
+      // the admin Customers screen itself shows for the same account.
+      if ((cust['status']?.toString() ?? 'active') == 'inactive') {
+        await _db.signOut();
+        throw 'This account has been deactivated. Contact support if you '
+            'believe this is a mistake.';
+      }
       if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/customer-home');
     } catch (e) {

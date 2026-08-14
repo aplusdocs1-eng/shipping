@@ -206,6 +206,20 @@ class _CustomerPortalScreenState extends State<CustomerPortalScreen> {
         // this produced before switching to explicit per-branch
         // setState calls instead of a blanket finally.
         return;
+      } else if ((cust['status']?.toString() ?? 'active') == 'inactive') {
+        // A row existing only proves this really is a customer — not
+        // that staff haven't since deactivated them (see
+        // approveCustomerDeletion in database_service.dart). Same
+        // "anything but literally 'inactive' counts as active" rule
+        // Customer.isActive uses, and the same reject-don't-render
+        // shape as the cust == null branch above, for the same reason:
+        // this is the boundary that's actually reachable, regardless
+        // of whether customer_login_screen.dart's own check ran first.
+        await _db.signOut();
+        if (mounted) {
+          Navigator.of(context).pushReplacementNamed('/customer-login');
+        }
+        return;
       } else {
         _customer = cust;
         final custId = cust['id'].toString();
