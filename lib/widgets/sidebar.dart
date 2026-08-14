@@ -150,7 +150,14 @@ class _DrawerContent extends StatelessWidget {
                   },
                 ),
                 _DrawerTile(
-                  label: 'Noticeboard',
+                  // Was labeled "Noticeboard" — stale from some earlier
+                  // version of this list; index 2 has been PreAlertsScreen
+                  // for as long as the index map comment at the top of
+                  // this file has said so. No "Noticeboard" screen exists
+                  // anywhere in _screens, so the old label could never
+                  // have been correct for whichever screen this tile
+                  // actually opened.
+                  label: 'Pre-Alerts',
                   index: 2,
                   selectedIndex: selectedIndex,
                   onTap: (i) {
@@ -159,7 +166,9 @@ class _DrawerContent extends StatelessWidget {
                   },
                 ),
                 _DrawerTile(
-                  label: 'Package request',
+                  // Was labeled "Package request" — same stale-label
+                  // issue as "Noticeboard" above; index 7 is LabelsScreen.
+                  label: 'Labels',
                   index: 7,
                   selectedIndex: selectedIndex,
                   onTap: (i) {
