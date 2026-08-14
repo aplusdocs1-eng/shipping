@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../services/applizone_api.dart';
 import '../services/database_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/forgot_password_dialog.dart';
 
 /// Standalone login page for third-party shipping partners.
 /// Accessible at /partner-login
@@ -405,7 +406,10 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
           children: [
             _label('Password'),
             TextButton(
-              onPressed: () {},
+              onPressed: () => showForgotPasswordDialog(
+                context,
+                initialEmail: _emailController.text.trim(),
+              ),
               style: TextButton.styleFrom(
                 padding: EdgeInsets.zero,
                 minimumSize: Size.zero,

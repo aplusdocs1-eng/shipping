@@ -3,6 +3,7 @@ import '../models/partner_branding.dart';
 import '../services/database_service.dart';
 import '../services/tenant_service.dart';
 import '../widgets/adaptive_image.dart';
+import '../widgets/forgot_password_dialog.dart';
 import 'landing_screen.dart' show LandingScreen;
 
 const _defaultFeatures = [
@@ -372,7 +373,10 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
               children: [
                 _fieldLabel('Password'),
                 TextButton(
-                  onPressed: () {},
+                  onPressed: () => showForgotPasswordDialog(
+                    context,
+                    initialEmail: _emailCtl.text.trim(),
+                  ),
                   style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero),
                   child: const Text(
                     'Forgot password?',

@@ -1488,6 +1488,38 @@ class DatabaseService {
     await _db.auth.signOut();
   }
 
+  /// One shared "forgot password" flow for all three portals (customer,
+  /// courier, staff) — resetting a password isn't portal-specific, it's
+  /// a plain Supabase Auth operation on whichever account owns [email].
+  ///
+  /// redirectTo is the bare production origin — no /#/reset-password
+  /// suffix. Two independent reasons converge on that:
+  /// (1) Supabase only honors a redirectTo that's on its project's
+  ///     allow-listed Redirect URLs (not Uri.base.origin, which would
+  ///     vary per courier's custom domain and turn one dashboard entry
+  ///     into a wildcard-per-tenant problem);
+  /// (2) MaterialApp below sets an explicit initialRoute, which Flutter
+  ///     uses verbatim on first load *instead of* whatever's actually in
+  ///     the URL bar — appending our own route here would just get
+  ///     ignored (confirmed live: it never reached ResetPasswordScreen).
+  ///     Landing at the bare origin with the token as the entire
+  ///     fragment and letting main.dart's own Uri.base check pick
+  ///     initialRoute is what actually works.
+  Future<void> sendPasswordResetEmail(String email) async {
+    await _db.auth.resetPasswordForEmail(
+      email,
+      redirectTo: 'https://web-six-lyart-elpksgcatu.vercel.app',
+    );
+  }
+
+  /// Completes the flow above — called from ResetPasswordScreen once
+  /// Supabase's client has established a recovery session from the
+  /// emailed link. Works identically regardless of account type, since
+  /// it's the auth user's own password, not anything in a role table.
+  Future<void> updatePassword(String newPassword) async {
+    await _db.auth.updateUser(UserAttributes(password: newPassword));
+  }
+
   User? get currentUser => _db.auth.currentUser;
   bool get isAuthenticated => _db.auth.currentUser != null;
 

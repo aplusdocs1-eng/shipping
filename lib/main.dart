@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'services/database_service.dart';
 import 'services/font_scale_controller.dart';
 import 'services/supabase_config.dart';
@@ -37,18 +39,77 @@ import 'screens/partner_login_screen.dart';
 import 'screens/partner_dashboard_screen.dart';
 import 'screens/customer_login_screen.dart';
 import 'screens/customer_portal_screen.dart';
+import 'screens/reset_password_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Read *before* SupabaseConfig.init() — on success it consumes and
+  // cleans up a recovery/confirmation token from the fragment as a side
+  // effect of detecting it. Confirmed live, twice: a top-level `final`
+  // holding this same expression looked like it should run "at startup"
+  // but Dart only initializes top-level fields lazily, on first read —
+  // which in the original version was from build(), well after that
+  // cleanup had already run, i.e. no earlier than doing it inline here
+  // would have been. An explicit local read, before the await that
+  // triggers the cleanup, is the only thing that's actually early enough.
+  final rawInitialFragment = Uri.base.fragment;
   await SupabaseConfig.init();
   // Resolve current hostname -> tenant (partner) before rendering UI.
   await TenantService().init();
   await FontScaleController().load();
-  runApp(const CourierWarehouseApp());
+  runApp(CourierWarehouseApp(rawInitialFragment: rawInitialFragment));
 }
 
-class CourierWarehouseApp extends StatelessWidget {
-  const CourierWarehouseApp({super.key});
+/// Reachable from anywhere (see CourierWarehouseApp's auth listener)
+/// without needing a BuildContext of its own.
+final navigatorKey = GlobalKey<NavigatorState>();
+
+class CourierWarehouseApp extends StatefulWidget {
+  final String rawInitialFragment;
+  const CourierWarehouseApp({super.key, required this.rawInitialFragment});
+
+  @override
+  State<CourierWarehouseApp> createState() => _CourierWarehouseAppState();
+}
+
+class _CourierWarehouseAppState extends State<CourierWarehouseApp> {
+  StreamSubscription<AuthState>? _authSub;
+
+  /// MaterialApp.initialRoute is used verbatim on first load *instead
+  /// of* whatever's actually in the URL bar — confirmed live, the hard
+  /// way: a password-recovery email link landing with #access_token=...
+  /// in the fragment was silently ignored and the app opened on '/'
+  /// regardless, because initialRoute said to unconditionally. Used as
+  /// a first attempt (still worth keeping — it's an honest reflection
+  /// of the URL Flutter is about to discard) but not relied on alone:
+  /// the auth listener below is the mechanism actually confirmed live
+  /// to work, reacting to Supabase successfully establishing the
+  /// recovery session rather than trying to out-guess exactly when
+  /// Flutter's router vs. Supabase's own URL cleanup runs first.
+  String get _initialRoute {
+    if (widget.rawInitialFragment.contains('type=recovery')) {
+      return '/reset-password';
+    }
+    return TenantService().isAdminHost ? '/' : '/partner-login';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((
+      state,
+    ) {
+      if (state.event == AuthChangeEvent.passwordRecovery) {
+        navigatorKey.currentState?.pushNamed('/reset-password');
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,6 +119,7 @@ class CourierWarehouseApp extends StatelessWidget {
     return ListenableBuilder(
       listenable: FontScaleController(),
       builder: (context, _) => MaterialApp(
+        navigatorKey: navigatorKey,
         title: 'One Village Shipping & Freight — Courier Portal',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
@@ -71,7 +133,7 @@ class CourierWarehouseApp extends StatelessWidget {
           ).copyWith(textScaler: TextScaler.linear(FontScaleController().scale)),
           child: child!,
         ),
-        initialRoute: TenantService().isAdminHost ? '/' : '/partner-login',
+        initialRoute: _initialRoute,
         routes: {
           '/': (context) => const LandingScreen(),
           '/about': (context) => const AboutPage(),
@@ -83,6 +145,7 @@ class CourierWarehouseApp extends StatelessWidget {
           '/partner-home': (context) => const PartnerDashboardScreen(),
           '/customer-login': (context) => const CustomerLoginScreen(),
           '/customer-home': (context) => const CustomerPortalScreen(),
+          '/reset-password': (context) => const ResetPasswordScreen(),
         },
       ),
     );
