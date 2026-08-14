@@ -42,7 +42,6 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
   bool _showPw = false;
   bool _isSignUp = false;
   bool _argsApplied = false;
-  String? _error;
   String? _success;
   Color? _brandColor;
 
@@ -68,11 +67,28 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
     super.dispose();
   }
 
+  /// Every error on this screen (sign-in and sign-up alike) surfaces as a
+  /// popup rather than inline text — easy to miss scrolled off-screen or
+  /// blended into the form, especially on the tall sign-up form.
+  Future<void> _showErrorDialog(String message) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _signIn() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() => _loading = true);
     try {
       final email = _emailCtl.text.trim();
       final pw = _pwCtl.text;
@@ -109,17 +125,18 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
       if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/customer-home');
     } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
       if (mounted) setState(() => _loading = false);
+      await _showErrorDialog(e.toString());
+      return;
     }
+    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _signUp() async {
     final partnerId = TenantService().partnerId;
     if (partnerId == null) {
-      setState(
-        () => _error = 'Sign-up is only available on your shipping partner\'s portal.',
+      await _showErrorDialog(
+        'Sign-up is only available on your shipping partner\'s portal.',
       );
       return;
     }
@@ -129,30 +146,27 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
     final pw = _pwCtl.text;
     final confirmPw = _confirmPwCtl.text;
     if (name.isEmpty || email.isEmpty || pw.isEmpty) {
-      setState(() => _error = 'Please fill in all required fields.');
+      await _showErrorDialog('Please fill in all required fields.');
       return;
     }
     if (pw.length < 6) {
-      setState(() => _error = 'Password must be at least 6 characters.');
+      await _showErrorDialog('Password must be at least 6 characters.');
       return;
     }
     if (pw != confirmPw) {
-      setState(() => _error = 'Passwords do not match.');
+      await _showErrorDialog('Passwords do not match.');
       return;
     }
     setState(() {
       _loading = true;
-      _error = null;
       _success = null;
     });
     try {
       final response = await _db.signUp(email, pw);
       if (!mounted) return;
       if (response.user == null) {
-        setState(() {
-          _loading = false;
-          _error = 'Sign-up failed. Please try again.';
-        });
+        setState(() => _loading = false);
+        await _showErrorDialog('Sign-up failed. Please try again.');
         return;
       }
       // Supabase returns a mocked user (no identities) instead of an error
@@ -160,11 +174,10 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
       // emails exist. Catch that here rather than hitting a confusing
       // foreign-key error from the account-creation RPC.
       if (response.user!.identities?.isEmpty ?? false) {
-        setState(() {
-          _loading = false;
-          _error =
-              'An account with this email already exists. Please sign in instead.';
-        });
+        setState(() => _loading = false);
+        await _showErrorDialog(
+          'An account with this email already exists. Please sign in instead.',
+        );
         return;
       }
       await _db.insertCustomerAccount(
@@ -192,10 +205,8 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = e.toString().replaceAll('AuthException: ', '');
-      });
+      setState(() => _loading = false);
+      await _showErrorDialog(e.toString().replaceAll('AuthException: ', ''));
     }
   }
 
@@ -311,7 +322,6 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
             isSignUp: _isSignUp,
             onChanged: (v) => setState(() {
               _isSignUp = v;
-              _error = null;
               _success = null;
             }),
           ) else
@@ -395,22 +405,6 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
               obscureText: !_showPw,
               onSubmitted: (_) => _signUp(),
               decoration: _dec('••••••••'),
-            ),
-          ],
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFB83A3A).withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFB83A3A).withValues(alpha: 0.25)),
-              ),
-              child: Text(
-                _error!,
-                style: const TextStyle(color: Color(0xFFB83A3A), fontSize: 12.5),
-              ),
             ),
           ],
           const SizedBox(height: 22),
