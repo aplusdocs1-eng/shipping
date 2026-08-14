@@ -834,7 +834,32 @@ class _PreAlertDetail extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () {},
+                      // No email/SMS provider is wired into this app
+                      // anywhere (confirmed — nothing beyond Supabase's
+                      // own auth emails exists). Silently doing nothing,
+                      // or pretending this sent something, would both
+                      // leave staff assuming a customer was told when
+                      // they weren't — say so plainly instead.
+                      onPressed: () => showDialog<void>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Not set up yet'),
+                          content: const Text(
+                            'Email/SMS notifications aren\'t configured for '
+                            'this account yet, so this can\'t actually '
+                            'reach the customer. Follow up with them '
+                            'directly for now (phone, WhatsApp, etc.) — '
+                            'ask support about enabling real notifications '
+                            'here.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text('OK'),
+                            ),
+                          ],
+                        ),
+                      ),
                       icon: const Icon(Icons.send_outlined, size: 14),
                       label: const Text('Notify Customer'),
                     ),
