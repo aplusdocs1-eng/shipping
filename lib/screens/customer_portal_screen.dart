@@ -2634,8 +2634,32 @@ class _LabeledField extends StatelessWidget {
 class _MobileAppPage extends StatelessWidget {
   const _MobileAppPage();
 
+  void _notBuiltYet(BuildContext context) => showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Not available yet'),
+      content: const Text(
+        'There\'s no mobile app to download yet — this page is a preview '
+        'of what\'s coming. Everything here already works in your '
+        'browser, including on your phone.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
+    // Was hardcoded to a brand name ("Wanhub") that has nothing to do
+    // with this app or any courier using it — leftover from whatever
+    // template this page's design was copied from. companyName already
+    // resolves to the current courier's real name (or this platform's
+    // own, on the direct/admin host).
+    final brand = TenantService().companyName ?? 'our';
     return Center(
       child: Container(
         width: 500,
@@ -2662,9 +2686,9 @@ class _MobileAppPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Get the Wanhub Mobile App',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            Text(
+              'Get the $brand Mobile App',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -2672,12 +2696,19 @@ class _MobileAppPage extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(color: Color(0xFF6B7280)),
             ),
+            const SizedBox(height: 4),
+            const Text(
+              'Coming soon — everything here already works great in your '
+              'phone\'s browser in the meantime.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+            ),
             const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ElevatedButton.icon(
-                  onPressed: () {},
+                  onPressed: () => _notBuiltYet(context),
                   icon: const Icon(Icons.apple),
                   label: const Text('App Store'),
                   style: ElevatedButton.styleFrom(
@@ -2687,7 +2718,7 @@ class _MobileAppPage extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
                 ElevatedButton.icon(
-                  onPressed: () {},
+                  onPressed: () => _notBuiltYet(context),
                   icon: const Icon(Icons.shop),
                   label: const Text('Google Play'),
                   style: ElevatedButton.styleFrom(
