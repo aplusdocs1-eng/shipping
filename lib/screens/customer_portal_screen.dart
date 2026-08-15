@@ -2127,8 +2127,15 @@ class _ReferEarnPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final link =
-        'https://applizonecentralja.com/auth/customer/register?ref=${customer['id'] ?? 'CUSTOMER'}';
+    // Was hardcoded to https://applizonecentralja.com/... — a real,
+    // different, unrelated site (the one this whole portal's UI was
+    // originally modeled on, per this file's own top-of-file comment —
+    // apparently copied along with the design). Anyone who actually
+    // used "their" referral link was sending friends to someone else's
+    // website, not this one. Uri.base.origin is whatever domain the
+    // customer is actually on right now — this app's own shared host,
+    // or their specific courier's custom domain.
+    final link = '${Uri.base.origin}/#/customer-login?ref=${customer['id'] ?? 'CUSTOMER'}';
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -2170,6 +2177,32 @@ class _ReferEarnPage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFBEB),
+              border: Border.all(color: const Color(0xFFFDE68A)),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, size: 16, color: Color(0xFF92400E)),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Your link below is real and works — but points, '
+                    'conversions, and rewards aren\'t tracked automatically '
+                    'yet, so the numbers on this page won\'t move even after '
+                    'a friend signs up. Contact support if someone used your '
+                    'link.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -2358,15 +2391,31 @@ class _RateCalculatorPageState extends State<_RateCalculatorPage> {
       setState(() => _estimate = 'Enter valid weight and value to calculate.');
       return;
     }
-    // Simple demo: Air = $4.50/lb, Sea = $2.25/lb, + 20% of declared value.
-    final perLb = _mode == 'Air Freight' ? 4.5 : 2.25;
+    // Prefer the current courier's own configured rates (set in their
+    // dashboard's Rate Calculator/Api Sync settings tabs) over the
+    // generic fallback — every customer used to get the same demo
+    // numbers ($4.50/lb air, $2.25/lb sea, 20% duty) no matter which
+    // courier's portal they were actually on.
+    final rates = TenantService().rates;
+    final usingRealRates =
+        rates != null &&
+        (_mode == 'Air Freight' ? rates['airPerLb'] : rates['seaPerLb']) !=
+            null;
+    final perLb =
+        (rates?[_mode == 'Air Freight' ? 'airPerLb' : 'seaPerLb'] as num?)
+            ?.toDouble() ??
+        (_mode == 'Air Freight' ? 4.5 : 2.25);
+    final dutyPercent =
+        (rates?['dutyPercent'] as num?)?.toDouble() ?? 20.0;
     final shipping = w * perLb;
-    final duty = v * 0.20;
+    final duty = v * (dutyPercent / 100);
     final total = shipping + duty;
     setState(
       () => _estimate =
           'Estimated ${_mode.toLowerCase()} cost: \$${total.toStringAsFixed(2)} '
-          '(\$${shipping.toStringAsFixed(2)} shipping + \$${duty.toStringAsFixed(2)} duty)',
+          '(\$${shipping.toStringAsFixed(2)} shipping + \$${duty.toStringAsFixed(2)} duty)'
+          '${usingRealRates ? '' : '\n\nThis is a general estimate — your courier '
+                'hasn\'t set custom rates yet.'}',
     );
   }
 

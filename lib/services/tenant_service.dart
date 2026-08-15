@@ -68,6 +68,13 @@ class TenantService {
   Map<String, dynamic>? get branding =>
       _partner?['branding'] as Map<String, dynamic>?;
 
+  /// Same shape/pattern as branding above, added for the customer
+  /// portal's Rate Calculator — was quoting every customer the same
+  /// hardcoded demo numbers regardless of what their actual courier
+  /// configured in that courier's own Rate Calculator/Api Sync settings
+  /// tabs. Null on the admin host, or any field a courier hasn't set.
+  Map<String, dynamic>? get rates => _partner?['rates'] as Map<String, dynamic>?;
+
   /// Reads `Uri.base.host` (on web this is `window.location.hostname`) and
   /// queries Supabase for a matching partner. Silently falls back to admin
   /// behaviour if the lookup fails or there is no match.
