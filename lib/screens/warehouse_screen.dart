@@ -2267,39 +2267,24 @@ class _InventoryTable extends StatelessWidget {
               // ── Partner column ──
               _BodyCell(
                 child: entry.shippingPartnerCode != null
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppTheme.accent.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              entry.shippingPartnerCode!,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: AppTheme.accent,
-                                fontFamily: 'monospace',
-                              ),
-                            ),
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accent.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          entry.shippingPartnerCode!,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.accent,
+                            fontFamily: 'monospace',
                           ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            entry.syncedToPartner
-                                ? Icons.cloud_done
-                                : Icons.cloud_off,
-                            size: 14,
-                            color: entry.syncedToPartner
-                                ? AppTheme.success
-                                : AppTheme.textSecondary,
-                          ),
-                        ],
+                        ),
                       )
                     : Text(
                         '—',
