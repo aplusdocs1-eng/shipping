@@ -3,7 +3,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/models.dart';
-import '../services/applizone_api.dart';
 import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 
@@ -15,7 +14,6 @@ class ShippingPartnersScreen extends StatefulWidget {
 }
 
 class _ShippingPartnersScreenState extends State<ShippingPartnersScreen> {
-  final _api = ApplizoneApi();
   final _db = DatabaseService();
   bool _loading = true;
   List<Map<String, dynamic>> _partnerAccounts = [];
@@ -28,7 +26,6 @@ class _ShippingPartnersScreenState extends State<ShippingPartnersScreen> {
   }
 
   Future<void> _init() async {
-    await _api.init();
     await Future.wait([_loadPartnerAccounts(), _loadShippingPartners()]);
     setState(() => _loading = false);
   }
@@ -240,7 +237,7 @@ class _ShippingPartnersScreenState extends State<ShippingPartnersScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Connect third-party shipping companies so scanned packages are automatically logged to their system.',
+            'Register third-party shipping companies so scanned packages are automatically matched to them by tracking prefix.',
             style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
           ),
           const SizedBox(height: 24),
@@ -255,13 +252,6 @@ class _ShippingPartnersScreenState extends State<ShippingPartnersScreen> {
             onApprove: _approvePartner,
             onReject: _rejectPartner,
             onTap: _openPendingDetails,
-          ),
-          const SizedBox(height: 24),
-
-          // ── Applizone Connection Card ────────────────────────────────────
-          _ApplizoneConnectionCard(
-            api: _api,
-            onStatusChanged: () => setState(() {}),
           ),
           const SizedBox(height: 24),
 
@@ -415,378 +405,6 @@ class _ShippingPartnersScreenState extends State<ShippingPartnersScreen> {
   }
 }
 
-// ─── Applizone Connection Card ───────────────────────────────────────────────
-
-class _ApplizoneConnectionCard extends StatelessWidget {
-  final ApplizoneApi api;
-  final VoidCallback onStatusChanged;
-
-  const _ApplizoneConnectionCard({
-    required this.api,
-    required this.onStatusChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: api.isConnected ? AppTheme.success : AppTheme.border,
-          width: api.isConnected ? 1.5 : 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          // Logo placeholder
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: AppTheme.primary,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(
-              child: Text(
-                'AZ',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 20,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Applizone Central Jamaica',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  api.isConnected
-                      ? 'Connected as ${api.email}'
-                      : 'Connect your backoffice account to sync scanned packages',
-                  style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
-                ),
-              ],
-            ),
-          ),
-          if (api.isConnected) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppTheme.success.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.check_circle, size: 16, color: AppTheme.success),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Connected',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.success,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            OutlinedButton(
-              onPressed: () async {
-                await api.disconnect();
-                onStatusChanged();
-              },
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.danger,
-                side: BorderSide(color: AppTheme.danger),
-              ),
-              child: const Text('Disconnect'),
-            ),
-          ] else
-            FilledButton.icon(
-              onPressed: () => _showLoginDialog(context),
-              icon: const Icon(Icons.link, size: 18),
-              label: const Text('Connect'),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  void _showLoginDialog(BuildContext context) {
-    final emailCtrl = TextEditingController();
-    final passCtrl = TextEditingController();
-    bool loading = false;
-    String? errorText;
-    bool obscure = true;
-
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setDialogState) {
-            return Dialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Container(
-                width: 420,
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Applizone logo/branding
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'AZ',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 28,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Login to Backoffice',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Enter your email below to login to your account',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Email
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Email',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: emailCtrl,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: InputDecoration(
-                        hintText: 'm@example.com',
-                        filled: true,
-                        fillColor: AppTheme.surface,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppTheme.border),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppTheme.border),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Password
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Password',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.textPrimary,
-                          ),
-                        ),
-                        Text(
-                          'Forgot your password?',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: AppTheme.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: passCtrl,
-                      obscureText: obscure,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: AppTheme.surface,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppTheme.border),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppTheme.border),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            obscure ? Icons.visibility_off : Icons.visibility,
-                            size: 20,
-                            color: AppTheme.textSecondary,
-                          ),
-                          onPressed: () =>
-                              setDialogState(() => obscure = !obscure),
-                        ),
-                      ),
-                    ),
-
-                    if (errorText != null) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppTheme.danger.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          errorText!,
-                          style: TextStyle(
-                            color: AppTheme.danger,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ],
-
-                    const SizedBox(height: 20),
-
-                    // Login button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 44,
-                      child: FilledButton(
-                        onPressed: loading
-                            ? null
-                            : () async {
-                                final email = emailCtrl.text.trim();
-                                final pass = passCtrl.text;
-                                if (email.isEmpty || pass.isEmpty) {
-                                  setDialogState(
-                                    () => errorText =
-                                        'Please enter email and password',
-                                  );
-                                  return;
-                                }
-                                setDialogState(() {
-                                  loading = true;
-                                  errorText = null;
-                                });
-
-                                final result = await api.login(email, pass);
-
-                                if (!ctx.mounted) return;
-
-                                if (result.success) {
-                                  Navigator.of(ctx).pop();
-                                  onStatusChanged();
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Connected to Applizone as $email',
-                                      ),
-                                      backgroundColor: AppTheme.success,
-                                      behavior: SnackBarBehavior.floating,
-                                    ),
-                                  );
-                                } else {
-                                  setDialogState(() {
-                                    loading = false;
-                                    errorText = result.error ?? 'Login failed';
-                                  });
-                                }
-                              },
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AppTheme.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: loading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text(
-                                'Login',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
 // ─── How It Works Section ────────────────────────────────────────────────────
 
 class _HowItWorks extends StatelessWidget {
@@ -815,10 +433,10 @@ class _HowItWorks extends StatelessWidget {
             children: [
               _StepCard(
                 number: '1',
-                title: 'Connect Account',
+                title: 'Register Partner',
                 desc:
-                    'Log in with your Applizone Central Jamaica backoffice credentials to link your account.',
-                icon: Icons.link,
+                    'Add the shipping partner\'s company info and tracking prefix so the system knows which packages belong to them.',
+                icon: Icons.add_business,
               ),
               const SizedBox(width: 12),
               _StepCard(
@@ -831,9 +449,9 @@ class _HowItWorks extends StatelessWidget {
               const SizedBox(width: 12),
               _StepCard(
                 number: '3',
-                title: 'Auto-Sync',
+                title: 'Auto-Match',
                 desc:
-                    'The package is logged to the shipping partner\'s database via Applizone and tagged with a storage location.',
+                    'The tracking prefix is matched against your registered partners and the package is tagged with a storage location.',
                 icon: Icons.sync,
               ),
               const SizedBox(width: 12),

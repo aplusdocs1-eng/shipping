@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import '../services/applizone_api.dart';
 import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/forgot_password_dialog.dart';
@@ -24,7 +23,6 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
   final _prefixController = TextEditingController();
   final _domainController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _api = ApplizoneApi();
   final _db = DatabaseService();
   bool _obscure = true;
   bool _loading = false;
@@ -78,7 +76,6 @@ class _PartnerLoginScreenState extends State<PartnerLoginScreen> {
   }
 
   Future<void> _checkSession() async {
-    await _api.init();
     if (_db.isAuthenticated) {
       // Only auto-redirect if this is an approved partner account.
       // An admin/other Supabase session should not skip the partner login.

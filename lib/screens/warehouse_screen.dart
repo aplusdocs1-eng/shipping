@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/models.dart';
-import '../services/applizone_api.dart';
 import '../services/database_service.dart';
 import '../services/export_service.dart';
 import '../theme/app_theme.dart';
@@ -16,7 +15,6 @@ class WarehouseScreen extends StatefulWidget {
 
 class _WarehouseScreenState extends State<WarehouseScreen> {
   final _db = DatabaseService();
-  final _api = ApplizoneApi();
   late List<WarehouseEntry> _entries;
   String _searchQuery = '';
   WarehouseEntryStatus? _statusFilter;
@@ -806,22 +804,6 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                               ),
                             ),
                           ),
-                          if (selectedPartner!.code != 'OVS')
-                            if (_api.isConnected)
-                              Icon(
-                                Icons.sync,
-                                size: 16,
-                                color: AppTheme.success,
-                              )
-                            else
-                              Tooltip(
-                                message: 'Connect Applizone to auto-sync',
-                                child: Icon(
-                                  Icons.sync_disabled,
-                                  size: 16,
-                                  color: AppTheme.textSecondary,
-                                ),
-                              ),
                         ],
                       ),
                     ],
@@ -1007,24 +989,6 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
 
                           setDialogState(() => syncing = true);
 
-                          // Sync to Applizone only for a genuine external
-                          // courier — an in-house OVS package has nothing
-                          // external to sync to.
-                          bool synced = false;
-                          if (_api.isConnected && isThirdPartyCourier) {
-                            final result = await _api.syncPackage(
-                              trackingNumber: tracking,
-                              description:
-                                  packageMatch?.description ??
-                                  'Scanned package',
-                              weight: packageMatch?.weight ?? 0.0,
-                              customerName: customer.name,
-                              storageLocation: selectedLocation?.displayLabel,
-                              shippingCompanyCode: partner.code,
-                            );
-                            synced = result.success;
-                          }
-
                           bool billApplied = false;
                           String? billFailure;
                           try {
@@ -1045,7 +1009,6 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                                   : 'scanned_in',
                               scannedInBy: 'Admin Staff',
                               shippingPartnerCode: partner.code,
-                              syncedToPartner: synced,
                             );
                             if (!mounted) return;
                             setState(() {
@@ -1118,7 +1081,6 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                           );
 
                           final partnerMsg = ' · ${partner.name}';
-                          final syncMsg = synced ? ' · Synced ✓' : '';
                           final billMsg = billApplied
                               ? ' · Billed \$${billAmount!.toStringAsFixed(2)}'
                               : billFailure != null
@@ -1130,8 +1092,8 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                             SnackBar(
                               content: Text(
                                 selectedLocation != null
-                                    ? 'Package $tracking scanned in → ${selectedLocation!.displayLabel}$partnerMsg$syncMsg$billMsg · printing label…'
-                                    : 'Package $tracking scanned in$partnerMsg$syncMsg$billMsg · printing label…',
+                                    ? 'Package $tracking scanned in → ${selectedLocation!.displayLabel}$partnerMsg$billMsg · printing label…'
+                                    : 'Package $tracking scanned in$partnerMsg$billMsg · printing label…',
                               ),
                               backgroundColor: billFailure != null
                                   ? AppTheme.warning
@@ -1953,8 +1915,8 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   /// Which courier tenant (partner_accounts — e.g. Howdidship) a package
   /// belongs to, by tracking-number prefix. Distinct from _matchPartnerByTracking
   /// above, which matches the delivery carrier (shipping_partners — e.g.
-  /// Applizone Shipping); a tenant's own customers' packages carry the
-  /// tenant's prefix regardless of which carrier physically delivered them.
+  /// DHL); a tenant's own customers' packages carry the tenant's prefix
+  /// regardless of which carrier physically delivered them.
   Map<String, dynamic>? _matchPartnerAccountByTracking(String tracking) {
     if (tracking.isEmpty) return null;
     final upper = tracking.toUpperCase();
